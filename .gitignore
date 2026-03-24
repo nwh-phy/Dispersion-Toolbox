@@ -1,0 +1,41 @@
+# MATLAB
+*.asv
+*.mex*
+*.mlappinstall
+*.mlpkginstall
+codegen/
+slprj/
+sccprj/
+
+# Data files (too large for git)
+*.mat
+*.npy
+*.json
+*.dm3
+*.dm4
+*.h5
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Internal tooling
+.claude/
+.gemini/
+.agents/
+.agent/
+_agents/
+_agent/
+
+# Large binary files
+*.pptx
+*.docx
+*.pdf
+*.png
+*.jpg
+*.gif
+
+# Temp
+*.tmp
+~$*
