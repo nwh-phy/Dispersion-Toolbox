@@ -109,7 +109,11 @@ interactive_qe_browser("path/to/eq3D.mat", "path/to/op_history.mat")
 
 拟合模型为 Drude-Lorentz 损失函数：
 
-$$S(E) = B_0 \cdot E^{-\alpha} + \sum_{i=1}^{N} \frac{A_i \cdot E \cdot \Gamma_i}{(E^2 - \omega_{p,i}^2)^2 + E^2 \cdot \Gamma_i^2}$$
+```
+S(E) = B₀·E^(-α) + Σᵢ [ Aᵢ·E·Γᵢ / ((E² - ωₚᵢ²)² + E²·Γᵢ²) ]
+```
+
+其中每个 Lorentz 峰由三个物理参数描述：峰位 `ωₚ`、线宽 `Γ`、幅度 `A`。
 
 ### Step 4：色散拟合
 
@@ -123,9 +127,9 @@ $$S(E) = B_0 \cdot E^{-\alpha} + \sum_{i=1}^{N} \frac{A_i \cdot E \cdot \Gamma_i
 
 | 模型 | 公式 | 适用场景 |
 |------|------|----------|
-| Quasi-2D Plasmon | $E = \sqrt{\frac{A|q|}{\varepsilon_{bg} + \rho_0|q|}}$ | 准二维金属薄膜 |
-| Linear | $E = v \cdot q + E_0$ | 声学声子/线性色散 |
-| Power Law | $E = A \cdot q^n$ | 通用拟合 |
+| Quasi-2D Plasmon | `E = sqrt(A·|q| / (ε_bg + ρ₀·|q|))` | 准二维金属薄膜 |
+| Linear | `E = v·q + E₀` | 声学声子/线性色散 |
+| Power Law | `E = A·q^n` | 通用拟合 |
 
 ### Step 5：出图
 
@@ -194,14 +198,6 @@ q 轴的物理标定依赖 Nion 的离焦设置：
 - Optimization Toolbox（拟合必需）
 - Signal Processing Toolbox（去噪、滤波）
 - **不依赖** Nion EELS 工具箱（原始数据导入已内置）
-
----
-
-## 引用
-
-如果本工具箱对你的研究有帮助，请引用：
-
-> da Jornada, F. H., Xian, L., Rubio, A., & Louie, S. G. (2020). Universal slow plasmons and giant field enhancement in atomically thin quasi-two-dimensional metals. *Nature Communications*, **11**, 1013.
 
 ---
 
