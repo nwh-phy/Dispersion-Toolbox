@@ -62,6 +62,7 @@ end
         state_out.opHistory = {};     % cell array of operation history entries
         state_out.selectedQIndex = 1;
         state_out.manualPickArmed = false;
+        state_out.guessPickArmed = false;
         state_out.manual_points = [];  % Nx2 [abs_q, energy]
         state_out.manual_branches = {};  % cell array of Nx2, one per branch
         state_out.fitResults = {};       % cell array of fit_quasi2d_plasmon results
@@ -79,7 +80,7 @@ end
             "Color", [0.97 0.975 0.985]);
 
         main_grid = uigridlayout(fig, [3 3]);
-        main_grid.RowHeight = {270, "1x", "1x"};
+        main_grid.RowHeight = {330, "1x", "1x"};
         main_grid.ColumnWidth = {"1x", "1x", 280};
         main_grid.Padding = [10 10 10 10];
         main_grid.RowSpacing = 10;
@@ -126,8 +127,8 @@ end
         control_panel.Layout.Column = [1 2];
         % keep col 3 for history panel
 
-        control_grid = uigridlayout(control_panel, [8 16]);
-        control_grid.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24};
+        control_grid = uigridlayout(control_panel, [10 16]);
+        control_grid.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24};
         control_grid.ColumnWidth = {80, 80, 62, 100, 62, 80, 62, 80, 62, 80, 80, 80, 62, 80, 80, "1x"};
         control_grid.Padding = [6 4 6 4];
         control_grid.RowSpacing = 5;
@@ -135,8 +136,8 @@ end
 
         % ═══════════ ROW 1: Data Loading & Pipeline ═══════════
         load_eq3d = uibutton(control_grid, ...
-            "Text", "Load eq3D", ...
-            "ButtonPushedFcn", @local_on_load_eq3d);
+            "Text", "Load Data", ...
+            "ButtonPushedFcn", @local_on_load_data);
         load_eq3d.Layout.Row = 1;
         load_eq3d.Layout.Column = 1;
 
@@ -384,24 +385,35 @@ end
         ref_abs_q_max.Layout.Column = 8;
 
         area_norm = uicheckbox(control_grid, ...
-            "Text", "Area Norm", ...
+            "Text", "Normalize", ...
             "Value", false, ...
             "ValueChangedFcn", @local_on_display_change);
         area_norm.Layout.Row = 5;
         area_norm.Layout.Column = 9;
 
-        local_add_label(control_grid, 5, 10, "NormE lo");
+        norm_method = uidropdown(control_grid, ...
+            "Items", {'Area', 'ZLP Peak'}, ...
+            "Value", 'ZLP Peak', ...
+            "Tooltip", "Area: divide by integrated spectral weight (destroys A(q)). ZLP Peak: divide by ZLP peak height (preserves A(q)).", ...
+            "ValueChangedFcn", @local_on_norm_method_changed);
+        norm_method.Layout.Row = 5;
+        norm_method.Layout.Column = 10;
+
         area_norm_min = uieditfield(control_grid, "numeric", ...
-            "Value", 200, ...
+            "Value", -50, ...
             "ValueDisplayFormat", "%.0f", ...
+            "Tooltip", "ZLP Peak: ZLP window low bound (meV). Area: integration window low bound.", ...
             "ValueChangedFcn", @local_on_display_change);
         area_norm_min.Layout.Row = 5;
         area_norm_min.Layout.Column = 11;
 
-        local_add_label(control_grid, 5, 12, "NormE hi");
+        norm_hi_label = uilabel(control_grid, "Text", "~", "HorizontalAlignment", "center");
+        norm_hi_label.Layout.Row = 5;
+        norm_hi_label.Layout.Column = 12;
         area_norm_max = uieditfield(control_grid, "numeric", ...
-            "Value", 3800, ...
+            "Value", 50, ...
             "ValueDisplayFormat", "%.0f", ...
+            "Tooltip", "ZLP Peak: ZLP window high bound (meV). Area: integration window high bound.", ...
             "ValueChangedFcn", @local_on_display_change);
         area_norm_max.Layout.Row = 5;
         area_norm_max.Layout.Column = 13;
@@ -579,7 +591,7 @@ end
         fit_info_label.Layout.Column = [14 16];
 
         show_gamma_btn = uibutton(control_grid, ...
-            "Text", "Show Γ", ...
+            "Text", "Γ & Amp", ...
             "ButtonPushedFcn", @local_on_show_gamma);
         show_gamma_btn.Layout.Row = 8; show_gamma_btn.Layout.Column = 13;
 
@@ -591,6 +603,66 @@ end
             "Placeholder", "e.g. 800,2500,3200");
         guess_field.Layout.Row = 8;
         guess_field.Layout.Column = [10 12];
+
+        % ═══════════ ROW 9: Peak Model & Seed Propagation ═══════════
+        pk_model_lbl = uilabel(control_grid, "Text", "Peak Model:");
+        pk_model_lbl.Layout.Row = 9; pk_model_lbl.Layout.Column = 1;
+
+        pk_model_dropdown = uidropdown(control_grid, ...
+            "Items", {'Lorentz', 'Gaussian', 'Voigt', 'Damped HO'}, ...
+            "ItemsData", {'lorentz', 'gaussian', 'voigt', 'damped_ho'}, ...
+            "Value", 'lorentz');
+        pk_model_dropdown.Layout.Row = 9; pk_model_dropdown.Layout.Column = [2 3];
+
+        shift_lbl = uilabel(control_grid, "Text", "Max Shift:");
+        shift_lbl.Layout.Row = 9; shift_lbl.Layout.Column = 4;
+
+        max_shift_field = uispinner(control_grid, ...
+            "Value", 80, "Step", 10, ...
+            "Limits", [10 500], "RoundFractionalValues", "on");
+        max_shift_field.Layout.Row = 9; max_shift_field.Layout.Column = 5;
+
+        pick_guesses_btn = uibutton(control_grid, ...
+            "Text", "Pick Guesses", ...
+            "ButtonPushedFcn", @local_on_pick_guesses);
+        pick_guesses_btn.Layout.Row = 9; pick_guesses_btn.Layout.Column = [6 7];
+
+        reassign_btn = uibutton(control_grid, ...
+            "Text", "Reassign Pts", ...
+            "ButtonPushedFcn", @local_on_reassign_points);
+        reassign_btn.Layout.Row = 9; reassign_btn.Layout.Column = [8 9];
+
+        seed_info_label = uilabel(control_grid, ...
+            "Text", "", ...
+            "HorizontalAlignment", "left");
+        seed_info_label.Layout.Row = 9;
+        seed_info_label.Layout.Column = [10 16];
+
+        % ═══════════ ROW 10: Dispersion Model Selector ═══════════
+        disp_model_lbl = uilabel(control_grid, "Text", "Disp Model:");
+        disp_model_lbl.Layout.Row = 10; disp_model_lbl.Layout.Column = 1;
+
+        disp_model_dropdown = uidropdown(control_grid, ...
+            "Items", {'Quasi-2D Plasmon', 'Acoustic Linear', 'Optical Constant', 'Optical Quadratic'}, ...
+            "ItemsData", {'quasi2d_plasmon', 'acoustic_linear', 'optical_constant', 'optical_quadratic'}, ...
+            "Value", 'quasi2d_plasmon');
+        disp_model_dropdown.Layout.Row = 10; disp_model_dropdown.Layout.Column = [2 4];
+
+        fit_disp_btn = uibutton(control_grid, ...
+            "Text", "Fit Dispersion", ...
+            "ButtonPushedFcn", @local_on_fit_dispersion);
+        fit_disp_btn.Layout.Row = 10; fit_disp_btn.Layout.Column = [5 6];
+
+        export_disp_btn = uibutton(control_grid, ...
+            "Text", "Export Disp.", ...
+            "ButtonPushedFcn", @local_on_export_dispersion);
+        export_disp_btn.Layout.Row = 10; export_disp_btn.Layout.Column = [7 8];
+
+        disp_info_label = uilabel(control_grid, ...
+            "Text", "", ...
+            "HorizontalAlignment", "left");
+        disp_info_label.Layout.Row = 10;
+        disp_info_label.Layout.Column = [9 16];
 
         qe_axes = uiaxes(main_grid);
         qe_axes.Layout.Row = 2;
@@ -659,6 +731,8 @@ end
         ui_handles.InfoLabel = info_label;
         ui_handles.RefAbsQMaxField = ref_abs_q_max;
         ui_handles.AreaNormCheckbox = area_norm;
+        ui_handles.NormMethodDropdown = norm_method;
+        ui_handles.NormHiLabel = norm_hi_label;
         ui_handles.AreaNormMinField = area_norm_min;
         ui_handles.AreaNormMaxField = area_norm_max;
         ui_handles.BgSubCheckbox = bg_sub;
@@ -692,6 +766,10 @@ end
         ui_handles.HistoryClearButton = history_clear_btn;
         ui_handles.HistorySaveButton = history_save_btn;
         ui_handles.HistoryLoadButton = history_load_btn;
+        ui_handles.PeakModelDropdown = pk_model_dropdown;
+        ui_handles.MaxShiftField = max_shift_field;
+        ui_handles.SeedInfoLabel = seed_info_label;
+        ui_handles.PickGuessesButton = pick_guesses_btn;
         ui_handles.DeconvCheckbox = deconv_cb;
         ui_handles.DeconvIterField = deconv_iter;
         ui_handles.DenoiseCheckbox = denoise_cb;
@@ -699,6 +777,10 @@ end
         ui_handles.DenoiseSigmaField = denoise_sigma;
         ui_handles.SGOrderField = sg_order;
         ui_handles.SGFrameLenField = sg_framelen;
+        ui_handles.DispModelDropdown = disp_model_dropdown;
+        ui_handles.FitDispButton = fit_disp_btn;
+        ui_handles.ExportDispButton = export_disp_btn;
+        ui_handles.DispInfoLabel = disp_info_label;
     end
 
 
@@ -719,19 +801,101 @@ end
     end
 
 
-
-
-
-    function local_on_load_eq3d(~, ~)
+    function local_on_load_data(~, ~)
         start_folder = local_get_dialog_folder();
         [file_name, folder_name] = uigetfile( ...
-            {"*.mat", "eq3D files (*.mat)"; "*.*", "All files"}, ...
-            "Select eq3D.mat", ...
+            {"*.mat;*.npy", "EELS Data (*.mat, *.npy)"; ...
+             "*.mat", "MAT files (*.mat)"; ...
+             "*.npy", "Raw Nion NPY (*.npy)"; ...
+             "*.*", "All files"}, ...
+            "Select EELS Data File", ...
             start_folder);
         if isequal(file_name, 0)
             return
         end
-        local_load_dataset(fullfile(folder_name, file_name), false);
+        full_path = fullfile(folder_name, file_name);
+        [~, ~, ext] = fileparts(file_name);
+
+        % Determine if this is raw data needing preprocessing
+        is_raw = false;
+        if strcmpi(ext, '.npy')
+            is_raw = true;
+        elseif strcmpi(ext, '.mat')
+            % Check if it's 4D raw or eq3D
+            try
+                info = whos('-file', full_path);
+                names = {info.name};
+                classes = {info.class};
+                % EELS4D object → raw
+                if any(strcmp(classes, 'EELS4D'))
+                    is_raw = true;
+                % Has a3+e with 2D a3 → eq3D
+                elseif ismember('a3', names) && ismember('e', names)
+                    a3_idx = find(strcmp(names, 'a3'), 1);
+                    if numel(info(a3_idx).size) >= 3
+                        is_raw = true;  % 3D/4D a3
+                    end
+                % Any 3D+ array > 1 MB → raw
+                else
+                    for ii = 1:numel(info)
+                        if numel(info(ii).size) >= 3 && info(ii).bytes > 1e6
+                            is_raw = true;
+                            break
+                        end
+                    end
+                end
+            catch
+            end
+        end
+
+        if is_raw
+            % Ask for q crop range
+            answer = inputdlg( ...
+                {'Q crop start (pixel, leave 0 for auto):', ...
+                 'Q crop end (pixel, leave 0 for auto):'}, ...
+                'Raw Import — Q Crop Range', [1 45], {'0', '0'});
+            if isempty(answer)
+                return
+            end
+            q_lo = str2double(answer{1});
+            q_hi = str2double(answer{2});
+            if ~isfinite(q_lo) || q_lo <= 0; q_lo = NaN; end
+            if ~isfinite(q_hi) || q_hi <= 0; q_hi = NaN; end
+
+            ui.InfoLabel.Text = "Loading raw data... (this may take a few seconds)";
+            ui.InfoLabel.Visible = "on";
+            drawnow;
+
+            try
+                lower_path = lower(char(full_path));
+                if contains(lower_path, "20w")
+                    ui.DqOverrideField.Value = 0.0025;
+                elseif contains(lower_path, "10w")
+                    ui.DqOverrideField.Value = 0.005;
+                end
+                dataset = load_qe_dataset(full_path, ui.DqOverrideField.Value, ...
+                    q_crop=[q_lo q_hi]);
+                state.dataset = dataset;
+                state.selectedQIndex = 1;
+                state.eq3dQE = [];
+                state.physicalQE = [];
+                state.comparisonQE = [];
+                state.eq3dQE = dataset.qe;
+                state.physicalQE = dataset.qe;
+                state.activeStage = "eq3d";
+                local_rebuild_comparison(false);
+                ui.ViewModeDropdown.Value = 'Physical';
+                local_sync_controls_from_qe(local_get_reference_qe());
+                [~, fname] = fileparts(char(full_path));
+                local_log_operation(sprintf('Loaded raw: %s (dq=%.4f)', fname, dataset.dq_Ainv));
+                local_update_all_views();
+            catch ME
+                local_show_error(ME, false);
+            end
+        else
+            % .mat path — original behavior
+            local_load_dataset(full_path, false);
+        end
     end
 
 
@@ -1292,6 +1456,22 @@ end
     end
 
 
+    function local_on_norm_method_changed(~, ~)
+        % Update lo/hi field values and labels when normalization mode changes
+        method = char(ui.NormMethodDropdown.Value);
+        if strcmpi(method, 'ZLP Peak')
+            ui.AreaNormMinField.Value = -50;
+            ui.AreaNormMaxField.Value = 50;
+            ui.NormHiLabel.Text = "~";
+        else
+            ui.AreaNormMinField.Value = 200;
+            ui.AreaNormMaxField.Value = 3800;
+            ui.NormHiLabel.Text = "~";
+        end
+        local_on_display_change([], []);
+    end
+
+
     function local_on_auto_y_changed(~, ~)
         local_log_operation(local_describe_changes());
         local_sync_manual_y_state();
@@ -1542,7 +1722,9 @@ end
                 'min_prominence', ui.PromField.Value, ...
                 'smooth_width', ui.SmoothField.Value, ...
                 'max_peaks', ui.MaxPeaksField.Value, ...
-                'initial_guesses', guesses);
+                'initial_guesses', guesses, ...
+                'peak_model', ui.PeakModelDropdown.Value, ...
+                'pre_subtracted', ui.BgSubCheckbox.Value);
         catch ME
             ui.FitInfoLabel.Text = sprintf("Fit failed: %s", ME.message);
             return
@@ -1701,6 +1883,19 @@ end
             qe = local_apply_deconvolution(qe);
         end
 
+        % Also prepare raw (non-area-normalized) data for physical intensity
+        qe_raw = local_get_active_qe();
+        if ui.DenoiseCheckbox.Value
+            qe_raw = local_apply_denoise(qe_raw);
+        end
+        if ui.BgSubCheckbox.Value
+            qe_raw = local_apply_bg_subtraction(qe_raw);
+        end
+        if ui.DeconvCheckbox.Value
+            qe_raw = local_apply_deconvolution(qe_raw);
+        end
+        % NOTE: qe_raw does NOT have area normalization applied
+
         [mask, energy_axis] = local_energy_mask(qe);
         q_axis = qe.q_Ainv;
         n_q = numel(q_axis);
@@ -1725,61 +1920,114 @@ end
             guesses = [];
         end
 
-        % Collect all peaks from all channels: [|q|, omega_p, gamma, R², amplitude]
-        all_peaks = [];
-        fit_details = cell(n_q, 1);
+        % ═══════════ DUAL MODE: Seed vs Blind ═══════════
+        if ~isempty(guesses)
+            % ── SEED MODE: propagate from current q-channel ──
+            ui.InfoLabel.Text = sprintf("Seed propagation (%d guesses, model=%s)...", ...
+                numel(guesses), ui.PeakModelDropdown.Value);
+            ui.InfoLabel.Visible = "on";
+            drawnow;
 
-        % Count channels in q range
-        n_in_range = sum(q_axis >= q_start & q_axis <= q_end);
-        fprintf('Auto-fit: q range [%.4f, %.4f], %d/%d channels\n', q_start, q_end, n_in_range, n_q);
-        ui.InfoLabel.Text = sprintf("Fitting %d channels (q: %.3f to %.3f)...", n_in_range, q_start, q_end);
-        ui.InfoLabel.Visible = "on";
-        drawnow;
-
-        n_success = 0;
-        for k = 1:n_q
-            % Skip channels outside the q range
-            q_val = q_axis(k);
-            if q_val < q_start || q_val > q_end
-                continue
-            end
-
-            spectrum = double(qe.intensity(mask, k));
-            if all(spectrum == 0) || all(isnan(spectrum))
-                continue
-            end
+            intensity = double(qe.intensity(mask, :));
+            seed_idx = state.selectedQIndex;
 
             try
-                result = fit_loss_function(energy_axis, spectrum, ...
+                prop = propagate_seed_peaks(intensity, energy_axis, q_axis(:), ...
+                    'seed_guesses', guesses(:), ...
+                    'seed_idx', seed_idx, ...
+                    'direction', 'both', ...
+                    'max_shift', ui.MaxShiftField.Value, ...
+                    'peak_model', ui.PeakModelDropdown.Value, ...
                     'E_min', E_min, 'E_max', E_max, ...
-                    'min_prominence', ui.PromField.Value, ...
                     'smooth_width', ui.SmoothField.Value, ...
-                    'max_peaks', ui.MaxPeaksField.Value, ...
-                    'initial_guesses', guesses);
-                fit_details{k} = result;
-                n_success = n_success + 1;
-
-                % Collect all peaks from this channel
-                % Skip peaks with omega_p below E_min (ZLP residuals)
-                for p = 1:result.n_peaks
-                    if result.omega_p(p) < E_min
-                        continue
-                    end
-                    all_peaks(end+1, :) = [ ...
-                        q_val, ...
-                        result.omega_p(p), ...
-                        result.gamma(p), ...
-                        result.R_squared, ...
-                        result.amplitude(p)]; %#ok<AGROW>
-                end
-            catch
-                % Skip channels that fail to fit
+                    'verbose', false);
+            catch ME
+                ui.InfoLabel.Text = sprintf("Seed propagation failed: %s", ME.message);
+                return
             end
 
-            % Update progress every 10 channels
-            if mod(k, 10) == 0
-                ui.InfoLabel.Text = sprintf("Auto-fitting... %d%%", round(k/n_q*100));
-                drawnow;
+            if isempty(prop.peaks) || size(prop.peaks, 1) < 2
+                ui.InfoLabel.Text = "Seed propagation: insufficient peaks found";
+                return
+            end
+
+            all_peaks = prop.peaks;
+            fit_details = prop.fit_details;
+            n_success = prop.n_success;
+            used_seed_mode = true;
+
+        else
+            % ── BLIND MODE: per-channel findpeaks (original) ──
+            all_peaks = [];
+            fit_details = cell(n_q, 1);
+            used_seed_mode = false;
+
+            n_in_range = sum(q_axis >= q_start & q_axis <= q_end);
+            fprintf('Auto-fit: q range [%.4f, %.4f], %d/%d channels\n', q_start, q_end, n_in_range, n_q);
+            ui.InfoLabel.Text = sprintf("Fitting %d channels (q: %.3f to %.3f)...", n_in_range, q_start, q_end);
+            ui.InfoLabel.Visible = "on";
+            drawnow;
+
+            n_success = 0;
+            for k = 1:n_q
+                q_val = q_axis(k);
+                if q_val < q_start || q_val > q_end
+                    continue
+                end
+
+                spectrum = double(qe.intensity(mask, k));
+                if all(spectrum == 0) || all(isnan(spectrum))
+                    continue
+                end
+
+                try
+                    result = fit_loss_function(energy_axis, spectrum, ...
+                        'E_min', E_min, 'E_max', E_max, ...
+                        'min_prominence', ui.PromField.Value, ...
+                        'smooth_width', ui.SmoothField.Value, ...
+                        'max_peaks', ui.MaxPeaksField.Value, ...
+                        'initial_guesses', [], ...
+                        'peak_model', ui.PeakModelDropdown.Value);
+                    fit_details{k} = result;
+                    n_success = n_success + 1;
+
+                    % Also get raw (non-areanorm) peak heights at same positions
+                    raw_spectrum = double(qe_raw.intensity(mask, k));
+                    raw_peak_heights = NaN(result.n_peaks, 1);
+                    for p = 1:result.n_peaks
+                        % Evaluate the peak at E₀ using raw data scale
+                        E0 = result.omega_p(p);
+                        % Find the raw data value nearest the peak position
+                        [~, e_idx] = min(abs(energy_axis - E0));
+                        % Use a small window around E₀ to get robust peak height
+                        hw = max(3, round(result.gamma(p) / mean(diff(energy_axis))));
+                        win = max(1, e_idx-hw):min(numel(raw_spectrum), e_idx+hw);
+                        raw_peak_heights(p) = max(raw_spectrum(win));
+                    end
+
+                    for p = 1:result.n_peaks
+                        if result.omega_p(p) < E_min
+                            continue
+                        end
+                        % Columns: [q, E, gamma, R², amp, E_ci_lo, E_ci_hi, G_ci_lo, G_ci_hi, A_ci_lo, A_ci_hi, raw_peak_height]
+                        all_peaks(end+1, :) = [ ...
+                            q_val, ...
+                            result.omega_p(p), ...
+                            result.gamma(p), ...
+                            result.R_squared, ...
+                            result.amplitude(p), ...
+                            result.omega_p_ci(p, 1), result.omega_p_ci(p, 2), ...
+                            result.gamma_ci(p, 1), result.gamma_ci(p, 2), ...
+                            result.amplitude_ci(p, 1), result.amplitude_ci(p, 2), ...
+                            raw_peak_heights(p)]; %#ok<AGROW>
+                    end
+                catch
+                end
+
+                if mod(k, 10) == 0
+                    ui.InfoLabel.Text = sprintf("Auto-fitting... %d%%", round(k/n_q*100));
+                    drawnow;
+                end
             end
         end
 
@@ -1801,30 +2049,62 @@ end
         end
 
         % ═══════════ Separate into branches ═══════════
-        % At each q channel, peaks are sorted by energy.
-        % Branch 1 = lowest energy peak, Branch 2 = second, etc.
-        unique_q = unique(peaks(:,1));
-        max_branch = 1;
-        for i = 1:numel(unique_q)
-            n_at_q = sum(peaks(:,1) == unique_q(i));
-            max_branch = max(max_branch, n_at_q);
-        end
-
-        % Build branch arrays: branches{b} = [q, omega_p, gamma, R², amplitude]
-        branches = cell(max_branch, 1);
-        for i = 1:numel(unique_q)
-            q_mask = peaks(:,1) == unique_q(i);
-            q_peaks = peaks(q_mask, :);
-            % Sort by omega_p ascending
-            [~, si] = sort(q_peaks(:,2));
-            q_peaks = q_peaks(si, :);
-            for b = 1:size(q_peaks, 1)
-                branches{b} = [branches{b}; q_peaks(b, :)]; %#ok<AGROW>
+        if used_seed_mode && size(peaks, 2) >= 6
+            % --- SEED MODE: perfect assignment using branch_id ---
+            unique_branches = unique(peaks(:, 6));
+            n_branches = numel(unique_branches);
+            branches = cell(n_branches, 1);
+            for b = 1:n_branches
+                b_id = unique_branches(b);
+                branches{b} = peaks(peaks(:,6) == b_id, 1:5);  % drop branch_id for plot
+                % Sort by q-value to fix display ordering
+                [~, si] = sort(branches{b}(:,1));
+                branches{b} = branches{b}(si, :);
             end
-        end
+        else
+            % --- BLIND MODE: use 1D gap-based clustering ---
+            % Instead of fragile per-q sorting or kmeans (which needs a toolbox),
+            % we find the (max_p - 1) largest gaps in the sorted energies.
+            unique_q = unique(peaks(:,1));
+            max_p = 1;
+            for i = 1:numel(unique_q)
+                max_p = max(max_p, sum(peaks(:,1) == unique_q(i)));
+            end
 
-        % Remove empty branches
-        branches = branches(~cellfun('isempty', branches));
+            if max_p > 1
+                energies = peaks(:,2);
+                E_sorted = sort(energies);
+                gaps = diff(E_sorted);
+                [~, sort_gap_idx] = sort(gaps, 'descend');
+                
+                % The boundaries are the energies just before the largest gaps
+                boundaries = sort(E_sorted(sort_gap_idx(1:max_p-1)));
+                
+                branches = cell(max_p, 1);
+                for b = 1:max_p
+                    if b == 1
+                        mask = peaks(:,2) <= boundaries(1);
+                    elseif b == max_p
+                        mask = peaks(:,2) > boundaries(end);
+                    else
+                        mask = peaks(:,2) > boundaries(b-1) & peaks(:,2) <= boundaries(b);
+                    end
+                    
+                    b_peaks = peaks(mask, :);
+                    % Sort by q-value
+                    [~, si] = sort(b_peaks(:,1));
+                    branches{b} = b_peaks(si, :);
+                end
+            else
+                % Only 1 branch detected
+                branches = {peaks};
+                [~, si] = sort(branches{1}(:,1));
+                branches{1} = branches{1}(si, :);
+            end
+            
+            % Remove empty branches just in case
+            branches = branches(~cellfun('isempty', branches));
+        end
         n_branches = numel(branches);
 
         autoResults = struct();
@@ -1850,24 +2130,38 @@ end
             branch_label = sprintf('Branch %d (%.0f-%.0f meV, %d pts)', ...
                 b, min(br(:,2)), max(br(:,2)), size(br,1));
 
-            scatter(ax, br(:,1), br(:,2), 30, col, 'filled', ...
-                'MarkerFaceAlpha', 0.7, ...
-                'DisplayName', branch_label);
+            % Plot with error bars if CI available (cols 6-7)
+            if size(br, 2) >= 7 && ~all(isnan(br(:,6)))
+                E_err = (br(:,7) - br(:,6)) / 2;  % half-width
+                E_err(isnan(E_err)) = 0;
+                errorbar(ax, br(:,1), br(:,2), E_err, ...
+                    'o', 'Color', col, 'MarkerFaceColor', col, ...
+                    'MarkerSize', 4, 'LineWidth', 0.8, ...
+                    'CapSize', 3, ...
+                    'DisplayName', branch_label);
+            else
+                scatter(ax, br(:,1), br(:,2), 30, col, 'filled', ...
+                    'MarkerFaceAlpha', 0.7, ...
+                    'DisplayName', branch_label);
+            end
 
             % Try dispersion fit for branches with enough points
+            disp_model_name = ui.DispModelDropdown.Value;
             if size(br, 1) >= 5
                 try
-                    disp_result = fit_quasi2d_plasmon(br(:,1), br(:,2));
+                    disp_result = fit_dispersion_generic(br(:,1), br(:,2), ...
+                        'model', disp_model_name);
                     plot(ax, disp_result.q_fit, disp_result.E_fit, '-', ...
                         'Color', col, 'LineWidth', 2, ...
-                        'DisplayName', sprintf('Fit B%d: R²=%.3f', b, disp_result.R_squared));
+                        'DisplayName', sprintf('Fit B%d: %s  R²=%.3f', ...
+                            b, disp_result.model_label, disp_result.R_squared));
                     state.fitResults{b} = disp_result;
                 catch
                 end
             end
         end
 
-        state.manual_branches = cellfun(@(br) br(:,1:2), branches, 'UniformOutput', false);
+        state.manual_branches = branches;
 
         hold(ax, 'off');
         legend(ax, 'Location', 'best', 'FontSize', 7);
@@ -1882,59 +2176,476 @@ end
         local_log_operation(sprintf('Auto fit: %d branches / %d peaks', n_branches, size(peaks,1)));
     end
 
+    function local_on_reassign_points(~, ~)
+        if isempty(state.manual_branches)
+            ui.InfoLabel.Text = "No branches to reassign. Run Auto Fit first.";
+            ui.InfoLabel.Visible = "on";
+            return
+        end
+        
+        ui.InfoLabel.Text = "Draw a region on the Dispersion map to select points to move...";
+        ui.InfoLabel.Visible = "on";
+        
+        ax = ui.DispersionAxes;
+        try
+            roi = drawfreehand(ax, 'Color', 'r', 'LineWidth', 1.5);
+        catch ME
+            ui.InfoLabel.Text = "Selection cancelled or not supported.";
+            return
+        end
+        
+        if isempty(roi) || isempty(roi.Position)
+            ui.InfoLabel.Text = "No region drawn.";
+            return
+        end
+        
+        % Check which points are inside
+        in_b_idx = [];
+        in_p_idx = [];
+        poly_x = roi.Position(:,1);
+        poly_y = roi.Position(:,2);
+        
+        for bi = 1:numel(state.manual_branches)
+            bpts = state.manual_branches{bi};
+            if isempty(bpts), continue; end
+            in = inpolygon(bpts(:,1), bpts(:,2), poly_x, poly_y);
+            
+            p_idx = find(in);
+            for k = 1:numel(p_idx)
+                in_b_idx(end+1,1) = bi; %#ok<AGROW>
+                in_p_idx(end+1,1) = p_idx(k); %#ok<AGROW>
+            end
+        end
+        
+        if isempty(in_b_idx)
+            delete(roi);
+            ui.InfoLabel.Text = "No points inside selected region.";
+            return
+        end
+        
+        n_sel = numel(in_b_idx);
+        
+        % Prompt for target branch
+        cur_n_branches = numel(state.manual_branches);
+        opts = cell(1, cur_n_branches + 2);
+        for i = 1:cur_n_branches
+            opts{i} = sprintf('Branch %d', i);
+        end
+        opts{cur_n_branches + 1} = sprintf('New Branch %d', cur_n_branches + 1);
+        opts{end} = '❌ Delete Points';
+        
+        [sel_idx, ok] = listdlg('PromptString', sprintf('Move %d selected points to:', n_sel), ...
+                                'SelectionMode', 'single', ...
+                                'ListString', opts, ...
+                                'Name', 'Reassign / Delete');
+        
+        if ~ok || isempty(sel_idx)
+            delete(roi);
+            ui.InfoLabel.Text = "Reassign cancelled.";
+            return
+        end
+        
+        % Delete points from original branches first
+        pts_to_move = zeros(n_sel, size(state.manual_branches{1},2));
+        for k = 1:n_sel
+            pts_to_move(k,:) = state.manual_branches{in_b_idx(k)}(in_p_idx(k),:);
+        end
+        
+        for bi = 1:cur_n_branches
+            if ~any(in_b_idx == bi), continue; end
+            keep_mask = true(size(state.manual_branches{bi}, 1), 1);
+            keep_mask(in_p_idx(in_b_idx == bi)) = false;
+            state.manual_branches{bi} = state.manual_branches{bi}(keep_mask, :);
+        end
+        
+        % If not deleting, put them in target branch
+        if sel_idx < numel(opts)
+            if sel_idx > cur_n_branches
+                state.manual_branches{sel_idx} = pts_to_move;
+            else
+                state.manual_branches{sel_idx} = [state.manual_branches{sel_idx}; pts_to_move];
+            end
+        end
+        
+        % Clean up empty branches and sort
+        new_b = {};
+        for bi = 1:numel(state.manual_branches)
+            if ~isempty(state.manual_branches{bi})
+                new_b{end+1} = sortrows(state.manual_branches{bi}, 1); %#ok<AGROW>
+            end
+        end
+        state.manual_branches = new_b;
+        
+        delete(roi);
+        
+        if sel_idx == numel(opts)
+            ui.InfoLabel.Text = sprintf("Successfully deleted %d points.", n_sel);
+            local_log_operation(sprintf("Deleted %d points", n_sel));
+        else
+            ui.InfoLabel.Text = sprintf("Successfully moved %d points.", n_sel);
+            local_log_operation(sprintf("Reassigned %d points to Branch %d", n_sel, sel_idx));
+        end
+        
+        % Force update of overlay
+        local_update_all_views();
+    end
+
+    function local_on_fit_dispersion(~, ~)
+        % Re-fit dispersion to existing branches with the selected model
+        if isempty(state.manual_branches)
+            ui.DispInfoLabel.Text = "No branches available. Run Auto Fit first.";
+            return
+        end
+
+        disp_model_name = ui.DispModelDropdown.Value;
+        ax = ui.DispersionAxes;
+        local_clear_axes(ax);
+        hold(ax, 'on');
+
+        branch_colors = [0.1 0.5 0.9; 0.9 0.3 0.1; 0.2 0.7 0.3; 0.6 0.2 0.8; 0.9 0.6 0.1];
+        state.fitResults = {};
+        n_branches = numel(state.manual_branches);
+
+        for b = 1:n_branches
+            br = state.manual_branches{b};
+            if isempty(br), continue; end
+            col = branch_colors(mod(b-1, size(branch_colors,1))+1, :);
+
+            % Plot points (with error bars if available)
+            if size(br, 2) >= 7 && ~all(isnan(br(:,6)))
+                E_err = (br(:,7) - br(:,6)) / 2;
+                E_err(isnan(E_err)) = 0;
+                errorbar(ax, br(:,1), br(:,2), E_err, ...
+                    'o', 'Color', col, 'MarkerFaceColor', col, ...
+                    'MarkerSize', 4, 'LineWidth', 0.8, 'CapSize', 3, ...
+                    'DisplayName', sprintf('Branch %d', b));
+            else
+                scatter(ax, br(:,1), br(:,2), 30, col, 'filled', ...
+                    'MarkerFaceAlpha', 0.7, ...
+                    'DisplayName', sprintf('Branch %d', b));
+            end
+
+            % Fit dispersion
+            if size(br, 1) >= 5
+                try
+                    disp_result = fit_dispersion_generic(br(:,1), br(:,2), ...
+                        'model', disp_model_name);
+                    plot(ax, disp_result.q_fit, disp_result.E_fit, '-', ...
+                        'Color', col, 'LineWidth', 2, ...
+                        'DisplayName', sprintf('Fit B%d: %s  R²=%.3f', ...
+                            b, disp_result.model_label, disp_result.R_squared));
+                    state.fitResults{b} = disp_result;
+                catch ME
+                    fprintf('Fit failed for branch %d: %s\n', b, ME.message);
+                end
+            end
+        end
+
+        hold(ax, 'off');
+        grid(ax, 'on');
+        xlabel(ax, 'q (1/Å)');
+        ylabel(ax, 'Energy (meV)');
+        title(ax, sprintf('Dispersion [%s] | %d branches', disp_model_name, n_branches));
+        legend(ax, 'Location', 'best', 'FontSize', 7);
+
+        % Summarize in info label
+        n_fitted = sum(~cellfun('isempty', state.fitResults));
+        ui.DispInfoLabel.Text = sprintf('Fitted %d/%d branches with %s', ...
+            n_fitted, n_branches, disp_model_name);
+        local_log_operation(sprintf('Fit dispersion: %s, %d branches', disp_model_name, n_fitted));
+    end
+
+    function local_on_export_dispersion(~, ~)
+        % Export a standalone publication-quality dispersion figure
+        if isempty(state.manual_branches)
+            ui.DispInfoLabel.Text = "No branches to export.";
+            return
+        end
+
+        % Create standalone figure
+        fig_exp = figure('Name', 'Dispersion Export', ...
+            'Position', [100 100 700 500], ...
+            'Color', 'w');
+        ax_exp = axes(fig_exp);
+        hold(ax_exp, 'on');
+
+        branch_colors = [0.1 0.5 0.9; 0.9 0.3 0.1; 0.2 0.7 0.3; 0.6 0.2 0.8; 0.9 0.6 0.1];
+
+        for b = 1:numel(state.manual_branches)
+            br = state.manual_branches{b};
+            if isempty(br), continue; end
+            col = branch_colors(mod(b-1, size(branch_colors,1))+1, :);
+
+            % Plot with error bars if available
+            if size(br, 2) >= 7 && ~all(isnan(br(:,6)))
+                E_err = (br(:,7) - br(:,6)) / 2;
+                E_err(isnan(E_err)) = 0;
+                errorbar(ax_exp, br(:,1), br(:,2), E_err, ...
+                    'o', 'Color', col, 'MarkerFaceColor', col, ...
+                    'MarkerSize', 5, 'LineWidth', 1, 'CapSize', 4, ...
+                    'DisplayName', sprintf('Branch %d', b));
+            else
+                scatter(ax_exp, br(:,1), br(:,2), 40, col, 'filled', ...
+                    'MarkerFaceAlpha', 0.8, ...
+                    'DisplayName', sprintf('Branch %d', b));
+            end
+
+            % Overlay fit curve with annotation
+            if numel(state.fitResults) >= b && ~isempty(state.fitResults{b})
+                fr = state.fitResults{b};
+                plot(ax_exp, fr.q_fit, fr.E_fit, '-', ...
+                    'Color', col, 'LineWidth', 2.5, ...
+                    'DisplayName', sprintf('Fit: %s  R²=%.3f', ...
+                        fr.model_label, fr.R_squared));
+            end
+        end
+
+        hold(ax_exp, 'off');
+        grid(ax_exp, 'on');
+        box(ax_exp, 'on');
+        xlabel(ax_exp, 'q (Å^{-1})', 'FontSize', 14);
+        ylabel(ax_exp, 'Energy (meV)', 'FontSize', 14);
+        title(ax_exp, 'Dispersion Relation', 'FontSize', 16);
+        legend(ax_exp, 'Location', 'best', 'FontSize', 10);
+        set(ax_exp, 'FontSize', 12, 'LineWidth', 1.2);
+
+        % Save dialog
+        [fname, fpath] = uiputfile({'*.png'; '*.pdf'; '*.svg'}, ...
+            'Save Dispersion Figure', 'dispersion_export.png');
+        if fname ~= 0
+            full_path = fullfile(fpath, fname);
+            exportgraphics(fig_exp, full_path, 'Resolution', 300);
+            ui.DispInfoLabel.Text = sprintf('Exported to %s', fname);
+            local_log_operation(sprintf('Exported dispersion figure: %s', full_path));
+        end
+    end
+
+    function local_on_pick_guesses(~, ~)
+        % Toggle guess-picking mode: click on spectrum to pick peak positions
+        if state.guessPickArmed
+            % Disarm
+            state.guessPickArmed = false;
+            ui.PickGuessesButton.Text = "Pick Guesses";
+            ui.PickGuessesButton.BackgroundColor = [0.96 0.96 0.96];
+            ui.SeedInfoLabel.Text = sprintf("Guesses: %s", ui.GuessField.Value);
+        else
+            % Arm — clear old guess markers and GuessField
+            state.guessPickArmed = true;
+            state.manualPickArmed = false;  % disarm the other picker
+            ui.PickPtsButton.Text = "Pick Peaks";
+            ui.PickPtsButton.BackgroundColor = [0.96 0.96 0.96];
+            ui.GuessField.Value = "";
+            delete(findobj(ui.SingleAxes, 'Tag', 'guess_marker'));
+            ui.PickGuessesButton.Text = "Picking...";
+            ui.PickGuessesButton.BackgroundColor = [1 0.9 0.85];
+            ui.SeedInfoLabel.Text = "Click on spectrum peaks to add guesses";
+        end
+    end
+
+
+
 
     function local_on_show_gamma(~, ~)
-        % Open a separate figure showing Γ(q) and Γ(E) from auto-fit
+        % Open a separate figure showing Γ(q), Γ(E), Amplitude(q), Amplitude(E)
         if ~isfield(state, 'autoFitResults') || isempty(state.autoFitResults)
             ui.InfoLabel.Text = "Run Auto Fit first";
             ui.InfoLabel.Visible = "on";
             return
         end
 
-        peaks = state.autoFitResults.all_peaks;  % [q, omega_p, gamma, R², amplitude]
+        peaks = state.autoFitResults.all_peaks;
         branches = state.autoFitResults.branches;
         n_branches = numel(branches);
         branch_colors = [0.1 0.5 0.9; 0.9 0.3 0.1; 0.2 0.7 0.3; 0.6 0.2 0.8; 0.9 0.6 0.1];
 
-        fig = figure('Name', 'Linewidth Γ Analysis', ...
+        % Check if CI columns are available
+        % Cols: [q E gamma R² amp E_ci_lo E_ci_hi G_ci_lo G_ci_hi A_ci_lo A_ci_hi]
+        %        1 2   3    4  5     6       7       8       9      10      11
+        has_gamma_ci = size(peaks, 2) >= 9;
+        has_amp_ci = size(peaks, 2) >= 11;
+
+        fig = figure('Name', 'Linewidth Γ, Amplitude & EELS Prefactor', ...
             'NumberTitle', 'off', 'Color', 'w', ...
-            'Position', [200 150 900 700]);
+            'Position', [120 40 1100 1000]);
 
         % --- Subplot 1: Γ(q) ---
-        ax1 = subplot(2, 1, 1, 'Parent', fig);
+        ax1 = subplot(3, 2, 1, 'Parent', fig);
         hold(ax1, 'on');
         for b = 1:n_branches
             br = branches{b};
+            if isempty(br), continue; end
             col = branch_colors(mod(b-1, size(branch_colors,1))+1, :);
-            scatter(ax1, br(:,1), br(:,3), 40, col, 'filled', ...
-                'MarkerFaceAlpha', 0.7, ...
-                'DisplayName', sprintf('B%d: mean Γ = %.0f meV', b, mean(br(:,3))));
+            lbl = sprintf('B%d: Γ̄=%.0f meV', b, mean(br(:,3)));
+
+            if has_gamma_ci && size(br, 2) >= 9 && ~all(isnan(br(:,8)))
+                G_err = (br(:,9) - br(:,8)) / 2;
+                G_err(isnan(G_err)) = 0;
+                errorbar(ax1, br(:,1), br(:,3), G_err, ...
+                    'o', 'Color', col, 'MarkerFaceColor', col, ...
+                    'MarkerSize', 4, 'LineWidth', 0.8, 'CapSize', 3, ...
+                    'DisplayName', lbl);
+            else
+                scatter(ax1, br(:,1), br(:,3), 40, col, 'filled', ...
+                    'MarkerFaceAlpha', 0.7, 'DisplayName', lbl);
+            end
         end
         hold(ax1, 'off');
-        xlabel(ax1, 'q (1/Å)');
-        ylabel(ax1, 'Γ (meV)');
+        xlabel(ax1, 'q (1/Å)'); ylabel(ax1, 'Γ (meV)');
         title(ax1, 'Linewidth Γ vs Momentum');
-        legend(ax1, 'Location', 'best');
-        grid(ax1, 'on');
+        legend(ax1, 'Location', 'best'); grid(ax1, 'on');
 
         % --- Subplot 2: Γ(E) ---
-        ax2 = subplot(2, 1, 2, 'Parent', fig);
+        ax2 = subplot(3, 2, 2, 'Parent', fig);
         hold(ax2, 'on');
         for b = 1:n_branches
             br = branches{b};
+            if isempty(br), continue; end
             col = branch_colors(mod(b-1, size(branch_colors,1))+1, :);
-            scatter(ax2, br(:,2), br(:,3), 40, col, 'filled', ...
-                'MarkerFaceAlpha', 0.7, ...
-                'DisplayName', sprintf('B%d: mean Γ = %.0f meV', b, mean(br(:,3))));
+            lbl = sprintf('B%d: Γ̄=%.0f meV', b, mean(br(:,3)));
+
+            if has_gamma_ci && size(br, 2) >= 9 && ~all(isnan(br(:,8)))
+                G_err = (br(:,9) - br(:,8)) / 2;
+                G_err(isnan(G_err)) = 0;
+                errorbar(ax2, br(:,2), br(:,3), G_err, ...
+                    'o', 'Color', col, 'MarkerFaceColor', col, ...
+                    'MarkerSize', 4, 'LineWidth', 0.8, 'CapSize', 3, ...
+                    'DisplayName', lbl);
+            else
+                scatter(ax2, br(:,2), br(:,3), 40, col, 'filled', ...
+                    'MarkerFaceAlpha', 0.7, 'DisplayName', lbl);
+            end
         end
         hold(ax2, 'off');
-        xlabel(ax2, 'ω_p (meV)');
-        ylabel(ax2, 'Γ (meV)');
+        xlabel(ax2, 'ω_p (meV)'); ylabel(ax2, 'Γ (meV)');
         title(ax2, 'Linewidth Γ vs Peak Energy');
-        legend(ax2, 'Location', 'best');
-        grid(ax2, 'on');
+        legend(ax2, 'Location', 'best'); grid(ax2, 'on');
 
-        local_log_operation('Show Γ analysis');
+        % --- Subplot 3: Amplitude(q) ---
+        ax3 = subplot(3, 2, 3, 'Parent', fig);
+        hold(ax3, 'on');
+        for b = 1:n_branches
+            br = branches{b};
+            if isempty(br), continue; end
+            col = branch_colors(mod(b-1, size(branch_colors,1))+1, :);
+            lbl = sprintf('B%d', b);
+
+            if has_amp_ci && size(br, 2) >= 11 && ~all(isnan(br(:,10)))
+                A_err = (br(:,11) - br(:,10)) / 2;
+                A_err(isnan(A_err)) = 0;
+                errorbar(ax3, br(:,1), br(:,5), A_err, ...
+                    'o', 'Color', col, 'MarkerFaceColor', col, ...
+                    'MarkerSize', 4, 'LineWidth', 0.8, 'CapSize', 3, ...
+                    'DisplayName', lbl);
+            else
+                scatter(ax3, br(:,1), br(:,5), 40, col, 'filled', ...
+                    'MarkerFaceAlpha', 0.7, 'DisplayName', lbl);
+            end
+        end
+        hold(ax3, 'off');
+        xlabel(ax3, 'q (1/Å)'); ylabel(ax3, 'Amplitude (a.u.)');
+        title(ax3, 'Peak Amplitude vs Momentum');
+        legend(ax3, 'Location', 'best'); grid(ax3, 'on');
+
+        % --- Subplot 4: Amplitude(E) ---
+        ax4 = subplot(3, 2, 4, 'Parent', fig);
+        hold(ax4, 'on');
+        for b = 1:n_branches
+            br = branches{b};
+            if isempty(br), continue; end
+            col = branch_colors(mod(b-1, size(branch_colors,1))+1, :);
+            lbl = sprintf('B%d', b);
+
+            if has_amp_ci && size(br, 2) >= 11 && ~all(isnan(br(:,10)))
+                A_err = (br(:,11) - br(:,10)) / 2;
+                A_err(isnan(A_err)) = 0;
+                errorbar(ax4, br(:,2), br(:,5), A_err, ...
+                    'o', 'Color', col, 'MarkerFaceColor', col, ...
+                    'MarkerSize', 4, 'LineWidth', 0.8, 'CapSize', 3, ...
+                    'DisplayName', lbl);
+            else
+                scatter(ax4, br(:,2), br(:,5), 40, col, 'filled', ...
+                    'MarkerFaceAlpha', 0.7, 'DisplayName', lbl);
+            end
+        end
+        hold(ax4, 'off');
+        xlabel(ax4, 'ω_p (meV)'); ylabel(ax4, 'Amplitude (a.u.)');
+        title(ax4, 'Peak Amplitude vs Energy');
+        legend(ax4, 'Location', 'best'); grid(ax4, 'on');
+
+        % --- Row 3: Raw Peak Height A(q) log-log with power law ---
+        % Uses col 12 = raw (non-areanorm) peak height from original data
+        ax5 = subplot(3, 2, 5, 'Parent', fig);
+        hold(ax5, 'on');
+        for b = 1:n_branches
+            br = branches{b};
+            if isempty(br), continue; end
+            col = branch_colors(mod(b-1, size(branch_colors,1))+1, :);
+
+            q_abs = abs(br(:,1));
+            if size(br, 2) >= 12 && ~all(isnan(br(:,12)))
+                A_raw = br(:,12);
+                src_label = 'raw';
+            else
+                A_raw = br(:,5);
+                src_label = 'model';
+            end
+            valid = q_abs > 0 & A_raw > 0 & isfinite(A_raw);
+            if sum(valid) < 2, continue; end
+
+            loglog(ax5, q_abs(valid), A_raw(valid), 'o', ...
+                'Color', col, 'MarkerFaceColor', col, ...
+                'MarkerSize', 5, 'DisplayName', sprintf('B%d (%s)', b, src_label));
+
+            log_q = log(q_abs(valid));
+            log_A = log(A_raw(valid));
+            P = polyfit(log_q, log_A, 1);
+            q_fit_line = linspace(min(q_abs(valid)), max(q_abs(valid)), 100);
+            loglog(ax5, q_fit_line, exp(P(2))*q_fit_line.^P(1), '--', ...
+                'Color', col, 'LineWidth', 1.5, ...
+                'DisplayName', sprintf('B%d: q^{%.1f}', b, P(1)));
+
+            q_median = median(q_abs(valid));
+            low_mask = q_abs(valid) <= q_median;
+            high_mask = q_abs(valid) > q_median;
+            if sum(low_mask) >= 3 && sum(high_mask) >= 3
+                P_lo = polyfit(log_q(low_mask), log_A(low_mask), 1);
+                P_hi = polyfit(log_q(high_mask), log_A(high_mask), 1);
+                q_lo = linspace(min(q_abs(valid)), q_median, 50);
+                q_hi = linspace(q_median, max(q_abs(valid)), 50);
+                loglog(ax5, q_lo, exp(P_lo(2))*q_lo.^P_lo(1), ':', ...
+                    'Color', col*0.6, 'LineWidth', 1.2, ...
+                    'DisplayName', sprintf('lo: q^{%.1f}', P_lo(1)));
+                loglog(ax5, q_hi, exp(P_hi(2))*q_hi.^P_hi(1), '-.', ...
+                    'Color', col*0.6+0.4, 'LineWidth', 1.2, ...
+                    'DisplayName', sprintf('hi: q^{%.1f}', P_hi(1)));
+            end
+        end
+        hold(ax5, 'off');
+        xlabel(ax5, 'q (Å^{-1})'); ylabel(ax5, 'Peak Height (a.u.)');
+        title(ax5, 'Raw Peak Height A(q) — log-log (no areanorm)');
+        legend(ax5, 'Location', 'best', 'FontSize', 7); grid(ax5, 'on');
+
+        % Subplot 6: Quality factor Q = E₀/Γ vs q
+        ax6 = subplot(3, 2, 6, 'Parent', fig);
+        hold(ax6, 'on');
+        for b = 1:n_branches
+            br = branches{b};
+            if isempty(br), continue; end
+            col = branch_colors(mod(b-1, size(branch_colors,1))+1, :);
+            Q_factor = br(:,2) ./ br(:,3);
+            scatter(ax6, br(:,1), Q_factor, 30, col, 'filled', ...
+                'MarkerFaceAlpha', 0.7, ...
+                'DisplayName', sprintf('B%d: Q̄=%.1f', b, mean(Q_factor)));
+        end
+        hold(ax6, 'off');
+        xlabel(ax6, 'q (Å^{-1})'); ylabel(ax6, 'Q = ω_p / Γ');
+        title(ax6, 'Plasmon Quality Factor vs q');
+        legend(ax6, 'Location', 'best'); grid(ax6, 'on');
+
+        sgtitle(fig, sprintf('Γ, Amplitude & Quality Factor (%d branches, %d peaks)', ...
+            n_branches, size(peaks, 1)), 'FontSize', 14);
+
+        local_log_operation('Show Γ & Amplitude analysis');
     end
 
 
@@ -2345,16 +3056,25 @@ end
 
         hold(ax, "on");
         if ~isempty(state.manual_branches)
-            branch_colors = {[0.9 0.15 0.15], [0.15 0.45 0.9], [0.85 0.65 0.0]};
-            branch_names = {'branch 1 (low E)', 'branch 2 (mid E)', 'branch 3 (high E)'};
+            branch_colors = {[0.9 0.15 0.15], [0.15 0.45 0.9], [0.85 0.65 0.0], [0.6 0.2 0.8], [0.9 0.6 0.1]};
             for bi = 1:numel(state.manual_branches)
                 bpts = state.manual_branches{bi};
                 if isempty(bpts), continue; end
                 bc = branch_colors{min(bi, numel(branch_colors))};
-                bn = branch_names{min(bi, numel(branch_names))};
-                scatter(ax, bpts(:,1), bpts(:,2), 30, bc, 'filled', ...
-                    'MarkerFaceAlpha', 0.7, ...
-                    'DisplayName', bn);
+                bn = sprintf('Branch %d', bi);
+
+                if size(bpts, 2) >= 7 && ~all(isnan(bpts(:,6)))
+                    E_err = (bpts(:,7) - bpts(:,6)) / 2;
+                    E_err(isnan(E_err)) = 0;
+                    errorbar(ax, bpts(:,1), bpts(:,2), E_err, ...
+                        'o', 'Color', bc, 'MarkerFaceColor', bc, ...
+                        'MarkerSize', 4, 'LineWidth', 0.8, 'CapSize', 3, ...
+                        'DisplayName', bn);
+                else
+                    scatter(ax, bpts(:,1), bpts(:,2), 30, bc, 'filled', ...
+                        'MarkerFaceAlpha', 0.7, ...
+                        'DisplayName', bn);
+                end
             end
         elseif ~isempty(state.manual_points)
             pts = sortrows(state.manual_points, 1);
@@ -2366,16 +3086,23 @@ end
 
         % Re-draw stored model fit curves
         if ~isempty(state.fitResults)
-            fit_colors = {[0.8 0.0 0.4], [0.0 0.4 0.8], [0.7 0.5 0.0]};
+            fit_colors = {[0.8 0.0 0.4], [0.0 0.4 0.8], [0.7 0.5 0.0], [0.4 0.1 0.6], [0.8 0.5 0.0]};
             for fi = 1:numel(state.fitResults)
                 fr = state.fitResults{fi};
                 if isempty(fr), continue; end
                 fc = fit_colors{min(fi, numel(fit_colors))};
+
+                if isfield(fr, 'model_label')
+                    lbl = sprintf('Fit B%d: %s  R²=%.3f', fi, fr.model_label, fr.R_squared);
+                elseif isfield(fr, 'rho0')
+                    lbl = sprintf('Fit B%d: ρ₀=%.1fÅ  E_f=%.0fmeV', fi, fr.rho0, fr.E_flat_meV);
+                else
+                    lbl = sprintf('Fit B%d: R²=%.3f', fi, fr.R_squared);
+                end
+
                 plot(ax, fr.q_fit, fr.E_fit, '-', ...
                     'Color', fc, 'LineWidth', 2.5, ...
-                    'DisplayName', sprintf( ...
-                        'Fit B%d: ρ₀=%.1fÅ  E_f=%.0fmeV', ...
-                        fi, fr.rho0, fr.E_flat_meV));
+                    'DisplayName', lbl);
             end
         end
 
@@ -2465,6 +3192,35 @@ end
                 state.manual_points(end+1, :) = [abs_q, energy_value];
                 ui.PtsLabel.Text = sprintf("%d pts", size(state.manual_points, 1));
                 local_update_all_views();
+            catch ME
+                local_show_error(ME, false);
+            end
+            return
+        end
+
+        % --- Guess picking mode: click on spectrum to add peak position ---
+        if state.guessPickArmed
+            try
+                current_point = ui.SingleAxes.CurrentPoint;
+                energy_value = round(current_point(1, 1));
+                if energy_value > 0
+                    % Append to GuessField
+                    existing = strtrim(ui.GuessField.Value);
+                    if isempty(existing)
+                        ui.GuessField.Value = sprintf('%d', energy_value);
+                    else
+                        ui.GuessField.Value = sprintf('%s, %d', existing, energy_value);
+                    end
+                    % Mark on plot
+                    ax = ui.SingleAxes;
+                    hold(ax, 'on');
+                    yl = ylim(ax);
+                    plot(ax, [energy_value energy_value], yl, '--', ...
+                        'Color', [0.9 0.2 0.2 0.6], 'LineWidth', 1.5, ...
+                        'Tag', 'guess_marker');
+                    hold(ax, 'off');
+                    ui.SeedInfoLabel.Text = sprintf('Picked: %s', ui.GuessField.Value);
+                end
             catch ME
                 local_show_error(ME, false);
             end
@@ -3283,22 +4039,41 @@ end
         energy_axis = double(qe_in.energy_meV(:));
         norm_min = ui.AreaNormMinField.Value;
         norm_max = ui.AreaNormMaxField.Value;
-        norm_mask = energy_axis >= norm_min & energy_axis <= norm_max;
-        if ~any(norm_mask)
-            norm_mask = true(size(energy_axis));
-        end
-        norm_energy = energy_axis(norm_mask);
-
         intensity = double(qe_in.intensity);
-        for qi = 1:size(intensity, 2)
-            window_spec = max(intensity(norm_mask, qi), 0);
-            if numel(norm_energy) > 1
-                area = trapz(norm_energy, window_spec);
-            else
-                area = sum(window_spec);
+        method = char(ui.NormMethodDropdown.Value);
+
+        if strcmpi(method, 'ZLP Peak')
+            % ZLP Peak normalization: divide by ZLP peak height.
+            % Preserves q-dependent spectral weight for A(q) studies.
+            zlp_mask = energy_axis >= norm_min & energy_axis <= norm_max;
+            if ~any(zlp_mask)
+                [~, nearest] = min(abs(energy_axis));
+                zlp_mask(nearest) = true;
             end
-            if isfinite(area) && area > eps
-                intensity(:, qi) = intensity(:, qi) ./ area;
+            for qi = 1:size(intensity, 2)
+                zlp_peak = max(intensity(zlp_mask, qi));
+                if isfinite(zlp_peak) && zlp_peak > eps
+                    intensity(:, qi) = intensity(:, qi) ./ zlp_peak;
+                end
+            end
+        else
+            % Area normalization: divide by integrated spectral weight.
+            % WARNING: destroys q-dependent A(q) scaling information.
+            norm_mask = energy_axis >= norm_min & energy_axis <= norm_max;
+            if ~any(norm_mask)
+                norm_mask = true(size(energy_axis));
+            end
+            norm_energy = energy_axis(norm_mask);
+            for qi = 1:size(intensity, 2)
+                window_spec = max(intensity(norm_mask, qi), 0);
+                if numel(norm_energy) > 1
+                    area = trapz(norm_energy, window_spec);
+                else
+                    area = sum(window_spec);
+                end
+                if isfinite(area) && area > eps
+                    intensity(:, qi) = intensity(:, qi) ./ area;
+                end
             end
         end
         qe_out.intensity = intensity;
@@ -3306,35 +4081,29 @@ end
 
 
     function qe_out = local_apply_bg_subtraction(qe_in)
-        % EELS background subtraction with dual-window fitting and
-        % safety cap to prevent over-subtraction at high |q|.
+        % EELS background subtraction with single low-energy window fitting.
         %
-        % Three key improvements over the original:
-        %   1. Dual-window fit: uses both a low-E window and a high-E tail
-        %      to anchor the power-law, preventing wild extrapolation.
-        %   2. Safety cap: background is limited to at most 90% of the
-        %      smoothed local signal — prevents complete erasure at high |q|.
-        %   3. No forced clip to zero: negative residuals are preserved
-        %      to maintain honest noise statistics.
+        % Uses ONLY the low-energy ZLP tail region [50, win1_hi] as anchor.
+        % The high-energy window was removed because it can contain
+        % interband transitions or plasmon tails, contaminating the
+        % background estimate and causing over-subtraction.
+        %
+        % Safety cap: background is limited to at most 90% of the
+        % smoothed local signal — prevents complete erasure at high |q|.
         qe_out = qe_in;
         energy_axis = double(qe_in.energy_meV(:));
         intensity = double(qe_in.intensity);
         method = char(ui.BgMethodDropdown.Value);
 
-        % --- Define fit windows ---
-        % Low-energy window: [fit_lo, win1_hi] — between ZLP tail and loss features
+        % --- Define fit window ---
+        % Low-energy window only: [fit_lo, win1_hi]
+        % Between ZLP tail and the onset of loss features.
+        % This region is physically clean (no plasmon/interband signal).
         fit_lo = 50;
-        norm_min = ui.AreaNormMinField.Value;   % default 200 meV
-        win1_hi = max(fit_lo + 10, norm_min);
+        win1_hi = 300;  % conservative upper bound below typical Bi loss onset
 
-        % High-energy window: [win2_lo, E_max] — above main loss features
-        norm_max = ui.AreaNormMaxField.Value;    % default 3800 meV
-        E_max = max(energy_axis);
-        win2_lo = max(norm_max, E_max * 0.85);  % tail 15% of the range
-
-        % Combine dual windows
-        fit_mask = (energy_axis >= fit_lo & energy_axis <= win1_hi) | ...
-                   (energy_axis >= win2_lo & energy_axis <= E_max);
+        % Single window - low-energy ZLP tail only
+        fit_mask = energy_axis >= fit_lo & energy_axis <= win1_hi;
 
         if nnz(fit_mask) < 5
             return
