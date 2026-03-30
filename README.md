@@ -1,164 +1,210 @@
-# q-EELS Dispersion Fitting Toolbox
+# q-EELS Plasmon Dispersion Toolbox
 
-A MATLAB-based interactive toolbox for **visualizing and fitting dispersion relations** from momentum-resolved Electron Energy Loss Spectroscopy (q-EELS) data.
+面向课题组的 MATLAB 工具箱，用于从 **Nion 原始 4D-EELS 数据**（或已预处理的 eq3D 数据）中提取等离激元色散关系。
 
-Features include Lorentz peak fitting on individual spectra, automated batch fitting across all momentum channels, dispersion curve extraction, and publication-quality figure export.
+支持完整的数据处理链：原始数据导入 → 帧累加 → q 裁切 → ZLP 对齐 → 能量标定 → 交互式分析 → 色散拟合 → 出图。
 
 ---
 
-## Quick Start
+## 谁需要这个工具箱
+
+- 做 q-EELS（动量分辨 EELS）实验，需要从 q-E 图中提取等离激元色散关系
+- 数据来自 Nion 电镜，格式为 `.npy + .json` 或 Nion 4D Toolbox 处理后的 `EELS4D` `.mat` 文件
+- 已有课题组 Nion 工具箱处理过的 `eq3D.mat` 数据
+
+---
+
+## 快速开始
+
+### 方式一：从原始 Nion 数据开始（推荐）
 
 ```matlab
-% Launch with preprocessed eq3D data
-interactive_qe_browser("path/to/eq3D.mat");
+% 直接传入 .npy 文件路径
+interactive_qe_browser("path/to/Sequence EELS Image 273.npy")
 
-% Launch with previously saved operation history
-interactive_qe_browser("path/to/eq3D.mat", "path/to/op_history.mat");
+% 或传入 Nion 4D Toolbox 预对齐的 .mat（含 EELS4D 对象）
+interactive_qe_browser("path/to/Sequence EELS Image 273_Align.mat")
 ```
 
-**Input format**: `eq3D.mat` file containing a 3D intensity matrix (`eq3D`) and momentum resolution (`dq`).
+首次加载时，工具箱会自动完成以下预处理：
+1. **帧累加**：将 N 帧序列（如 300 帧）求和
+2. **q 裁切**：自动检测有效 q 范围（或弹出对话框手动设置）
+3. **ZLP 对齐**：移植自 Nion 4D Toolbox 的 `Align4DEELS` 算法
+4. **能量标定**：从 `.json` 元数据或 `EELS4D.ene` 构建物理能量轴
+5. **缓存**：处理结果自动保存为 `eq3D_processed.mat`，下次加载秒开
 
----
+### 方式二：从已有 eq3D 数据开始
 
-## Features
-
-- **Four-panel interactive GUI**: q-E heatmap, single spectrum viewer, comparison map, dispersion plot
-- **Lorentz peak fitting**: Drude-Lorentz model with power-law background on individual spectra
-- **Automated batch fitting**: fit all q-channels at once with initial peak guesses
-- **Dispersion extraction**: manual peak picking, branch splitting, and model fitting
-- **Linewidth analysis**: Γ(q) and Γ(E) visualization in a separate window
-- **Signal processing**: Gaussian/Savitzky-Golay smoothing, Wiener denoising, Lucy-Richardson deconvolution
-- **On-axis separation**: symmetric off-axis referencing to isolate excitation signals from ZLP tails
-- **Background subtraction**: Power-law, ExpPoly3, and Pearson models
-- **Export**: PNG (300 dpi) + vector PDF with selectable aspect ratios
-- **Operation history**: full undo/redo, save/load session history
-
----
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────┐
-│            interactive_qe_browser.m              │
-│        (GUI: visualization · fitting · export)   │
-├──────────┬───────────────┬───────────────────────┤
-│ Data I/O │  Analysis     │  Fitting              │
-├──────────┼───────────────┼───────────────────────┤
-│load_qe_  │build_         │fit_loss_function      │
-│dataset   │comparison_qe  │  (Lorentz + BG)       │
-│make_qe_  │               │fit_quasi2d_plasmon    │
-│struct    │               │  (dispersion model)   │
-└──────────┴───────────────┴───────────────────────┘
-```
-
----
-
-## Core Functions
-
-| Function | Description |
-|----------|-------------|
-| `load_qe_dataset` | Load `eq3D.mat` and build standardized q-E data structure with automatic q-axis calibration |
-| `make_qe_struct` | Construct q-E struct from intensity matrix, energy axis, and dq |
-| `build_comparison_qe` | On-axis signal separation using symmetric off-axis reference bands |
-| `fit_loss_function` | Single-spectrum Lorentz fitting with power-law background model |
-| `fit_quasi2d_plasmon` | Dispersion relation fitting with user-defined analytical model |
-
----
-
-## GUI Layout
-
-| Panel | Position | Description |
-|-------|----------|-------------|
-| **q-E Heatmap** | Top-left | Momentum-energy map; click to select q-channel |
-| **Spectrum** | Top-right | Single spectrum with Lorentz fit overlay |
-| **Comparison** | Bottom-left | Normalized off-axis signal map |
-| **Dispersion** | Bottom-right | Extracted dispersion points + fitted curve |
-
----
-
-## Workflow
-
-### 1. Load & Configure
 ```matlab
-interactive_qe_browser("eq3D.mat");
-% Set q range, energy range, smoothing parameters
+% 传入 eq3D.mat 文件
+interactive_qe_browser("path/to/eq3D.mat")
+
+% 传入文件夹——自动查找 eq3D_processed.mat 或 eq3D.mat
+interactive_qe_browser("path/to/data_folder/")
 ```
 
-### 2. Preprocess
-```
-Optional: enable Denoise / BG Sub / Deconv / Area Norm
-Set reference q-range → click Build Views for on-axis separation
-```
+### 方式三：恢复之前的分析会话
 
-### 3. Fit Spectra
-```
-Click on q-E map to select a channel
-→ Enter peak guesses (e.g., "800,2500") → Fit Spectrum
-→ Accept Fit to add peaks to dispersion plot
-Or: Auto Fit ω(q) for batch fitting across all channels
-```
-
-### 4. Fit Dispersion
-```
-Split branches → Fit Model → extract model parameters
-Show Γ → analyze linewidth trends
-```
-
-### 5. Export
-```
-Select aspect ratio → 📷 Export → choose panels
-→ PNG (300 dpi) + PDF (vector) output
+```matlab
+% 加载数据 + 恢复操作历史
+interactive_qe_browser("path/to/eq3D.mat", "path/to/op_history.mat")
 ```
 
 ---
 
-## Fitting Models
+## 与 Nion 工具箱的关系
 
-### Loss Function (Single Spectrum)
+本工具箱**不替代** Nion EELS 工具箱，而是接在它的下游：
+
+```
+  Nion 采集                  Nion 4D Toolbox（可选）           本工具箱
+┌──────────┐    .npy+.json   ┌───────────────────┐  _Align.mat  ┌─────────────────────┐
+│ Nion     │ ─────────────→  │ readNPYtoEELS     │ ──────────→  │                     │
+│ Swift    │                 │ Align4DEELS       │              │  load_raw_session    │
+│          │                 │ Denoise4DEELS     │              │  (帧累加+对齐+标定)  │
+└──────────┘                 │ Squeeze4DEELS     │              │         ↓            │
+                             └───────────────────┘              │  interactive_qe_     │
+                                                                │  browser             │
+  如果你已经有 eq3D.mat：                                        │  (交互式分析)       │
+     dealTBG 或其他脚本生成 ─────────────────────────────────→  │         ↓            │
+                                                                │  色散拟合 + 出图     │
+                                                                └─────────────────────┘
+```
+
+**关键区别**：
+- Nion 工具箱：专注于 4D 数据的对齐、去噪、q 畸变校正、降维（4D → 3D）
+- 本工具箱：专注于 2D q-E 谱的**物理分析**——峰拟合、色散提取、模型拟合
+
+**你可以跳过 Nion 工具箱**：直接将 `.npy` 传给本工具箱，内置的 `load_raw_session` 已经移植了核心的 ZLP 对齐算法。
+
+---
+
+## 完整工作流
+
+### Step 1：加载数据
+
+点击 GUI 左上角的 **「Load Data」** 按钮，支持三种数据格式：
+
+| 格式 | 文件类型 | 说明 |
+|------|----------|------|
+| **原始 Nion** | `.npy` + `.json` | 从 Nion Swift 直接导出的序列数据 |
+| **Nion 4D** | `_Align.mat` | 经 `Align4DEELS` 对齐后的 `EELS4D` 对象 |
+| **eq3D** | `eq3D.mat` | 已预处理的 2D (E × q) 矩阵 |
+
+加载时自动识别格式，首次处理的结果会被缓存（`eq3D_processed.mat`），后续加载瞬间完成。
+
+### Step 2：预处理
+
+在 GUI 控件区可按需启用：
+
+- **Denoise**：高斯平滑 / Savitzky-Golay 滤波 / Wiener 去噪
+- **Deconv**：Lucy-Richardson 反卷积（需要 ZLP 参考）
+- **BG Sub**：背景扣除（Power-law / ExpPoly3 / Pearson）
+- **Build Views**：用对称的离轴参考带重建在轴信号
+
+### Step 3：峰拟合
+
+1. **手动拟合**：在 q-E 热图上点击选择 q 通道 → 在 Guesses 栏输入峰位（如 `800,2500`）→ Fit Model
+2. **自动拟合**：点击 **Auto Fit ω(q)** 批量拟合所有 q 通道
+
+拟合模型为 Drude-Lorentz 损失函数：
 
 $$S(E) = B_0 \cdot E^{-\alpha} + \sum_{i=1}^{N} \frac{A_i \cdot E \cdot \Gamma_i}{(E^2 - \omega_{p,i}^2)^2 + E^2 \cdot \Gamma_i^2}$$
 
-- Power-law background models the ZLP tail
-- Each Lorentz peak is parameterized by ($\omega_p$, $\Gamma$, $A$)
+### Step 4：色散拟合
 
-### Dispersion Model
+拟合好各 q 通道的峰位后：
 
-The default dispersion model follows [da Jornada et al., *Nat. Commun.* **11**, 1013 (2020)]:
+1. **Split** 分支（将等离激元峰与带间跃迁分开）
+2. **Fit Dispersion** → 选择色散模型
+3. **Show Γ** → 分析线宽 Γ(q)、Γ(E)、幅度 A(q) 等
 
-$$E(q) = \sqrt{\frac{A \cdot |q|}{\varepsilon_{\text{bg}} + \rho_0 \cdot |q|}}$$
+内置色散模型包括：
 
-This can be replaced with any user-defined analytical dispersion relation.
+| 模型 | 公式 | 适用场景 |
+|------|------|----------|
+| Quasi-2D Plasmon | $E = \sqrt{\frac{A|q|}{\varepsilon_{bg} + \rho_0|q|}}$ | 准二维金属薄膜 |
+| Linear | $E = v \cdot q + E_0$ | 声学声子/线性色散 |
+| Power Law | $E = A \cdot q^n$ | 通用拟合 |
+
+### Step 5：出图
+
+点击 **Export** 按钮，支持选择面板和宽高比，输出 300 dpi PNG + 矢量 PDF。
 
 ---
 
-## Requirements
+## 文件结构
+
+```
+核心文件
+├── interactive_qe_browser.m     # 主交互式 GUI（4200+ 行）
+├── load_qe_dataset.m            # 数据加载路由（自动识别格式）
+├── make_qe_struct.m             # q-E 数据结构构造器
+├── build_comparison_qe.m        # 在轴信号分离（对称离轴参考）
+├── fit_loss_function.m          # 单谱 Drude-Lorentz 拟合
+├── fit_quasi2d_plasmon.m        # 色散模型拟合
+│
+原始数据导入
+├── read_npy.m                   # NPY 文件读取器（自包含）
+├── load_npy_session.m           # NPY 导入流水线
+├── load_raw_session.m           # 统一原始数据导入（.npy + 4D .mat）
+│
+批处理与高级分析
+├── analyze_dispersion.m         # 自动化批处理脚本
+├── dispersion_models.m          # 色散关系模型库
+├── fit_dispersion_generic.m     # 通用色散拟合接口
+├── peak_models.m                # 峰型模型接口
+├── propagate_seed_peaks.m       # 峰位跟踪/传播
+│
+└── references/                  # 参考文献
+```
+
+---
+
+## 数据文件说明
+
+数据文件（`.mat`, `.npy`, `.json` 等）不包含在 Git 仓库中。需要在本地放置：
+
+```
+├── your_sample/
+│   ├── Sequence EELS Image XXX.npy      # 原始 Nion 数据
+│   ├── Sequence EELS Image XXX.json     # 元数据（能量标定等）
+│   ├── eq3D.mat                         # 已有的预处理数据（可选）
+│   └── eq3D_processed.mat              # 本工具箱自动生成的缓存
+```
+
+---
+
+## dq（动量分辨率）标定
+
+q 轴的物理标定依赖 Nion 的离焦设置：
+
+| 离焦 | dq (Å⁻¹/pixel) | 路径关键字 |
+|------|-----------------|-----------|
+| 20w (200 μm) | 0.0025 | 路径含 `20w` |
+| 10w (100 μm) | 0.005 | 路径含 `10w` |
+
+如果路径中没有离焦信息，GUI 会弹出对话框让你手动输入。也可以在 GUI 控件区的 **Ovr dq** 栏直接覆盖。
+
+---
+
+## 环境要求
 
 - **MATLAB R2024b+**
-- Optimization Toolbox
-- Signal Processing Toolbox
+- Optimization Toolbox（拟合必需）
+- Signal Processing Toolbox（去噪、滤波）
+- **不依赖** Nion EELS 工具箱（原始数据导入已内置）
 
 ---
 
-## File Structure
+## 引用
 
-```
-├── interactive_qe_browser.m   # Main interactive GUI
-├── load_qe_dataset.m          # Data loading
-├── make_qe_struct.m           # q-E struct constructor
-├── build_comparison_qe.m      # On-axis signal separation
-├── fit_loss_function.m        # Lorentz + power-law fitting
-├── fit_quasi2d_plasmon.m      # Dispersion model fitting
-└── references/                # Reference literature
-```
+如果本工具箱对你的研究有帮助，请引用：
+
+> da Jornada, F. H., Xian, L., Rubio, A., & Louie, S. G. (2020). Universal slow plasmons and giant field enhancement in atomically thin quasi-two-dimensional metals. *Nature Communications*, **11**, 1013.
 
 ---
 
 ## License
 
-This project is provided for academic and research use.
-
-## Citation
-
-If you use this toolbox in your research, please cite:
-
-> da Jornada, F. H., Xian, L., Rubio, A., & Louie, S. G. (2020). Universal slow plasmons and giant field enhancement in atomically thin quasi-two-dimensional metals. *Nature Communications*, **11**, 1013.
+This project is provided for academic and research use within the group.
