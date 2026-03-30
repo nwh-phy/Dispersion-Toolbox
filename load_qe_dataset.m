@@ -22,15 +22,20 @@ end
 
 [source_path, file_type] = local_resolve_source(string(path));
 
-if strcmp(file_type, 'npy')
-    % Route to raw import pipeline
-    dataset = load_raw_session(char(source_path), ...
-        q_crop=options.q_crop, dq_Ainv=dqOverride);
-    return
-end
-
-if strcmp(file_type, 'mat_raw')
-    % 4D .mat file — route to raw import pipeline
+if strcmp(file_type, 'npy') || strcmp(file_type, 'mat_raw')
+    % Check for cached processed result first
+    [raw_dir, ~, ~] = fileparts(char(source_path));
+    cache_path = fullfile(raw_dir, 'eq3D_processed.mat');
+    if exist(cache_path, 'file') == 2
+        cache_info = dir(cache_path);
+        raw_info = dir(char(source_path));
+        if cache_info.datenum >= raw_info.datenum
+            fprintf('  Using cached eq3D_processed.mat (newer than raw)\n');
+            dataset = load_qe_dataset(cache_path, dqOverride);
+            return
+        end
+    end
+    % No cache or stale — process raw data
     dataset = load_raw_session(char(source_path), ...
         q_crop=options.q_crop, dq_Ainv=dqOverride);
     return
@@ -76,22 +81,53 @@ candidate = char(path);
 
 % Direct file paths
 if exist(candidate, "file") == 2
-    [~, ~, ext] = fileparts(candidate);
+    [fdir, fname, ext] = fileparts(candidate);
     if strcmpi(ext, ".mat")
+        % Fast path: if a processed cache exists alongside, skip classification
+        cache_path = fullfile(fdir, 'eq3D_processed.mat');
+        if exist(cache_path, 'file') == 2 && ~strcmp(fname, 'eq3D_processed')
+            cache_info = dir(cache_path);
+            raw_info = dir(candidate);
+            if cache_info.datenum >= raw_info.datenum
+                source_path = string(cache_path);
+                file_type = 'mat_eq3d';
+                return
+            end
+        end
         % Detect: eq3D (2D) vs raw 4D .mat
         mat_type = local_classify_mat(candidate);
         source_path = string(candidate);
         file_type = mat_type;  % 'mat_eq3d' or 'mat_raw'
         return
     elseif strcmpi(ext, ".npy")
+        % Fast path: check for cache
+        cache_path = fullfile(fdir, 'eq3D_processed.mat');
+        if exist(cache_path, 'file') == 2
+            npy_info = dir(candidate);
+            cache_info = dir(cache_path);
+            if cache_info.datenum >= npy_info.datenum
+                source_path = string(cache_path);
+                file_type = 'mat_eq3d';
+                return
+            end
+        end
         source_path = string(candidate);
         file_type = 'npy';
         return
     end
 end
 
-% Folder: look for eq3D.mat first, then .npy
+% Folder: look for processed cache first, then eq3D.mat, then .npy
 if isfolder(candidate)
+    % Cached result from raw import (highest priority)
+    processed_path = fullfile(candidate, "eq3D_processed.mat");
+    if exist(processed_path, "file") == 2
+        source_path = string(processed_path);
+        file_type = 'mat_eq3d';
+        fprintf('  Found cached processed data: eq3D_processed.mat\n');
+        return
+    end
+
     eq3d_path = fullfile(candidate, "eq3D.mat");
     if exist(eq3d_path, "file") == 2
         source_path = string(eq3d_path);
