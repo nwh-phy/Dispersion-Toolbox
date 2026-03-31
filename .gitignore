@@ -39,3 +39,10 @@ _agent/
 # Temp
 *.tmp
 ~$*
+tracked_files.txt
+
+# Experimental data directories (CONFIDENTIAL — never commit)
+20260120 Bi/
+graphene/
+docs/
+figures/
