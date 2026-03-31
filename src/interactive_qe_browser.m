@@ -440,6 +440,12 @@ end
         snap.areaNormMax = ui.AreaNormMaxField.Value;
         snap.bgSub = ui.BgSubCheckbox.Value;
         snap.bgMethod = char(ui.BgMethodDropdown.Value);
+        snap.bgWin1Lo = ui.BgWin1LoField.Value;
+        snap.bgWin1Hi = ui.BgWin1HiField.Value;
+        snap.bgDual = ui.BgDualCheckbox.Value;
+        snap.bgWin2Lo = ui.BgWin2LoField.Value;
+        snap.bgWin2Hi = ui.BgWin2HiField.Value;
+        snap.bgIter = ui.BgIterCheckbox.Value;
         snap.denoise = ui.DenoiseCheckbox.Value;
         snap.denoiseMethod = char(ui.DenoiseMethodDropdown.Value);
         snap.denoiseSigma = ui.DenoiseSigmaField.Value;
@@ -479,6 +485,14 @@ end
         ui.AreaNormMaxField.Value = snap.areaNormMax;
         ui.BgSubCheckbox.Value = snap.bgSub;
         ui.BgMethodDropdown.Value = snap.bgMethod;
+        if isfield(snap, 'bgWin1Lo')
+            ui.BgWin1LoField.Value = snap.bgWin1Lo;
+            ui.BgWin1HiField.Value = snap.bgWin1Hi;
+            ui.BgDualCheckbox.Value = snap.bgDual;
+            ui.BgWin2LoField.Value = snap.bgWin2Lo;
+            ui.BgWin2HiField.Value = snap.bgWin2Hi;
+            ui.BgIterCheckbox.Value = snap.bgIter;
+        end
         ui.DenoiseCheckbox.Value = snap.denoise;
         ui.DenoiseMethodDropdown.Value = snap.denoiseMethod;
         ui.DenoiseSigmaField.Value = snap.denoiseSigma;
@@ -1757,7 +1771,8 @@ end
     function local_plot_single_spectrum(qe)
         ax = ui.SingleAxes;
         local_clear_axes(ax);
-        qe = qe_preprocess(qe, local_preprocess_opts());
+        pp_opts = local_preprocess_opts();
+        qe = qe_preprocess(qe, pp_opts);
         [mask, energy_axis] = local_energy_mask(qe);
         q_index = state.selectedQIndex;
         raw_spectrum = double(qe.intensity(mask, q_index));
@@ -1775,19 +1790,126 @@ end
             display_values = max(display_values, eps);
         end
 
+        % --- BG overlay: get pre-BG spectrum and diagnostics ---
+        bg_diag_qi = [];
+        pre_bg_spectrum = [];
+        if pp_opts.do_bg_sub && strcmpi(mode_name, "display")
+            try
+                % Get the pre-BG spectrum (preprocess without BG sub)
+                pre_opts = pp_opts;
+                pre_opts.do_bg_sub = false;
+                pre_opts.do_deconv = false;  % also skip deconv for raw view
+                qe_raw = local_get_active_qe();
+                qe_pre = qe_preprocess(qe_raw, pre_opts);
+                pre_bg_spectrum = double(qe_pre.intensity(mask, q_index));
+
+                % Get diagnostics via second call with diag output
+                bg_opts_only = pre_opts;
+                bg_opts_only.do_bg_sub = true;
+                bg_opts_only.bg_method = pp_opts.bg_method;
+                bg_opts_only.bg_win_lo = pp_opts.bg_win_lo;
+                bg_opts_only.bg_win_hi = pp_opts.bg_win_hi;
+                bg_opts_only.bg_iterative = pp_opts.bg_iterative;
+                [~, bg_diag_all] = qe_preprocess(qe_pre, bg_opts_only);
+                if ~isempty(bg_diag_all) && q_index <= numel(bg_diag_all)
+                    bg_diag_qi = bg_diag_all(q_index);
+                end
+            catch
+            end
+        end
+
         hold(ax, "on");
         switch mode_name
             case "display"
-                if ~strcmpi(ui.SmoothingModeDropdown.Value, "off")
-                    plot_handles(end + 1) = plot(ax, energy_axis, display_raw, "-", ... %#ok<AGROW>
-                        "Color", [0.7 0.7 0.72], ...
-                        "LineWidth", 0.9, ...
-                        "DisplayName", "raw");
+                % --- Three-line BG overlay ---
+                if ~isempty(bg_diag_qi) && ~isempty(pre_bg_spectrum)
+                    % 1. Original pre-BG spectrum (blue)
+                    pre_bg_disp = pre_bg_spectrum;
+                    if strcmpi(y_scale, "log")
+                        pre_bg_disp = max(pre_bg_disp, eps);
+                    end
+                    plot_handles(end + 1) = plot(ax, energy_axis, pre_bg_disp, "-", ... %#ok<AGROW>
+                        "Color", [0.1 0.45 0.7], ...
+                        "LineWidth", 1.3, ...
+                        "DisplayName", "original");
+
+                    % 2. Background fit curve (red dashed)
+                    bg_curve = bg_diag_qi.bg_curve;
+                    bg_in_mask = bg_curve(mask);
+                    if strcmpi(y_scale, "log")
+                        bg_in_mask = max(bg_in_mask, eps);
+                    end
+                    plot_handles(end + 1) = plot(ax, energy_axis, bg_in_mask, "--", ... %#ok<AGROW>
+                        "Color", [0.85 0.24 0.24], ...
+                        "LineWidth", 1.4, ...
+                        "DisplayName", "BG fit");
+
+                    % 3. Subtracted signal (green)
+                    plot_handles(end + 1) = plot(ax, energy_axis, display_smooth, "-", ... %#ok<AGROW>
+                        "Color", [0.22 0.65 0.22], ...
+                        "LineWidth", 1.5, ...
+                        "DisplayName", "signal");
+
+                    % 4. Shade fit windows
+                    yl = [min([pre_bg_disp(:); display_smooth(:)]), ...
+                          max([pre_bg_disp(:); display_smooth(:)])];
+                    if yl(2) <= yl(1), yl(2) = yl(1) + 1; end
+                    win1 = pp_opts.bg_win_lo;
+                    fill(ax, [win1(1) win1(2) win1(2) win1(1)], ...
+                        [yl(1) yl(1) yl(2) yl(2)], ...
+                        [0.996 0.914 0.914], ...
+                        "EdgeColor", "none", "FaceAlpha", 0.5, ...
+                        "HandleVisibility", "off");
+                    if ~isempty(pp_opts.bg_win_hi)
+                        win2 = pp_opts.bg_win_hi;
+                        fill(ax, [win2(1) win2(2) win2(2) win2(1)], ...
+                            [yl(1) yl(1) yl(2) yl(2)], ...
+                            [0.996 0.914 0.914], ...
+                            "EdgeColor", "none", "FaceAlpha", 0.5, ...
+                            "HandleVisibility", "off");
+                    end
+
+                    % Move shading to back
+                    ch = allchild(ax);
+                    fills = findobj(ch, "Type", "patch");
+                    for fi = 1:numel(fills)
+                        uistack(fills(fi), "bottom");
+                    end
+
+                    % 5. Display diagnostics in FitInfoLabel
+                    diag_parts = {};
+                    if isfinite(bg_diag_qi.rsquare)
+                        diag_parts{end+1} = sprintf('R²=%.4f', bg_diag_qi.rsquare);
+                    end
+                    if isfinite(bg_diag_qi.rmse)
+                        diag_parts{end+1} = sprintf('RMSE=%.2g', bg_diag_qi.rmse);
+                    end
+                    if isfinite(bg_diag_qi.h_param)
+                        diag_parts{end+1} = sprintf('h=%.1f', bg_diag_qi.h_param);
+                    end
+                    if isfinite(bg_diag_qi.snr)
+                        diag_parts{end+1} = sprintf('SNR=%.1f', bg_diag_qi.snr);
+                    end
+                    if bg_diag_qi.iterations > 1
+                        diag_parts{end+1} = sprintf('iter=%d', bg_diag_qi.iterations);
+                    end
+                    if ~isempty(diag_parts)
+                        ui.FitInfoLabel.Text = sprintf('BG [%s]: %s', ...
+                            pp_opts.bg_method, strjoin(diag_parts, ' | '));
+                    end
+                else
+                    % No BG overlay — standard display
+                    if ~strcmpi(ui.SmoothingModeDropdown.Value, "off")
+                        plot_handles(end + 1) = plot(ax, energy_axis, display_raw, "-", ... %#ok<AGROW>
+                            "Color", [0.7 0.7 0.72], ...
+                            "LineWidth", 0.9, ...
+                            "DisplayName", "raw");
+                    end
+                    plot_handles(end + 1) = plot(ax, energy_axis, display_smooth, "-", ... %#ok<AGROW>
+                        "Color", [0.05 0.32 0.75], ...
+                        "LineWidth", 1.4, ...
+                        "DisplayName", "display");
                 end
-                plot_handles(end + 1) = plot(ax, energy_axis, display_smooth, "-", ... %#ok<AGROW>
-                    "Color", [0.05 0.32 0.75], ...
-                    "LineWidth", 1.4, ...
-                    "DisplayName", "display");
 
             case "background-subtracted"
                 plot_handles(end + 1) = plot(ax, energy_axis, display_raw, "-", ... %#ok<AGROW>
@@ -1823,7 +1945,11 @@ end
             "Interpreter", "none");
         ax.YScale = y_scale;
         xlim(ax, [energy_axis(1), energy_axis(end)]);
-        local_apply_y_limits(ax, [display_raw(:); display_smooth(:); display_values(:)]);
+        all_vals = [display_raw(:); display_smooth(:); display_values(:)];
+        if ~isempty(pre_bg_spectrum)
+            all_vals = [all_vals; pre_bg_spectrum(:)];
+        end
+        local_apply_y_limits(ax, all_vals);
         ax.ButtonDownFcn = @local_on_single_axes_clicked;
         for handle_idx = 1:numel(plot_handles)
             if isgraphics(plot_handles(handle_idx))
@@ -1831,7 +1957,8 @@ end
                 plot_handles(handle_idx).ButtonDownFcn = @local_on_single_axes_clicked;
             end
         end
-        if ~strcmpi(mode_name, "display") || ~strcmpi(ui.SmoothingModeDropdown.Value, "off")
+        if ~strcmpi(mode_name, "display") || ~strcmpi(ui.SmoothingModeDropdown.Value, "off") ...
+                || (~isempty(bg_diag_qi) && pp_opts.do_bg_sub)
             legend(ax, "Location", "best");
         end
     end
@@ -2850,6 +2977,15 @@ end
         opts.bg_method = char(ui.BgMethodDropdown.Value);
         opts.do_deconv = ui.DeconvCheckbox.Value;
         opts.deconv_iter = ui.DeconvIterField.Value;
+
+        % --- Enhanced background subtraction options ---
+        opts.bg_win_lo = [ui.BgWin1LoField.Value, ui.BgWin1HiField.Value];
+        if ui.BgDualCheckbox.Value
+            opts.bg_win_hi = [ui.BgWin2LoField.Value, ui.BgWin2HiField.Value];
+        else
+            opts.bg_win_hi = [];
+        end
+        opts.bg_iterative = ui.BgIterCheckbox.Value;
     end
 
 

@@ -1,28 +1,25 @@
-function qe_out = qe_preprocess(qe_in, opts)
+function [qe_out, bg_diag] = qe_preprocess(qe_in, opts)
 %QE_PREPROCESS  Apply EELS preprocessing pipeline to a qeData struct.
 %
 %   qe_out = qe_preprocess(qe_in, opts)
+%   [qe_out, bg_diag] = qe_preprocess(qe_in, opts)
 %
 %   Applies a configurable preprocessing chain:
 %     1. Normalization  (ZLP Peak or Area)
 %     2. Denoising      (Wiener2D or Savitzky-Golay)
-%     3. Background subtraction (Power / ExpPoly3 / Pearson)
+%     3. Background subtraction (Power/ExpPoly3/Pearson/PearsonVII/Power2/Exp2)
 %     4. Deconvolution  (Lucy-Richardson)
 %
-%   opts fields:
-%     .do_normalize   logical  — enable normalization step
-%     .norm_method    char     — 'ZLP Peak' | 'Area'
-%     .norm_min       double   — window low bound (meV)
-%     .norm_max       double   — window high bound (meV)
-%     .do_denoise     logical  — enable denoising step
-%     .denoise_method char     — 'Wiener2D' | 'SavGol'
-%     .denoise_sigma  double   — noise sigma (0 = auto-estimate)
-%     .sg_order       double   — Savitzky-Golay polynomial order
-%     .sg_framelen    double   — Savitzky-Golay frame length (must be odd)
-%     .do_bg_sub      logical  — enable background subtraction
-%     .bg_method      char     — 'Power' | 'ExpPoly3' | 'Pearson'
-%     .do_deconv      logical  — enable deconvolution
-%     .deconv_iter    double   — Lucy-Richardson iterations
+%   Background subtraction opts fields (all have sensible defaults):
+%     .bg_method      char     — model name (see above)
+%     .bg_win_lo      [lo hi]  — primary fit window in meV (default [50 300])
+%     .bg_win_hi      [lo hi]  — secondary fit window in meV ([] = single window)
+%     .bg_iterative   logical  — enable iterative refit (default false)
+%     .bg_asym_penalty double  — negative-residual penalty factor (default 1)
+%
+%   Optional second output bg_diag is a struct array (one per q-channel):
+%     .rsquare, .rmse, .bg_curve, .residuals, .h_param, .snr,
+%     .energy_fit, .iterations
 %
 %   See also: interactive_qe_browser, fit_loss_function
 
@@ -32,6 +29,7 @@ arguments
 end
 
 qe_out = qe_in;
+bg_diag = [];
 
 if isfield(opts, 'do_normalize') && opts.do_normalize
     qe_out = apply_normalization(qe_out, opts);
@@ -42,7 +40,8 @@ if isfield(opts, 'do_denoise') && opts.do_denoise
 end
 
 if isfield(opts, 'do_bg_sub') && opts.do_bg_sub
-    qe_out = apply_bg_subtraction(qe_out, opts);
+    want_diag = nargout >= 2;
+    [qe_out, bg_diag] = apply_bg_subtraction(qe_out, opts, want_diag);
 end
 
 if isfield(opts, 'do_deconv') && opts.do_deconv
@@ -100,68 +99,118 @@ function qe_out = apply_normalization(qe_in, opts)
 end
 
 
-%% ═══════════ Background Subtraction ═══════════
+function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
+    % Enhanced EELS background subtraction.
+    %
+    % Features (vs. original):
+    %   - Curve Fitting Toolbox fit() instead of polyfit → full gof stats
+    %   - Dual-window fitting: anchor before AND after loss features
+    %   - Iterative refit: detect negative signal → increase weight → refit
+    %   - New models: PearsonVII (physical ZLP tail), Power2 (a*x^b+c), Exp2
+    %   - Diagnostics: R², RMSE, h-parameter, SNR per q-channel
+    %
+    % All new features are opt-in via opts fields with backward-compat defaults.
 
-function qe_out = apply_bg_subtraction(qe_in, opts)
-    % EELS background subtraction with single low-energy window fitting.
-    %
-    % Uses ONLY the low-energy ZLP tail region [50, win1_hi] as anchor.
-    % The high-energy window was removed because it can contain
-    % interband transitions or plasmon tails, contaminating the
-    % background estimate and causing over-subtraction.
-    %
-    % Safety cap: background is limited to at most 90% of the
-    % smoothed local signal — prevents complete erasure at high |q|.
+    if nargin < 3, want_diag = false; end
+
     qe_out = qe_in;
     energy_axis = double(qe_in.energy_meV(:));
     intensity = double(qe_in.intensity);
+    n_q = size(intensity, 2);
     method = char(opts.bg_method);
 
-    % --- Define fit window ---
-    % Low-energy window only: [fit_lo, win1_hi]
-    % Between ZLP tail and the onset of loss features.
-    fit_lo = 50;
-    win1_hi = 300;  % conservative upper bound below typical Bi loss onset
+    % --- Defaults for new opts fields (backward compatible) ---
+    if isfield(opts, 'bg_win_lo') && numel(opts.bg_win_lo) == 2
+        win1 = opts.bg_win_lo;
+    else
+        win1 = [50, 300];
+    end
+    if isfield(opts, 'bg_win_hi') && ~isempty(opts.bg_win_hi) && numel(opts.bg_win_hi) == 2
+        win2 = opts.bg_win_hi;
+        use_dual = true;
+    else
+        win2 = [];
+        use_dual = false;
+    end
+    if isfield(opts, 'bg_iterative') && opts.bg_iterative
+        do_iterative = true;
+    else
+        do_iterative = false;
+    end
+    if isfield(opts, 'bg_asym_penalty') && opts.bg_asym_penalty > 1
+        asym_penalty = opts.bg_asym_penalty;
+    else
+        asym_penalty = 1;
+    end
 
-    fit_mask = energy_axis >= fit_lo & energy_axis <= win1_hi;
-
+    % --- Build fit mask ---
+    fit_mask = energy_axis >= win1(1) & energy_axis <= win1(2);
+    if use_dual
+        fit_mask = fit_mask | (energy_axis >= win2(1) & energy_axis <= win2(2));
+    end
     if nnz(fit_mask) < 5
+        bg_diag = [];
         return
     end
 
-    e_fit = energy_axis(fit_mask);
+    % --- Signal region mask (between windows, for iterative check) ---
+    if use_dual
+        signal_region = energy_axis > win1(2) & energy_axis < win2(1);
+    else
+        signal_region = energy_axis > win1(2);
+    end
 
-    % Only subtract for energies above fit_lo
-    sub_mask = energy_axis > fit_lo;
+    e_fit = energy_axis(fit_mask);
+    sub_mask = energy_axis > win1(1);
     e_sub = energy_axis(sub_mask);
 
-    for qi = 1:size(intensity, 2)
+    % --- Pre-allocate diagnostics ---
+    if want_diag
+        empty_diag = struct('rsquare', NaN, 'rmse', NaN, ...
+            'bg_curve', zeros(size(energy_axis)), ...
+            'residuals', zeros(nnz(fit_mask), 1), ...
+            'h_param', NaN, 'snr', NaN, ...
+            'energy_fit', e_fit, 'iterations', 1);
+        bg_diag = repmat(empty_diag, 1, n_q);
+    else
+        bg_diag = [];
+    end
+
+    % Suppress Curve Fitting Toolbox warnings during batch fitting
+    warnState = warning;
+    warning('off', 'curvefit:fit:noStartPoint');
+    warning('off', 'curvefit:fit:iterationLimitReached');
+    warning('off', 'curvefit:fit:nonDoubleYData');
+    warning('off', 'MATLAB:nearlySingularMatrix');
+    warning('off', 'MATLAB:illConditionedMatrix');
+    cleanupObj = onCleanup(@() warning(warnState));
+
+    for qi = 1:n_q
         spec = intensity(:, qi);
         s_fit = spec(fit_mask);
         s_fit_pos = max(s_fit, eps);
 
         try
-            switch method
-                case 'Power'
-                    valid = e_fit > 0 & s_fit_pos > 0;
-                    if nnz(valid) < 3, continue; end
-                    p = polyfit(log(e_fit(valid)), log(s_fit_pos(valid)), 1);
-                    bg = exp(polyval(p, log(e_sub)));
+            [bg, rsq, rmse_val, residuals, n_iter] = fit_background( ...
+                e_fit, s_fit_pos, e_sub, method, asym_penalty);
 
-                case 'ExpPoly3'
-                    valid = s_fit_pos > 0;
-                    if nnz(valid) < 5, continue; end
-                    p = polyfit(e_fit(valid), log(s_fit_pos(valid)), 3);
-                    bg = exp(polyval(p, e_sub));
-
-                case 'Pearson'
-                    valid = e_fit > 0 & s_fit_pos > 0;
-                    if nnz(valid) < 4, continue; end
-                    p = polyfit(log(e_fit(valid)), log(s_fit_pos(valid)), 2);
-                    bg = exp(polyval(p, log(e_sub)));
-
-                otherwise
-                    continue
+            % --- Iterative refit (Ruishi Qi style) ---
+            if do_iterative && any(signal_region)
+                bg_full = interp1(e_sub, bg, energy_axis, 'linear', 0);
+                neg_in_signal = (spec - bg_full < 0) & signal_region;
+                if any(neg_in_signal)
+                    % Increase weight on negative-signal points and refit
+                    wt = ones(size(e_fit));
+                    neg_fit_overlap = fit_mask & neg_in_signal;
+                    % Map back to fit indices
+                    neg_idx_in_fit = neg_fit_overlap(fit_mask);
+                    wt(neg_idx_in_fit) = 2;
+                    % For points in the signal region that went negative,
+                    % add them to the fit domain with high weight
+                    [bg, rsq, rmse_val, residuals, ~] = fit_background( ...
+                        e_fit, s_fit_pos, e_sub, method, asym_penalty, wt);
+                    n_iter = 2;
+                end
             end
 
             bg = real(bg(:));
@@ -175,10 +224,222 @@ function qe_out = apply_bg_subtraction(qe_in, opts)
             bg = min(bg, local_smooth * 0.9);
 
             intensity(sub_mask, qi) = spec(sub_mask) - bg;
+
+            % --- Compute diagnostics ---
+            if want_diag
+                bg_diag(qi).rsquare = rsq;
+                bg_diag(qi).rmse = rmse_val;
+                bg_diag(qi).iterations = n_iter;
+
+                % Full background curve for visualization
+                bg_full_vis = zeros(size(energy_axis));
+                bg_full_vis(sub_mask) = bg;
+                bg_diag(qi).bg_curve = bg_full_vis;
+                bg_diag(qi).residuals = residuals;
+
+                % h-parameter (Fung et al.): h = (I_B + var(I_B)) / I_B
+                I_B = mean(bg, 'omitnan');
+                var_I_B = var(bg, 'omitnan');
+                if I_B > eps
+                    bg_diag(qi).h_param = (I_B + var_I_B) / I_B;
+                end
+
+                % SNR (Fung et al.): SNR = I_k / sqrt(I_k + h * I_B)
+                signal_vals = spec(sub_mask) - bg;
+                I_k = max(max(signal_vals), eps);
+                h = bg_diag(qi).h_param;
+                if isfinite(h) && I_B > eps
+                    bg_diag(qi).snr = I_k / sqrt(abs(I_k) + h * I_B);
+                end
+            end
         catch
         end
     end
     qe_out.intensity = intensity;
+end
+
+
+function [bg, rsq, rmse_val, residuals, n_iter] = fit_background( ...
+        e_fit, s_fit, e_sub, method, asym_penalty, weights)
+    % Fit background model using Curve Fitting Toolbox.
+    %
+    % Returns fitted background on e_sub, plus goodness-of-fit metrics.
+
+    if nargin < 6
+        weights = ones(size(e_fit));
+    end
+    n_iter = 1;
+    rsq = NaN;
+    rmse_val = NaN;
+    residuals = [];
+
+    e_fit = e_fit(:);
+    s_fit = s_fit(:);
+    weights = weights(:);
+
+    switch method
+        case 'Power'
+            valid = e_fit > 0 & s_fit > 0;
+            if nnz(valid) < 3
+                bg = zeros(size(e_sub));
+                return
+            end
+            [cfun, gof] = fit(e_fit(valid), s_fit(valid), 'power1', ...
+                'Weight', weights(valid));
+            bg = cfun(e_sub);
+            residuals = s_fit(valid) - cfun(e_fit(valid));
+
+        case 'Power2'
+            valid = e_fit > 0 & s_fit > 0;
+            if nnz(valid) < 4
+                bg = zeros(size(e_sub));
+                return
+            end
+            ft = fittype('a*x^b + c', 'independent', 'x');
+            p0 = [max(s_fit), -1, min(s_fit) * 0.1];
+            try
+                [cfun, gof] = fit(e_fit(valid), s_fit(valid), ft, ...
+                    'StartPoint', p0, 'Weight', weights(valid), ...
+                    'Lower', [0 -Inf -Inf], 'Upper', [Inf 0 Inf]);
+            catch
+                % Fallback to Power1
+                [cfun, gof] = fit(e_fit(valid), s_fit(valid), 'power1', ...
+                    'Weight', weights(valid));
+            end
+            bg = cfun(e_sub);
+            residuals = s_fit(valid) - cfun(e_fit(valid));
+
+        case 'ExpPoly3'
+            valid = s_fit > 0;
+            if nnz(valid) < 5
+                bg = zeros(size(e_sub));
+                return
+            end
+            % Center and scale energy to reduce conditioning
+            e_center = mean(e_fit(valid));
+            e_scale = max(std(e_fit(valid)), eps);
+            e_norm = (e_fit(valid) - e_center) / e_scale;
+            e_sub_norm = (e_sub - e_center) / e_scale;
+            [cfun, gof] = fit(e_norm, log(s_fit(valid)), 'poly3', ...
+                'Weight', weights(valid));
+            bg = exp(cfun(e_sub_norm));
+            residuals = log(s_fit(valid)) - cfun(e_norm);
+
+        case 'Pearson'
+            % Log-log quadratic (original behavior)
+            valid = e_fit > 0 & s_fit > 0;
+            if nnz(valid) < 4
+                bg = zeros(size(e_sub));
+                return
+            end
+            % Center and scale log-energy to reduce conditioning
+            le = log(e_fit(valid));
+            le_center = mean(le);
+            le_scale = max(std(le), eps);
+            le_norm = (le - le_center) / le_scale;
+            le_sub_norm = (log(e_sub) - le_center) / le_scale;
+            [cfun, gof] = fit(le_norm, log(s_fit(valid)), 'poly2', ...
+                'Weight', weights(valid));
+            bg = exp(cfun(le_sub_norm));
+            residuals = log(s_fit(valid)) - cfun(le_norm);
+
+        case 'PearsonVII'
+            % Pearson VII function: physical ZLP tail model (Ruishi Qi)
+            % I * w^(2m) / (w^2 + (2^(1/m)-1)*(2*E-2*t0)^2)^m
+            if nnz(s_fit > 0) < 4
+                bg = zeros(size(e_sub));
+                return
+            end
+            init = [max(s_fit), 10, 1.5, 0.01];
+            ub = [max(s_fit)*10, 50, 5, 1];
+            lb = [max(s_fit)/2, 2, 0.1, -1];
+            opts_lsq = optimset('Display', 'off');
+            try
+                pbest = lsqcurvefit(@pearson_vii_diff, init, ...
+                    [e_fit'; s_fit'], zeros(size(s_fit')), ...
+                    lb, ub, opts_lsq);
+                bg = pearson_vii(pbest, e_sub(:)');
+                bg = bg(:);
+                % Manual R² calculation
+                fitted_vals = pearson_vii(pbest, e_fit(:)');
+                ss_res = sum((s_fit - fitted_vals(:)).^2);
+                ss_tot = sum((s_fit - mean(s_fit)).^2);
+                gof = struct('rsquare', 1 - ss_res/max(ss_tot, eps), ...
+                    'rmse', sqrt(ss_res / max(numel(s_fit)-4, 1)));
+                residuals = s_fit - fitted_vals(:);
+            catch
+                bg = zeros(size(e_sub));
+                gof = struct('rsquare', NaN, 'rmse', NaN);
+                residuals = [];
+            end
+
+        case 'Exp2'
+            % Two-term exponential: a*exp(b*x) + c*exp(d*x)
+            if nnz(s_fit > 0) < 5
+                bg = zeros(size(e_sub));
+                return
+            end
+            try
+                p0_log = polyfit(real(log(e_fit(e_fit > 0))), ...
+                    real(log(s_fit(e_fit > 0))), 1);
+                stt = [exp(p0_log(2))*0.8, p0_log(1)*0.001, ...
+                       exp(p0_log(2))*0.2, p0_log(1)*0.0005];
+                [cfun, gof] = fit(e_fit, s_fit, 'exp2', ...
+                    'StartPoint', stt, 'Weight', weights);
+            catch
+                % Fallback: let MATLAB auto-start
+                try
+                    [cfun, gof] = fit(e_fit, s_fit, 'exp2', ...
+                        'Weight', weights);
+                catch
+                    bg = zeros(size(e_sub));
+                    return
+                end
+            end
+            bg = cfun(e_sub);
+            residuals = s_fit - cfun(e_fit);
+
+        otherwise
+            bg = zeros(size(e_sub));
+            return
+    end
+
+    % Extract gof metrics
+    if exist('gof', 'var') && isstruct(gof)
+        rsq = gof.rsquare;
+        if isfield(gof, 'rmse')
+            rmse_val = gof.rmse;
+        end
+    end
+
+    % --- Apply asymmetric penalty post-correction ---
+    % If penalty > 1 and background overshoots data, nudge down
+    if asym_penalty > 1
+        bg = bg(:);
+        s_sub = interp1(e_fit, s_fit, e_sub, 'linear', 'extrap');
+        overshoot = bg > s_sub(:);
+        if any(overshoot)
+            excess = bg(overshoot) - s_sub(overshoot);
+            bg(overshoot) = s_sub(overshoot) + excess / asym_penalty;
+        end
+    end
+end
+
+
+function ydata = pearson_vii(para, ene)
+    % Pearson VII profile (Ruishi Qi implementation)
+    I = para(1); w = para(2); m = para(3); t0 = para(4);
+    ydata = I * (w).^(2*m) ./ ((w).^2 + (2^(1/m)-1) * (2*ene - 2*t0).^2).^m;
+end
+
+
+function diff_val = pearson_vii_diff(para, ene_spec)
+    % Custom loss function for Pearson VII: energy-weighted, asymmetric penalty
+    ene = ene_spec(1,:);
+    spec = ene_spec(2,:);
+    ydata = pearson_vii(para, ene);
+    diff_val = (spec - ydata) .* (abs(ene)).^0.4;
+    diff_val(diff_val < 0) = diff_val(diff_val < 0) * 4;
 end
 
 

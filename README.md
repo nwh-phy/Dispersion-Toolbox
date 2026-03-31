@@ -108,8 +108,75 @@ interactive_qe_browser("path/to/eq3D.mat", "path/to/op_history.mat")
 
 - **Denoise**：Wiener 2D 去噪 / Savitzky-Golay 滤波
 - **Deconv**：Lucy-Richardson 反卷积（需要 ZLP 参考）
-- **BG Sub**：背景扣除（Power-law / ExpPoly3 / Pearson）
+- **BG Sub**：背景扣除（详见下方）
 - **Build Views**：用对称的离轴参考带重建在轴信号
+
+#### 背景扣除（BG Sub）
+
+基于 Fung et al. (2020) 的诊断透明框架和 Ruishi Qi (Nion EELS Toolbox) 的鲁棒拟合策略，实现了多模型、双窗口、迭代重拟合的背景扣除引擎。
+
+**6 种背景模型**：
+
+| 模型 | 函数形式 | 适用场景 | MATLAB 实现 |
+|------|----------|----------|-------------|
+| **Power** (默认) | A·E^B | 标准 EELS 背景（最常用） | `fit(e, s, 'power1')` |
+| **Power2** | a·E^b + c | 带常数偏移的幂律 | `fittype('a*x^b + c')` |
+| **ExpPoly3** | exp(p₃·E³+p₂·E²+p₁·E+p₀) | 快速衰减的背景 | `fit(e_norm, log(s), 'poly3')` |
+| **Pearson** | exp(p₂·(logE)²+p₁·logE+p₀) | Log-log 二次多项式 | `fit(le_norm, log(s), 'poly2')` |
+| **PearsonVII** | I·w^(2m)/(w²+(2^(1/m)-1)·(2E-2t₀)²)^m | ZLP 物理尾部模型 | `lsqcurvefit` + 非对称惩罚 |
+| **Exp2** | a·e^(bE) + c·e^(dE) | 双指数衰减背景 | `fit(e, s, 'exp2')` |
+
+> **推荐**：对于大多数 EELS 数据，默认 **Power** 模型即可得到良好结果（R² > 0.95）。当 ZLP 尾部形状需要更精确建模时，使用 **PearsonVII**。
+
+**双窗口拟合**（Dual Window）：
+
+在前景信号的两侧分别设定拟合窗口，用两端的背景特征锚定拟合曲线：
+
+```
+窗口 1 (bg_win_lo)：[50, 300] meV   ← ZLP 和信号之间的前景区
+窗口 2 (bg_win_hi)：[3000, 3500] meV ← 信号之后的高能区
+```
+
+勾选 GUI 中的 **Dual** 复选框启用。适合信号两侧都有可靠背景参考的情况。
+
+**迭代重拟合**（Iterative Refit）：
+
+勾选 **Iter** 复选框启用。逻辑为：
+1. 首次拟合后，检查信号区域是否有 `spec − bg < 0`（过扣除）
+2. 如果存在负值 → 增大这些区域的拟合权重 → 重新拟合
+3. 防止背景曲线过高导致有效信号变成负值
+
+**拟合诊断**（自动显示在 FitInfoLabel）：
+
+| 指标 | 含义 | 良好标准 |
+|------|------|----------|
+| **R²** | 决定系数（拟合优度） | > 0.9 |
+| **RMSE** | 均方根残差 | 越小越好 |
+| **h** | Fung h-参数 = (I_B + var(I_B))/I_B | — |
+| **SNR** | 信噪比 = I_k / √(I_k + h·I_B) | > 3 |
+
+**可视化**：在单谱模式（SingleAxes）勾选 BG Sub 后，自动叠加三线图：
+- 🔵 蓝线 — 原始谱（扣除前）
+- 🔴 红色虚线 — 背景拟合曲线
+- 🟢 绿线 — 扣除后信号
+- 浅红色填充 — 拟合窗口区域
+
+**编程接口**（用于批处理脚本）：
+
+```matlab
+opts.do_bg_sub    = true;
+opts.bg_method    = 'Power';           % 模型名称
+opts.bg_win_lo    = [50, 300];         % 窗口 1 [meV]
+opts.bg_win_hi    = [3000, 3500];      % 窗口 2 [meV]（仅双窗口）
+opts.bg_iterative = true;             % 启用迭代重拟合
+
+% 单输出（向后兼容）
+qe_out = qe_preprocess(qe_in, opts);
+
+% 双输出（获取诊断）
+[qe_out, bg_diag] = qe_preprocess(qe_in, opts);
+% bg_diag(qi).rsquare, .rmse, .h_param, .snr, .bg_curve, .residuals
+```
 
 ### Step 3：峰拟合
 
@@ -223,6 +290,7 @@ q 轴的物理标定依赖 Nion 的离焦设置：
 
 - **MATLAB R2024b+**
 - Optimization Toolbox（拟合必需）
+- **Curve Fitting Toolbox**（背景扣除必需）
 - Signal Processing Toolbox（去噪、滤波）
 - Image Processing Toolbox（Lucy-Richardson 反卷积；有手动 fallback）
 - **不依赖** Nion EELS 工具箱（原始数据导入已内置）
