@@ -1,4 +1,4 @@
-﻿%% analyze_dispersion.m �?Automated plasmon dispersion analysis
+%% analyze_dispersion.m �?Automated plasmon dispersion analysis
 %  Compares 10w and 20w defocus datasets with full preprocessing pipeline.
 %
 %  Pipeline:  load �?crop q/E �?denoise �?area-normalize �?BG subtract
@@ -11,8 +11,9 @@
 
 clearvars; close all; clc;
 
-project_dir = fileparts(mfilename('fullpath'));
-if isempty(project_dir); project_dir = pwd; end
+src_dir = fileparts(mfilename('fullpath'));
+if isempty(src_dir); src_dir = pwd; end
+project_dir = fileparts(src_dir);  % go up from src/ to project root
 cd(project_dir);
 
 %% ══════════════════════════════════════════════════════════════�?%  Configuration
@@ -352,7 +353,7 @@ results = cell(numel(sessions), 1);
 end
 
 %% ══════════════════════════════════════════════════════════════�?%  Save results
-%  ══════════════════════════════════════════════════════════════�?save_path = fullfile(project_dir, 'analysis_results.mat');
+%  ══════════════════════════════════════════════════════════════�?save_path = fullfile(project_dir, 'figures', 'analysis_results.mat');
 save(save_path, 'results', 'cfg', 'sessions');
 fprintf('\n�?Results saved to %s\n', save_path);
 
@@ -474,7 +475,7 @@ sgtitle(fig, 'Bi Thin Film Plasmon Dispersion �?10w vs 20w Defocus', ...
     'FontSize', 14, 'FontWeight', 'bold');
 
 %% Save figure
-fig_path = fullfile(project_dir, 'bi_dispersion_comparison.png');
+fig_path = fullfile(project_dir, 'figures', 'bi_dispersion_comparison.png');
 exportgraphics(fig, fig_path, 'Resolution', 300);
 fprintf('�?Figure saved to %s\n', fig_path);
 
