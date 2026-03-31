@@ -7,7 +7,7 @@ arguments
     smoothingWidth (1,1) double {mustBePositive} = 3
     refAbsQMin (1,1) double = NaN
     refAbsQMax (1,1) double = NaN
-    opts.method {mustBeMember(opts.method, {'symmetric-avg', 'q-interp'})} = 'q-interp'
+    opts.method {mustBeMember(opts.method, {'symmetric-avg', 'q-interp', 'q-profile'})} = 'q-profile'
     opts.smooth_scale (1,1) logical = true
     opts.idw_power (1,1) double {mustBePositive} = 2
 end
@@ -160,6 +160,91 @@ switch opts.method
                 scale_factors(qi) = new_scale;
             end
         end
+
+    case 'q-profile'
+        % === q-Profile Decomposition ===
+        % Instead of matching spectra at different q (E-space fitting),
+        % learn the on-axis beam q-profile shape from sub-plasmon energies,
+        % then subtract a scaled copy at each energy.
+        %
+        % Physics: on-axis signal has FIXED q-shape f(q) (beam profile)
+        %          but VARYING amplitude α(E).
+        %          At each E: I(q,E) = α(E)·f(q) + I_offaxis(q,E)
+
+        ref_mask = reference_q_mask_left | reference_q_mask_right;
+
+        % Step 1: Auto-detect plasmon onset from reference channels
+        avg_ref = mean(normalized_original(:, ref_mask), 2);
+        avg_ref_s = smoothdata(avg_ref, 'gaussian', max(5, round(numel(avg_ref)*0.02)));
+        pos_E = energy_axis > max(energyWindow(2), 50);
+        if any(pos_E)
+            [~, pk_loc] = max(avg_ref_s(pos_E));
+            pk_idx = find(pos_E);
+            plasmon_peak_E = energy_axis(pk_idx(pk_loc));
+            template_E_max = max(min(plasmon_peak_E * 0.4, 400), 100);
+        else
+            template_E_max = 300;
+        end
+
+        % Step 2: Build q-profile template from sub-plasmon energies
+        % In this range, the spectrum is dominated by ZLP tail (= on-axis)
+        template_E_min = max(energyWindow(2) + 10, 30);
+        tmask = energy_axis >= template_E_min & energy_axis <= template_E_max;
+        if nnz(tmask) < 5
+            tmask = energy_axis >= 20 & energy_axis <= 200;
+        end
+
+        q_profile_raw = mean(normalized_original(tmask, :), 1);
+        q_profile_raw = max(q_profile_raw, 0);
+
+        % Enforce q-symmetry: f(q) = f(-q)
+        nq = numel(q_profile_raw);
+        q_zero_idx = round((nq + 1) / 2);
+        if isfield(qeData, 'q_zero_index') && isfinite(qeData.q_zero_index)
+            q_zero_idx = round(qeData.q_zero_index);
+        end
+        for ii = 1:min(q_zero_idx-1, nq-q_zero_idx)
+            left_val = q_profile_raw(q_zero_idx - ii);
+            right_val = q_profile_raw(q_zero_idx + ii);
+            avg_val = (left_val + right_val) / 2;
+            q_profile_raw(q_zero_idx - ii) = avg_val;
+            q_profile_raw(q_zero_idx + ii) = avg_val;
+        end
+
+        % Smooth the q-profile
+        q_profile_smooth = smoothdata(q_profile_raw, 'gaussian', max(3, round(nq*0.03)));
+        q_profile_smooth = max(q_profile_smooth, 0);
+
+        % Step 3: For each energy, fit α(E) using center + near-reference channels
+        % Use |q| <= ref_abs_q_max for fitting (on-axis tail is visible there)
+        fit_q_mask = abs(q_axis) <= ref_abs_q_max;
+        f_fit = q_profile_smooth(fit_q_mask);
+        f_fit_sq = sum(f_fit.^2);
+
+        alpha_E = zeros(numel(energy_axis), 1);
+        for ei = 1:numel(energy_axis)
+            row = normalized_original(ei, fit_q_mask);
+            alpha_E(ei) = max(0, sum(row .* f_fit) / max(f_fit_sq, eps));
+        end
+
+        % Smooth α(E) to suppress noise in the subtraction
+        smooth_span = max(7, round(numel(alpha_E) * 0.03));
+        if mod(smooth_span, 2) == 0; smooth_span = smooth_span + 1; end
+        alpha_smooth = smoothdata(alpha_E, 'sgolay', smooth_span);
+        alpha_smooth = max(alpha_smooth, 0);
+
+        % Zero out α in the ZLP core to avoid subtracting the elastic peak itself
+        zlp_core = energy_axis >= energyWindow(1) & energy_axis <= energyWindow(2);
+        alpha_smooth(zlp_core) = 0;
+
+        % Step 4: Subtract on-axis component from ALL channels
+        on_axis_2d = alpha_smooth * q_profile_smooth;
+        off_axis_component = max(normalized_original - on_axis_2d, 0);
+
+        % Store diagnostics
+        scale_factors = q_profile_smooth;
+        fit_coeff_left(:) = NaN;
+        fit_coeff_right(:) = NaN;
 end
 
 axis_excess = normalized_original - off_axis_component;
