@@ -27,6 +27,10 @@ desktop.ini
 .agent/
 _agents/
 _agent/
+CLAUDE.md
+PROJECT_MEMORY.md
+NEXT_STEPS.md
+WORKSPACE_INDEX.md
 
 # Large binary files
 *.pptx
