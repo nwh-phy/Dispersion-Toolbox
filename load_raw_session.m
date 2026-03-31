@@ -62,13 +62,24 @@ if strcmpi(ext, '.npy')
 
 elseif strcmpi(ext, '.mat')
     fprintf('Loading MAT file: %s\n', file_path);
+    
+    % Auto-add Nion toolbox to path if EELS4D class is not available
+    local_ensure_nion_toolbox_on_path();
+    
     tic;
+    lastwarn('');  % clear last warning
     loaded = load(file_path);
+    [warnMsg, ~] = lastwarn();
     fprintf('  Loaded in %.1f s\n', toc);
     json = [];
 
+    % If EELS4D couldn't be instantiated, try reloading with toolbox
+    if contains(warnMsg, 'uint32') || contains(warnMsg, '无法实例化')
+        fprintf('  Warning: EELS4D class not found, attempting struct extraction...\n');
+    end
+    
     % Detect data format in .mat
-    [raw_data, energy_meV_from_file] = local_extract_mat_data(loaded);
+    [raw_data, energy_meV_from_file] = local_extract_mat_data(loaded, file_path);
     source_kind = 'mat4d';
 else
     error('load_raw_session:UnsupportedFormat', ...
@@ -245,22 +256,44 @@ end
 
 
 %% ====================================================================
-function [raw_data, energy_meV] = local_extract_mat_data(loaded)
+function local_ensure_nion_toolbox_on_path()
+%LOCAL_ENSURE_NION_TOOLBOX_ON_PATH  Add Nion 4D toolbox to path if needed.
+if exist('EELS4D', 'class') == 8
+    return  % already available
+end
+
+% Search common locations
+desktop = fullfile(getenv('USERPROFILE'), 'Desktop');
+candidates = dir(fullfile(desktop, 'Nion-EELS*toolbox'));
+for i = 1:numel(candidates)
+    toolbox_dir = fullfile(candidates(i).folder, candidates(i).name, '4D-EELS TOOLBOX');
+    if isfolder(toolbox_dir)
+        addpath(genpath(toolbox_dir));
+        fprintf('  Auto-added Nion 4D toolbox: %s\n', toolbox_dir);
+        return
+    end
+end
+end
+
+
+%% ====================================================================
+function [raw_data, energy_meV] = local_extract_mat_data(loaded, file_path)
 %LOCAL_EXTRACT_MAT_DATA  Extract 3D/4D data and energy axis from a .mat file.
 %   Supports:
 %     - EELS4D objects (with .data and .ene properties)
+%     - Degraded EELS4D (class not on path, loaded as struct or uint32)
 %     - Plain numeric arrays (largest 3D/4D variable)
 
 energy_meV = [];
 fields = fieldnames(loaded);
 
-% Check for EELS4D object
+% === Case 1: Proper EELS4D object ===
 for i = 1:numel(fields)
     val = loaded.(fields{i});
     if isobject(val)
         try
             raw_data = double(val.data);
-            if isprop(val, 'ene') || isfield(struct(val), 'ene')
+            if isprop(val, 'ene')
                 energy_meV = double(val.ene(:));
             end
             fprintf('  Found EELS4D object in field "%s", data size = [%s]\n', ...
@@ -271,7 +304,61 @@ for i = 1:numel(fields)
     end
 end
 
-% Fallback: find largest numeric array with 3+ dimensions
+% === Case 2: Degraded EELS4D (struct fallback) ===
+% When EELS4D class is not on path, MATLAB may load it as a struct
+for i = 1:numel(fields)
+    val = loaded.(fields{i});
+    if isstruct(val) && isfield(val, 'data') && isfield(val, 'ene')
+        raw_data = double(val.data);
+        energy_meV = double(val.ene(:));
+        fprintf('  Found degraded EELS4D struct in field "%s", data size = [%s]\n', ...
+            fields{i}, num2str(size(raw_data)));
+        return
+    end
+end
+
+% === Case 3: EELS4D loaded as uint32 (total degradation) ===
+% Use whos to peek at the original class, then use matfile for raw access
+if nargin >= 2
+    try
+        info = whos('-file', file_path);
+        for i = 1:numel(info)
+            if strcmp(info(i).class, 'EELS4D')
+                fprintf('  EELS4D detected in file but class unavailable.\n');
+                fprintf('  Attempting direct HDF5/v7.3 extraction...\n');
+                % v7.3 .mat files are HDF5, try h5read
+                try
+                    raw_data = double(h5read(file_path, '/data/data'));
+                    fprintf('  Extracted data via HDF5: size = [%s]\n', ...
+                        num2str(size(raw_data)));
+                catch
+                end
+                try
+                    energy_meV = double(h5read(file_path, '/data/ene'));
+                    energy_meV = energy_meV(:);
+                    fprintf('  Extracted energy via HDF5: %d points\n', ...
+                        numel(energy_meV));
+                catch
+                end
+                if exist('raw_data', 'var') && ~isempty(raw_data)
+                    return
+                end
+                % If HDF5 failed, try matfile object access
+                try
+                    mf = matfile(file_path);
+                    raw_data = double(mf.data);
+                    fprintf('  Extracted data via matfile: size = [%s]\n', ...
+                        num2str(size(raw_data)));
+                catch
+                end
+                break
+            end
+        end
+    catch
+    end
+end
+
+% === Case 4: Plain numeric array (largest 3D+ field) ===
 best_field = '';
 best_numel = 0;
 for i = 1:numel(fields)
@@ -302,7 +389,10 @@ if ~isempty(best_field)
 end
 
 error('load_raw_session:NoData', ...
-    'Could not find 3D/4D data in .mat file.');
+    ['Could not find 3D/4D data in .mat file.\n' ...
+     'If this file contains EELS4D objects, ensure the Nion 4D-EELS ' ...
+     'toolbox is on your MATLAB path:\n' ...
+     '  addpath(genpath(''path/to/Nion-EELS toolbox/4D-EELS TOOLBOX''))']);
 end
 
 
