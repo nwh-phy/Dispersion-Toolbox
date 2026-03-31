@@ -184,13 +184,17 @@ end
 
             try
                 lower_path = lower(char(full_path));
+                dq_val = NaN;  % default: let load_raw_session prompt
                 if contains(lower_path, "20w")
+                    dq_val = 0.0025;
                     ui.DqOverrideField.Value = 0.0025;
                 elseif contains(lower_path, "10w")
+                    dq_val = 0.005;
                     ui.DqOverrideField.Value = 0.005;
                 end
-                dataset = load_qe_dataset(full_path, ui.DqOverrideField.Value, ...
+                dataset = load_qe_dataset(full_path, dq_val, ...
                     q_crop=[q_lo q_hi]);
+                ui.DqOverrideField.Value = dataset.dq_Ainv;
                 state.dataset = dataset;
                 state.selectedQIndex = 1;
                 state.eq3dQE = [];
