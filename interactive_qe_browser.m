@@ -2313,7 +2313,7 @@ end
 
             dq_Ainv = local_current_dq();
             switch string(state.dataset.source_kind)
-                case "eq3d"
+                case {"eq3d", "mat4d", "npy", "raw_import"}
                     state.eq3dQE = local_reaxis_qe(state.eq3dQE, dq_Ainv);
                     state.physicalQE = state.eq3dQE;
                     base_qe = state.eq3dQE;
