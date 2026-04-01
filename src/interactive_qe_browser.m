@@ -6,11 +6,16 @@ end
 
 state = local_initial_state();
 
-% Add toolbox background subtraction to MATLAB path
-toolbox_process_dir = fullfile(getenv('USERPROFILE'), 'Desktop', ...
-    'Nion-EELS数据处理toolbox', '3D-EELS TOOLBOX', 'Process');
+% Add toolbox background subtraction + BM3D to MATLAB path
+toolbox_root = fullfile(getenv('USERPROFILE'), 'Desktop', ...
+    'Nion-EELS数据处理toolbox', '3D-EELS TOOLBOX');
+toolbox_process_dir = fullfile(toolbox_root, 'Process');
+toolbox_bm3d_dir = fullfile(toolbox_root, 'BM3D');
 if isfolder(toolbox_process_dir)
     addpath(toolbox_process_dir);
+end
+if isfolder(toolbox_bm3d_dir)
+    addpath(genpath(toolbox_bm3d_dir));
 end
 
 ui = local_build_ui();
@@ -452,7 +457,6 @@ end
         snap.denoiseMethod = char(ui.DenoiseMethodDropdown.Value);
         snap.denoiseSigma = ui.DenoiseSigmaField.Value;
         snap.deconv = ui.DeconvCheckbox.Value;
-        snap.deconvMethod = char(ui.DeconvMethodDropdown.Value);
         snap.deconvIter = ui.DeconvIterField.Value;
 
         snap.viewMode = char(ui.ViewModeDropdown.Value);
@@ -500,9 +504,6 @@ end
         ui.DenoiseMethodDropdown.Value = snap.denoiseMethod;
         ui.DenoiseSigmaField.Value = snap.denoiseSigma;
         ui.DeconvCheckbox.Value = snap.deconv;
-        if isfield(snap, 'deconvMethod')
-            ui.DeconvMethodDropdown.Value = snap.deconvMethod;
-        end
         ui.DeconvIterField.Value = snap.deconvIter;
 
         ui.ViewModeDropdown.Value = snap.viewMode;
@@ -2972,9 +2973,7 @@ end
         opts.do_bg_sub = ui.BgSubCheckbox.Value;
         opts.bg_method = char(ui.BgMethodDropdown.Value);
         opts.do_deconv = ui.DeconvCheckbox.Value;
-        opts.deconv_method = char(ui.DeconvMethodDropdown.Value);
         opts.deconv_iter = ui.DeconvIterField.Value;
-        opts.svd_components = 0;  % Auto-detect for SVD denoise
 
         % --- Enhanced background subtraction options ---
         opts.bg_win_lo = [ui.BgWin1LoField.Value, ui.BgWin1HiField.Value];
@@ -3061,9 +3060,7 @@ end
         end
         parts{end+1} = sprintf('%d', opts.bg_iterative);
         parts{end+1} = sprintf('%d', opts.do_deconv);
-        parts{end+1} = opts.deconv_method;
         parts{end+1} = sprintf('%d', opts.deconv_iter);
-        parts{end+1} = sprintf('%d', opts.svd_components);
         % Dataset identity: use size + first/last values as fingerprint
         parts{end+1} = sprintf('%dx%d', size(qe.intensity, 1), size(qe.intensity, 2));
         parts{end+1} = sprintf('%.6g', qe.intensity(1,1));
