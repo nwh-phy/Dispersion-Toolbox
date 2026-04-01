@@ -5,10 +5,11 @@ function [qe_out, bg_diag] = qe_preprocess(qe_in, opts)
 %   [qe_out, bg_diag] = qe_preprocess(qe_in, opts)
 %
 %   Applies a configurable preprocessing chain:
+%     0. Cosmic-ray removal (optional, median-threshold spike detection)
 %     1. Normalization  (ZLP Peak or Area)
-%     2. Denoising      (Wiener2D or Savitzky-Golay)
+%     2. Denoising      (Wiener2D, Savitzky-Golay, or SVD/PCA truncation)
 %     3. Background subtraction (Power/ExpPoly3/Pearson/PearsonVII/Power2/Exp2)
-%     4. Deconvolution  (Lucy-Richardson)
+%     4. Deconvolution  (Lucy-Richardson or Fourier-Log plural scattering removal)
 %
 %   Background subtraction opts fields (all have sensible defaults):
 %     .bg_method      char     — model name (see above)
@@ -30,6 +31,10 @@ end
 
 qe_out = qe_in;
 bg_diag = [];
+
+if isfield(opts, 'do_despike') && opts.do_despike
+    qe_out = apply_cosmic_ray_removal(qe_out, opts);
+end
 
 if isfield(opts, 'do_normalize') && opts.do_normalize
     qe_out = apply_normalization(qe_out, opts);
@@ -446,14 +451,31 @@ end
 %% ═══════════ Deconvolution ═══════════
 
 function qe_out = apply_deconvolution(qe_in, opts)
-    % Lucy-Richardson deconvolution using the ZLP (q≈0 channel) as PSF.
+    % Deconvolution dispatcher: Lucy-Richardson or Fourier-Log.
+    %
+    %   opts.deconv_method  = 'LucyRichardson' (default) | 'FourierLog'
+    %   opts.deconv_iter    = number of iterations for LR (default 5)
+    %
+    % Fourier-Log: Removes plural scattering from the entire spectrum
+    %   using S(E) = exp(F⁻¹{log(F{J(E)}/F{J0(E)})}) * t/λ
+    %   where J0(E) is the ZLP reference. This is the standard method
+    %   from Egerton (2011) §4.2.
+    %
+    % Lucy-Richardson: Iterative Bayesian deconvolution using the ZLP
+    %   peak as the PSF. Better for sharpening individual peaks.
+
     qe_out = qe_in;
     energy_axis = double(qe_in.energy_meV(:));
     intensity = double(qe_in.intensity);
     n_q = size(intensity, 2);
-    n_iter = round(opts.deconv_iter);
 
-    % --- Extract PSF from q≈0 channel ---
+    if isfield(opts, 'deconv_method')
+        deconv_method = char(opts.deconv_method);
+    else
+        deconv_method = 'LucyRichardson';
+    end
+
+    % --- Extract q≈0 reference spectrum ---
     if isfield(qe_in, 'q_zero_index') && isfinite(qe_in.q_zero_index)
         q0_idx = round(qe_in.q_zero_index);
     else
@@ -464,35 +486,99 @@ function qe_out = apply_deconvolution(qe_in, opts)
     ref_spectrum = mean(intensity(:, q0_range), 2, 'omitnan');
     ref_spectrum = max(ref_spectrum, 0);
 
-    % --- Use ONLY the ZLP peak region as PSF ---
-    [~, zlp_idx] = max(ref_spectrum);
-    zlp_energy = energy_axis(zlp_idx);
-    zlp_half_width = 100;  % meV
-    zlp_mask = energy_axis >= (zlp_energy - zlp_half_width) & ...
-               energy_axis <= (zlp_energy + zlp_half_width);
-    psf = ref_spectrum(zlp_mask);
-    psf = max(psf, 0);
-    psf_sum = sum(psf);
-    if psf_sum > 0
-        psf = psf / psf_sum;
-    else
-        return
-    end
+    switch deconv_method
+        case 'FourierLog'
+            intensity = fourier_log_deconv(intensity, ref_spectrum, n_q);
 
-    % --- Deconvolve each q-channel ---
-    for qi = 1:n_q
-        spec = intensity(:, qi);
-        spec = max(spec, 0);
-        if max(spec) <= 0
-            continue
-        end
-        try
-            intensity(:, qi) = deconvlucy(spec, psf, n_iter);
-        catch
-            intensity(:, qi) = lr_deconv(spec, psf, n_iter);
-        end
+        otherwise  % 'LucyRichardson'
+            n_iter = round(opts.deconv_iter);
+            % --- Use ONLY the ZLP peak region as PSF ---
+            [~, zlp_idx] = max(ref_spectrum);
+            zlp_energy = energy_axis(zlp_idx);
+            zlp_half_width = 100;  % meV
+            zlp_mask = energy_axis >= (zlp_energy - zlp_half_width) & ...
+                       energy_axis <= (zlp_energy + zlp_half_width);
+            psf = ref_spectrum(zlp_mask);
+            psf = max(psf, 0);
+            psf_sum = sum(psf);
+            if psf_sum > 0
+                psf = psf / psf_sum;
+            else
+                return
+            end
+            % --- Deconvolve each q-channel ---
+            for qi = 1:n_q
+                spec = intensity(:, qi);
+                spec = max(spec, 0);
+                if max(spec) <= 0, continue; end
+                try
+                    intensity(:, qi) = deconvlucy(spec, psf, n_iter);
+                catch
+                    intensity(:, qi) = lr_deconv(spec, psf, n_iter);
+                end
+            end
     end
     qe_out.intensity = intensity;
+end
+
+
+function intensity = fourier_log_deconv(intensity, ref_spectrum, n_q)
+    % Fourier-Log deconvolution (Egerton, EELS in the EM, §4.2)
+    %
+    %   Removes plural (multiple) scattering by computing the
+    %   single-scattering distribution S(E) from the recorded spectrum J(E):
+    %
+    %     S(E) = F⁻¹{ log[ F{J(E)} / F{J₀(E)} ] } × (t/λ)
+    %
+    %   where J₀ is the ZLP, t/λ is the relative thickness,
+    %   and F denotes the Fourier transform.
+    %
+    %   This method is preferred for thick samples (t/λ > 0.3) where
+    %   plural scattering dominates the high-energy-loss tail.
+
+    n_e = size(intensity, 1);
+    n_fft = 2^nextpow2(2 * n_e);  % Zero-pad for FFT
+
+    % Fourier transform of ZLP reference
+    ref_padded = zeros(n_fft, 1);
+    ref_padded(1:n_e) = ref_spectrum;
+    F_ref = fft(ref_padded);
+    % Regularize to avoid log(0) and division by zero
+    F_ref(abs(F_ref) < max(abs(F_ref)) * 1e-10) = max(abs(F_ref)) * 1e-10;
+
+    % Relative thickness from area ratio
+    total_area = sum(ref_spectrum);
+
+    for qi = 1:n_q
+        spec = intensity(:, qi);
+        if max(spec) <= 0, continue; end
+
+        spec_padded = zeros(n_fft, 1);
+        spec_padded(1:n_e) = max(spec, 0);
+        F_spec = fft(spec_padded);
+        F_spec(abs(F_spec) < max(abs(F_spec)) * 1e-10) = max(abs(F_spec)) * 1e-10;
+
+        % Log-ratio in Fourier domain
+        log_ratio = log(F_spec ./ F_ref);
+
+        % Relative thickness: t/λ = ln(I_total / I_ZLP)
+        I_total = sum(max(spec, 0));
+        if I_total > total_area && total_area > 0
+            t_lambda = log(I_total / total_area);
+        else
+            t_lambda = 0.3;  % Conservative fallback
+        end
+
+        % Single-scattering distribution
+        S = real(ifft(log_ratio)) * t_lambda;
+        ssd = S(1:n_e);
+
+        % Keep only the positive part and normalize
+        ssd = max(ssd, 0);
+        if max(ssd) > 0
+            intensity(:, qi) = ssd;
+        end
+    end
 end
 
 
@@ -515,12 +601,47 @@ function result = lr_deconv(signal, psf, n_iter)
 end
 
 
+%% ═══════════ Cosmic Ray Removal ═══════════
+
+function qe_out = apply_cosmic_ray_removal(qe_in, ~)
+    % Remove cosmic ray spikes from the intensity map.
+    %
+    % Uses a median-filter based approach: any pixel whose value exceeds
+    % the local median by more than N standard deviations is replaced
+    % with the median value. This is the standard "sigma-clipping" method.
+
+    qe_out = qe_in;
+    intensity = double(qe_in.intensity);
+    threshold_sigma = 5;  % Spike detection threshold (σ)
+
+    % 2D median filter as reference
+    med_img = medfilt2(intensity, [3 3], 'symmetric');
+
+    % Estimate noise from median absolute deviation
+    residuals = intensity - med_img;
+    noise_est = median(abs(residuals(:))) / 0.6745;
+    if noise_est < eps, noise_est = 1; end
+
+    % Flag spikes: |residual| > threshold * noise
+    spike_mask = abs(residuals) > threshold_sigma * noise_est;
+    n_spikes = nnz(spike_mask);
+
+    if n_spikes > 0
+        intensity(spike_mask) = med_img(spike_mask);
+        fprintf('  Cosmic ray removal: %d spikes removed (%.2f%% of pixels)\n', ...
+            n_spikes, 100 * n_spikes / numel(intensity));
+    end
+    qe_out.intensity = intensity;
+end
+
+
 %% ═══════════ Denoising ═══════════
 
 function qe_out = apply_denoise(qe_in, opts)
     % Denoise the q-E intensity map.
     %   Wiener2D — 2D adaptive Wiener filter
     %   SavGol   — 1D Savitzky-Golay per q-channel
+    %   SVD      — Truncated SVD (PCA) for global noise reduction
     qe_out = qe_in;
     intensity = double(qe_in.intensity);
     method = char(opts.denoise_method);
@@ -560,5 +681,59 @@ function qe_out = apply_denoise(qe_in, opts)
                 end
             end
             qe_out.intensity = intensity;
+
+        case 'SVD'
+            % Truncated SVD (PCA) denoising.
+            %
+            % Decomposes the E×q intensity matrix via SVD and keeps only
+            % the top-k singular values/vectors, discarding high-order
+            % components that are dominated by noise.
+            %
+            % This is the standard PCA-based EELS denoising approach:
+            %   - The first 4-10 components typically capture >90% of
+            %     the physical signal (plasmon peaks, background shape)
+            %   - Higher components are dominated by shot noise
+            %   - Reconstruction with truncated SVD is optimal in the
+            %     least-squares sense (Eckart-Young theorem)
+            %
+            % opts.svd_components: number of singular values to keep
+            %   Default: auto-select using the "elbow" in the scree plot
+
+            if isfield(opts, 'svd_components') && opts.svd_components > 0
+                n_keep = round(opts.svd_components);
+            else
+                n_keep = 0;  % Auto-detect
+            end
+
+            [U, S, V] = svd(intensity, 'econ');
+            singular_vals = diag(S);
+            n_sv = numel(singular_vals);
+
+            if n_keep == 0
+                % Auto-detect: find elbow using second derivative
+                if n_sv > 3
+                    log_sv = log(singular_vals + eps);
+                    d2 = diff(log_sv, 2);
+                    [~, elbow_idx] = max(d2);
+                    n_keep = max(elbow_idx + 1, 2);  % Keep at least 2
+                    n_keep = min(n_keep, 10);  % Cap at 10
+                else
+                    n_keep = min(2, n_sv);
+                end
+            end
+            n_keep = min(n_keep, n_sv);
+
+            % Reconstruct with truncated SVD
+            S_trunc = S;
+            S_trunc(n_keep+1:end, n_keep+1:end) = 0;
+            denoised = U * S_trunc * V';
+
+            % Preserve non-negative intensity
+            denoised = max(denoised, 0);
+            qe_out.intensity = denoised;
+
+            fprintf('  SVD denoising: kept %d / %d components (%.1f%% variance)\n', ...
+                n_keep, n_sv, ...
+                100 * sum(singular_vals(1:n_keep).^2) / sum(singular_vals.^2));
     end
 end

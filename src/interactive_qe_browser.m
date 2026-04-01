@@ -450,6 +450,7 @@ end
         snap.denoiseMethod = char(ui.DenoiseMethodDropdown.Value);
         snap.denoiseSigma = ui.DenoiseSigmaField.Value;
         snap.deconv = ui.DeconvCheckbox.Value;
+        snap.deconvMethod = char(ui.DeconvMethodDropdown.Value);
         snap.deconvIter = ui.DeconvIterField.Value;
 
         snap.viewMode = char(ui.ViewModeDropdown.Value);
@@ -497,6 +498,9 @@ end
         ui.DenoiseMethodDropdown.Value = snap.denoiseMethod;
         ui.DenoiseSigmaField.Value = snap.denoiseSigma;
         ui.DeconvCheckbox.Value = snap.deconv;
+        if isfield(snap, 'deconvMethod')
+            ui.DeconvMethodDropdown.Value = snap.deconvMethod;
+        end
         ui.DeconvIterField.Value = snap.deconvIter;
 
         ui.ViewModeDropdown.Value = snap.viewMode;
@@ -2976,7 +2980,9 @@ end
         opts.do_bg_sub = ui.BgSubCheckbox.Value;
         opts.bg_method = char(ui.BgMethodDropdown.Value);
         opts.do_deconv = ui.DeconvCheckbox.Value;
+        opts.deconv_method = char(ui.DeconvMethodDropdown.Value);
         opts.deconv_iter = ui.DeconvIterField.Value;
+        opts.svd_components = 0;  % Auto-detect for SVD denoise
 
         % --- Enhanced background subtraction options ---
         opts.bg_win_lo = [ui.BgWin1LoField.Value, ui.BgWin1HiField.Value];
