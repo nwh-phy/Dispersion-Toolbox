@@ -44,9 +44,11 @@ WORKSPACE_INDEX.md
 *.tmp
 ~$*
 tracked_files.txt
+toolbox_config.m
 
 # Experimental data directories (CONFIDENTIAL — never commit)
 20260120 Bi/
 graphene/
 docs/
 figures/
+references/

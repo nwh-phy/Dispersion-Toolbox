@@ -1,0 +1,21 @@
+function cfg = toolbox_config()
+%TOOLBOX_CONFIG  User-local configuration for external toolbox paths.
+%
+%   Copy this file to toolbox_config.m (same directory) and edit the paths
+%   to match your local setup. The file toolbox_config.m is gitignored so
+%   your local paths won't affect other users.
+%
+%   Usage:
+%     cfg = toolbox_config();
+%     cfg.nion_toolbox_root  — root of the Nion EELS toolbox installation
+
+cfg = struct();
+
+% === Edit the path below to match your local Nion toolbox location ===
+% Example paths:
+%   Windows: 'C:\Users\YourName\Desktop\Nion-EELS数据处理toolbox'
+%   macOS:   '/Users/yourname/Documents/Nion-EELS-Toolbox'
+%   Linux:   '/home/yourname/Nion-EELS-Toolbox'
+cfg.nion_toolbox_root = '';  % <-- SET YOUR PATH HERE
+
+end

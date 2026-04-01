@@ -6,18 +6,6 @@ end
 
 state = local_initial_state();
 
-% Add toolbox background subtraction + BM3D to MATLAB path
-toolbox_root = fullfile(getenv('USERPROFILE'), 'Desktop', ...
-    'Nion-EELS数据处理toolbox', '3D-EELS TOOLBOX');
-toolbox_process_dir = fullfile(toolbox_root, 'Process');
-toolbox_bm3d_dir = fullfile(toolbox_root, 'BM3D');
-if isfolder(toolbox_process_dir)
-    addpath(toolbox_process_dir);
-end
-if isfolder(toolbox_bm3d_dir)
-    addpath(genpath(toolbox_bm3d_dir));
-end
-
 ui = local_build_ui();
 
 local_sync_manual_y_state();
