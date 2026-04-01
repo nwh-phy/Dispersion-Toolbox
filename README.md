@@ -106,8 +106,9 @@ interactive_qe_browser("path/to/eq3D.mat", "path/to/op_history.mat")
 
 在 GUI 控件区可按需启用：
 
-- **Denoise**：Wiener 2D 去噪 / Savitzky-Golay 滤波
-- **Deconv**：Lucy-Richardson 反卷积（需要 ZLP 参考）
+- **Despike**：宇宙射线点缺陷移除（中值滤波 + 5σ 阈值检测）
+- **Denoise**：Wiener 2D 去噪 / Savitzky-Golay 滤波 / **SVD/PCA 截断降噪**（自动拐点检测或手动设定保留分量数）
+- **Deconv**：Lucy-Richardson 迭代退卷积 / **Fourier-Log 多次散射消除**（Egerton §4.2）
 - **BG Sub**：背景扣除（详见下方）
 - **Build Views**：用对称的离轴参考带重建在轴信号
 
