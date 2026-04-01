@@ -70,6 +70,8 @@ end
         state_out.pendingFit = [];       % pending single-spectrum Lorentz fit result
         state_out.qeImage = gobjects(1);
         state_out.selectionMarker = gobjects(1);
+        % Preprocessing cache (avoid redundant SVD/FFT on every click)
+        state_out.ppCache = struct('hash', '', 'qe', [], 'qe_pre', [], 'bg_diag', []);
     end
 
 
@@ -1017,8 +1019,8 @@ end
         qe = local_get_active_qe();
         if isempty(qe); return; end
 
-        % Apply same preprocessing as single spectrum display
-        qe = qe_preprocess(qe, local_preprocess_opts());
+        % Apply same preprocessing as single spectrum display (cached)
+        [qe, ~, ~] = local_get_cached_preprocess(qe, local_preprocess_opts());
 
         [mask, energy_axis] = local_energy_mask(qe);
         q_index = state.selectedQIndex;
@@ -1776,7 +1778,10 @@ end
         ax = ui.SingleAxes;
         local_clear_axes(ax);
         pp_opts = local_preprocess_opts();
-        qe = qe_preprocess(qe, pp_opts);
+
+        % Use cached preprocessing result
+        [qe, qe_pre, bg_diag_all] = local_get_cached_preprocess(qe, pp_opts);
+
         [mask, energy_axis] = local_energy_mask(qe);
         q_index = state.selectedQIndex;
         raw_spectrum = double(qe.intensity(mask, q_index));
@@ -1794,27 +1799,14 @@ end
             display_values = max(display_values, eps);
         end
 
-        % --- BG overlay: get pre-BG spectrum and diagnostics ---
+        % --- BG overlay: use cached pre-BG spectrum and diagnostics ---
         bg_diag_qi = [];
         pre_bg_spectrum = [];
         if pp_opts.do_bg_sub && strcmpi(mode_name, "display")
             try
-                % Get the pre-BG spectrum (preprocess without BG sub)
-                pre_opts = pp_opts;
-                pre_opts.do_bg_sub = false;
-                pre_opts.do_deconv = false;  % also skip deconv for raw view
-                qe_raw = local_get_active_qe();
-                qe_pre = qe_preprocess(qe_raw, pre_opts);
-                pre_bg_spectrum = double(qe_pre.intensity(mask, q_index));
-
-                % Get diagnostics via second call with diag output
-                bg_opts_only = pre_opts;
-                bg_opts_only.do_bg_sub = true;
-                bg_opts_only.bg_method = pp_opts.bg_method;
-                bg_opts_only.bg_win_lo = pp_opts.bg_win_lo;
-                bg_opts_only.bg_win_hi = pp_opts.bg_win_hi;
-                bg_opts_only.bg_iterative = pp_opts.bg_iterative;
-                [~, bg_diag_all] = qe_preprocess(qe_pre, bg_opts_only);
+                if ~isempty(qe_pre)
+                    pre_bg_spectrum = double(qe_pre.intensity(mask, q_index));
+                end
                 if ~isempty(bg_diag_all) && q_index <= numel(bg_diag_all)
                     bg_diag_qi = bg_diag_all(q_index);
                 end
@@ -2992,6 +2984,90 @@ end
             opts.bg_win_hi = [];
         end
         opts.bg_iterative = ui.BgIterCheckbox.Value;
+    end
+
+
+    function [qe_pp, qe_pre, bg_diag] = local_get_cached_preprocess(qe_raw, pp_opts)
+        % Cached preprocessing to avoid redundant SVD/FFT on every click.
+        %
+        % Returns:
+        %   qe_pp    — fully preprocessed data (despike+denoise+BG+deconv)
+        %   qe_pre   — preprocessed WITHOUT BG and deconv (for overlay)
+        %   bg_diag  — BG diagnostics struct array
+        %
+        % Cache is invalidated when opts change or the active dataset changes.
+
+        % Build a hash from the opts and the dataset identity
+        hash_str = local_opts_hash(pp_opts, qe_raw);
+
+        if strcmp(state.ppCache.hash, hash_str) && ~isempty(state.ppCache.qe)
+            % Cache hit — return stored results
+            qe_pp   = state.ppCache.qe;
+            qe_pre  = state.ppCache.qe_pre;
+            bg_diag = state.ppCache.bg_diag;
+            return
+        end
+
+        % Cache miss — compute everything once
+        % 1. Full preprocessing
+        [qe_pp, bg_diag] = qe_preprocess(qe_raw, pp_opts);
+
+        % 2. Pre-BG version (for three-line overlay)
+        if pp_opts.do_bg_sub
+            pre_opts = pp_opts;
+            pre_opts.do_bg_sub = false;
+            pre_opts.do_deconv = false;
+            qe_pre = qe_preprocess(qe_raw, pre_opts);
+
+            % If BG diag wasn't returned from the full pass, get it
+            if isempty(bg_diag)
+                bg_opts = pre_opts;
+                bg_opts.do_bg_sub = true;
+                bg_opts.bg_method = pp_opts.bg_method;
+                bg_opts.bg_win_lo = pp_opts.bg_win_lo;
+                bg_opts.bg_win_hi = pp_opts.bg_win_hi;
+                bg_opts.bg_iterative = pp_opts.bg_iterative;
+                [~, bg_diag] = qe_preprocess(qe_pre, bg_opts);
+            end
+        else
+            qe_pre  = [];
+            bg_diag = [];
+        end
+
+        % Store in cache
+        state.ppCache.hash    = hash_str;
+        state.ppCache.qe      = qe_pp;
+        state.ppCache.qe_pre  = qe_pre;
+        state.ppCache.bg_diag = bg_diag;
+    end
+
+
+    function h = local_opts_hash(opts, qe)
+        % Fast hash of preprocessing options + dataset identity.
+        % Uses a simple string concatenation of all relevant fields.
+        parts = {};
+        parts{end+1} = sprintf('%d', opts.do_normalize);
+        parts{end+1} = opts.norm_method;
+        parts{end+1} = sprintf('%.1f', opts.norm_min);
+        parts{end+1} = sprintf('%.1f', opts.norm_max);
+        parts{end+1} = sprintf('%d', opts.do_denoise);
+        parts{end+1} = opts.denoise_method;
+        parts{end+1} = sprintf('%.1f', opts.denoise_sigma);
+        parts{end+1} = sprintf('%d', opts.do_bg_sub);
+        parts{end+1} = opts.bg_method;
+        parts{end+1} = sprintf('%.1f_%.1f', opts.bg_win_lo(1), opts.bg_win_lo(2));
+        if ~isempty(opts.bg_win_hi)
+            parts{end+1} = sprintf('%.1f_%.1f', opts.bg_win_hi(1), opts.bg_win_hi(2));
+        end
+        parts{end+1} = sprintf('%d', opts.bg_iterative);
+        parts{end+1} = sprintf('%d', opts.do_deconv);
+        parts{end+1} = opts.deconv_method;
+        parts{end+1} = sprintf('%d', opts.deconv_iter);
+        parts{end+1} = sprintf('%d', opts.svd_components);
+        % Dataset identity: use size + first/last values as fingerprint
+        parts{end+1} = sprintf('%dx%d', size(qe.intensity, 1), size(qe.intensity, 2));
+        parts{end+1} = sprintf('%.6g', qe.intensity(1,1));
+        h = strjoin(parts, '|');
     end
 
 
