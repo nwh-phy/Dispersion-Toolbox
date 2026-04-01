@@ -1,6 +1,7 @@
 # MATLAB
 *.asv
 *.mex*
+!lib/**/*.mex*
 *.mlappinstall
 *.mlpkginstall
 codegen/
