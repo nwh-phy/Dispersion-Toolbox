@@ -3,7 +3,6 @@ function dataset = load_npy_session(npy_path, options)
 %
 %   dataset = load_npy_session('path/to/file.npy')
 %   dataset = load_npy_session('path/to/file.npy', q_crop=[51 408])
-%   dataset = load_npy_session('path/to/file.npy', q_crop=[1 512])
 %
 %   Processing pipeline:
 %     1. Read .npy (4D float32) + companion .json (metadata)
@@ -15,7 +14,7 @@ function dataset = load_npy_session(npy_path, options)
 %
 %   Options:
 %     q_crop       - [lo, hi] pixel indices for q cropping (default: auto)
-%                    Valid examples: [51 408], [1 512]
+%                    Example: [51 408]
 %     align_sigma  - Gaussian weight width for iterative alignment (default: 200)
 %     align_target - Convergence threshold: var(shifts) (default: 0.5)
 %     max_iter     - Maximum alignment iterations (default: 10)
@@ -91,26 +90,9 @@ fprintf('  Data matrix: %d energy × %d momentum channels\n', n_E, n_q);
 %% 3. Q cropping
 if all(isfinite(options.q_crop))
     % Manual crop
-    q_crop_input = options.q_crop;
-    q_lo = max(1, round(options.q_crop(1)));
-    q_hi = min(n_q, round(options.q_crop(2)));
-
-    if q_lo > q_hi
-        error('load_npy_session:InvalidQCrop', ...
-            ['Invalid q_crop = [%g, %g]: rounded/clipped to [%d, %d], where lo > hi. ' ...
-             'Valid channel range is [1, %d].'], ...
-            q_crop_input(1), q_crop_input(2), q_lo, q_hi, n_q);
-    end
-
     min_q_width = 10;
-    q_width = q_hi - q_lo + 1;
-    if q_width < min_q_width
-        error('load_npy_session:InvalidQCrop', ...
-            ['Invalid q_crop = [%g, %g]: rounded/clipped to [%d, %d] with width %d. ' ...
-             'Minimum required width is %d channels; valid channel range is [1, %d].'], ...
-            q_crop_input(1), q_crop_input(2), q_lo, q_hi, q_width, min_q_width, n_q);
-    end
-
+    [q_lo, q_hi] = resolve_q_crop_bounds( ...
+        options.q_crop, n_q, min_q_width, "load_npy_session:InvalidQCrop");
     fprintf('  Q crop (manual): channels %d : %d\n', q_lo, q_hi);
 else
     % Auto-detect: find q range where total intensity > 5% of peak
