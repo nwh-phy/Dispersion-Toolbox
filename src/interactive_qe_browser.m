@@ -1720,7 +1720,7 @@ end
             if ~isempty(state.dataset) && isfield(state.dataset, 'source_path')
                 export.source_path = char(state.dataset.source_path);
             end
-            export.dq_Ainv = state.dataset.dq_Ainv;
+            export.dq_Ainv = qe_physical.dq_Ainv;
             export.export_timestamp = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
             export.toolbox_version = 'qe_browser v2.0';
 
