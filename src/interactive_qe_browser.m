@@ -98,6 +98,7 @@ end
         cb.on_fit_dispersion = @local_on_fit_dispersion;
         cb.on_export_dispersion = @local_on_export_dispersion;
         cb.on_show_loss_map = @local_on_show_loss_map;
+        cb.on_export_data = @local_on_export_data;
         cb.on_history_select = @local_on_history_select;
         cb.on_save_history = @local_on_save_history;
         cb.on_load_history = @local_on_load_history;
@@ -1638,6 +1639,107 @@ end
             local_show_error(ME, false);
         end
     end
+
+
+    function local_on_export_data(~, ~)
+        % Export preprocessed q-E data as a lossless .mat file.
+        % Includes: intensity, energy_meV, q_Ainv, preprocessing options,
+        % BG diagnostics, source path, and export timestamp.
+        qe = local_get_active_qe();
+        if isempty(qe)
+            ui.InfoLabel.Text = "Load data first";
+            ui.InfoLabel.Visible = "on";
+            return
+        end
+
+        % Run full preprocessing (use cache if available)
+        pp_opts = local_preprocess_opts();
+        [qe_pp, qe_pre, bg_diag] = local_get_cached_preprocess(qe, pp_opts);
+
+        % Ask user for save location
+        default_dir = pwd;
+        if ~isempty(state.dataset) && isfield(state.dataset, 'source_path')
+            [src_folder, src_name, ~] = fileparts(char(state.dataset.source_path));
+            if isfolder(src_folder)
+                default_dir = src_folder;
+            end
+        else
+            src_name = 'qe_data';
+        end
+
+        % Build default filename with preprocessing summary
+        pp_summary = '';
+        if pp_opts.do_normalize
+            pp_summary = [pp_summary '_norm'];
+        end
+        if pp_opts.do_denoise
+            pp_summary = [pp_summary '_' lower(pp_opts.denoise_method)];
+        end
+        if pp_opts.do_bg_sub
+            pp_summary = [pp_summary '_bg' lower(pp_opts.bg_method)];
+        end
+        if pp_opts.do_deconv
+            pp_summary = [pp_summary '_deconv'];
+        end
+        default_name = sprintf('%s_preprocessed%s.mat', src_name, pp_summary);
+
+        [fname, fpath] = uiputfile({'*.mat', 'MATLAB data (*.mat)'}, ...
+            'Export preprocessed data', fullfile(default_dir, default_name));
+        if isequal(fname, 0)
+            return
+        end
+        out_file = fullfile(fpath, fname);
+
+        % Pack export struct — all fields needed to reconstruct analysis
+        export = struct();
+
+        % Core data (double precision, lossless)
+        export.intensity  = double(qe_pp.intensity);
+        export.energy_meV = double(qe_pp.energy_meV(:));
+        export.q_Ainv     = double(qe_pp.q_Ainv(:));
+
+        % Pre-BG data (for reference / re-analysis)
+        if ~isempty(qe_pre)
+            export.intensity_pre_bg = double(qe_pre.intensity);
+        end
+
+        % Raw data reference
+        export.intensity_raw = double(qe.intensity);
+
+        % Metadata
+        export.preprocessing = pp_opts;
+        export.source_path   = '';
+        if ~isempty(state.dataset) && isfield(state.dataset, 'source_path')
+            export.source_path = char(state.dataset.source_path);
+        end
+        export.dq_Ainv = state.dataset.dq_Ainv;
+        export.export_timestamp = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+        export.toolbox_version = 'qe_browser v2.0';
+
+        % BG fit diagnostics (R², model params per channel)
+        if ~isempty(bg_diag)
+            export.bg_diagnostics = bg_diag;
+        end
+
+        % Size info
+        [nE, nQ] = size(export.intensity);
+        export.dimensions = struct('n_energy', nE, 'n_q', nQ, ...
+            'E_range_meV', [export.energy_meV(1), export.energy_meV(end)], ...
+            'q_range_Ainv', [export.q_Ainv(1), export.q_Ainv(end)]);
+
+        % Save with v7.3 for large data support
+        save(out_file, '-struct', 'export', '-v7.3');
+
+        file_info = dir(out_file);
+        size_MB = file_info.bytes / 1e6;
+
+        msg = sprintf('Exported %dx%d (%.1f MB): %s', nE, nQ, size_MB, fname);
+        fprintf('  %s\n', msg);
+        ui.InfoLabel.Text = msg;
+        ui.InfoLabel.Visible = "on";
+        local_log_operation(sprintf('Export data: %s', fname));
+    end
+
 
     function local_on_export(~, ~)
         % Export axes panels as publication-quality images.

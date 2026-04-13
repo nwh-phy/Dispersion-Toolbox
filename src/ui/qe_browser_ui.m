@@ -668,11 +668,17 @@ function ui_handles = qe_browser_ui(cb)
         "ButtonPushedFcn", cb.on_show_loss_map);
     loss_map_btn.Layout.Row = 10; loss_map_btn.Layout.Column = [9 10];
 
+    export_data_btn = uibutton(control_grid, ...
+        "Text", "📦 Export Data", ...
+        "Tooltip", "Export preprocessed q-E data (after denoise + BG removal) as .mat", ...
+        "ButtonPushedFcn", cb.on_export_data);
+    export_data_btn.Layout.Row = 10; export_data_btn.Layout.Column = [11 12];
+
     disp_info_label = uilabel(control_grid, ...
         "Text", "", ...
         "HorizontalAlignment", "left");
     disp_info_label.Layout.Row = 10;
-    disp_info_label.Layout.Column = [11 16];
+    disp_info_label.Layout.Column = [13 16];
 
     % ═══════════ AXES ═══════════
     qe_axes = uiaxes(main_grid);
@@ -799,6 +805,7 @@ function ui_handles = qe_browser_ui(cb)
     ui_handles.FitDispButton = fit_disp_btn;
     ui_handles.ExportDispButton = export_disp_btn;
     ui_handles.LossMapButton = loss_map_btn;
+    ui_handles.ExportDataButton = export_data_btn;
     ui_handles.DispInfoLabel = disp_info_label;
 end
 
