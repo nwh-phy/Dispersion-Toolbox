@@ -97,6 +97,7 @@ end
         cb.on_reassign_points = @local_on_reassign_points;
         cb.on_fit_dispersion = @local_on_fit_dispersion;
         cb.on_export_dispersion = @local_on_export_dispersion;
+        cb.on_show_loss_map = @local_on_show_loss_map;
         cb.on_history_select = @local_on_history_select;
         cb.on_save_history = @local_on_save_history;
         cb.on_load_history = @local_on_load_history;
@@ -195,6 +196,8 @@ end
                 state.eq3dQE = [];
                 state.physicalQE = [];
                 state.comparisonQE = [];
+                state.autoFitResults = [];   % clear stale fits (Issue #1)
+                state.ppCache = struct('hash', '', 'qe', [], 'qe_pre', [], 'bg_diag', []);
                 state.eq3dQE = dataset.qe;
                 state.physicalQE = dataset.qe;
                 state.activeStage = "eq3d";
@@ -229,6 +232,8 @@ end
             state.eq3dQE = [];
             state.physicalQE = [];
             state.comparisonQE = [];
+            state.autoFitResults = [];   % clear stale fit results (Issue #1)
+            state.ppCache = struct('hash', '', 'qe', [], 'qe_pre', [], 'bg_diag', []);
 
             state.eq3dQE = dataset.qe;
             state.physicalQE = dataset.qe;
@@ -1248,6 +1253,7 @@ end
         autoResults.fit_details = results.fit_details;
         autoResults.n_success = results.n_success;
         state.autoFitResults = autoResults;
+        state.autoFitResults.ppHash = local_opts_hash(local_preprocess_opts(), local_get_active_qe());
         state.manual_points = branches{1}(:, 1:min(2, size(branches{1},2)));
         state.manual_branches = branches;
 
@@ -1546,14 +1552,92 @@ end
             return
         end
 
-        qe_gamma_dashboard(state.autoFitResults.all_peaks, ...
-            state.autoFitResults.branches);
+        % Stale-fit check (same logic as Loss Map — Issue #3 round 3)
+        qe = local_get_active_qe();
+        if ~isempty(qe) && isfield(state.autoFitResults, 'ppHash')
+            current_hash = local_opts_hash(local_preprocess_opts(), qe);
+            if ~strcmp(state.autoFitResults.ppHash, current_hash)
+                ui.InfoLabel.Text = "⚠ Fit results stale — re-run Auto Fit for accurate analysis.";
+                ui.InfoLabel.Visible = "on";
+            end
+        end
+
+        % Prefer manual_branches if user has reassigned (Issue #2 round 3)
+        if ~isempty(state.manual_branches)
+            branches = state.manual_branches;
+        else
+            branches = state.autoFitResults.branches;
+        end
+
+        % Reconstruct all_peaks from active branches so title count is accurate
+        all_peaks = vertcat(branches{:});
+        qe_gamma_dashboard(all_peaks, branches);
 
         local_log_operation('Show Γ & Amplitude analysis');
     end
 
 
+    function local_on_show_loss_map(~, ~)
+        % Generate intrinsic loss function map L(ω,q) = S(ω,q) / I_kin(q).
+        % Uses self-consistent physics extraction from fitted branches.
+        qe = local_get_active_qe();
+        if isempty(qe)
+            ui.InfoLabel.Text = "Load data first";
+            ui.InfoLabel.Visible = "on";
+            return
+        end
 
+        % Preprocess the active qe data
+        pp_opts = local_preprocess_opts();
+        [qe_pp, ~, ~] = local_get_cached_preprocess(qe, pp_opts);
+
+        % Check if we have fitting results for self-consistent mode
+        phys = [];
+        mode = 'simple';
+        if isfield(state, 'autoFitResults') && ~isempty(state.autoFitResults)
+            % Check if preprocessing has changed since the fit was run
+            current_hash = local_opts_hash(local_preprocess_opts(), qe);
+            if isfield(state.autoFitResults, 'ppHash') && ...
+               ~strcmp(state.autoFitResults.ppHash, current_hash)
+                fprintf('  Loss Map: WARNING — preprocessing changed since Auto Fit.\n');
+                fprintf('  Falling back to simple q⁻³ mode. Re-run Auto Fit for experimental mode.\n');
+                ui.InfoLabel.Text = "⚠ Fit results stale — using simple mode. Re-run Auto Fit.";
+                ui.InfoLabel.Visible = "on";
+            else
+                try
+                    % Prefer manual_branches if user has reassigned (Issue #2 round 3)
+                    if ~isempty(state.manual_branches)
+                        branches_for_phys = state.manual_branches;
+                    else
+                        branches_for_phys = state.autoFitResults.branches;
+                    end
+                    phys = qe_physics_extract(branches_for_phys);
+                    mode = 'experimental';
+                    fprintf('  Loss Map: using self-consistent I_kin (ρ₀=%.0fÅ)\n', phys.rho0);
+                catch ME
+                    fprintf('  Loss Map: physics extraction failed (%s), using q⁻³ fallback\n', ME.message);
+                end
+            end
+        else
+            fprintf('  Loss Map: no fit data, using simple q⁻³ mode\n');
+            fprintf('  Tip: run Auto Fit first for self-consistent I_kin correction\n');
+        end
+
+        % Get display range from UI
+        map_opts = struct();
+        map_opts.mode = mode;
+        map_opts.E_range = [ui.EnergyMinField.Value, ui.EnergyMaxField.Value];
+        map_opts.q_range = [ui.QStartField.Value, ui.QEndField.Value];
+
+        try
+            qe_loss_map(qe_pp, phys, map_opts);
+            local_log_operation(sprintf('Loss Map (%s mode)', mode));
+            ui.InfoLabel.Text = sprintf('Loss Map generated (%s mode)', mode);
+            ui.InfoLabel.Visible = "on";
+        catch ME
+            local_show_error(ME, false);
+        end
+    end
 
     function local_on_export(~, ~)
         % Export axes panels as publication-quality images.
@@ -1685,10 +1769,27 @@ end
         end
 
         state.selectedQIndex = min(max(1, state.selectedQIndex), size(state.physicalQE.intensity, 2));
+        
+        % Render single spectrum FIRST — uses fast single-q preview if
+        % the full batch cache is stale. This gives instant BG feedback.
+        was_cache_miss = ~strcmp(state.ppCache.hash, local_opts_hash(local_preprocess_opts(), qe));
+        local_plot_single_spectrum(qe);
+        drawnow limitrate;  % flush the single spectrum to screen immediately
+
+        % Then render the maps — this triggers full batch if cache misses,
+        % but the user has already seen the single spectrum result.
         local_plot_qe_map(ui.QEAxes, state.physicalQE, "Physical");
         local_plot_normalized_map();
-        local_plot_single_spectrum(qe);
         local_plot_dispersion_result();
+
+        % If the cache was stale and deconv is on, the single spectrum
+        % was drawn without deconv (fast preview skips it). Now that
+        % the full batch is cached, redraw to ensure consistency. (Issue #2)
+        if was_cache_miss && local_preprocess_opts().do_deconv
+            local_plot_single_spectrum(qe);
+        end
+
+
     end
 
 
@@ -1711,7 +1812,7 @@ end
             display_style = "physical";
         end
         local_clear_axes(ax);
-        qe = qe_preprocess(qe, local_preprocess_opts());
+        [qe, ~, ~] = local_get_cached_preprocess(qe, local_preprocess_opts());
         [energy_mask, energy_axis] = local_energy_mask(qe);
         [q_mask, q_axis] = local_q_mask(qe);
         map_values = local_build_map_values(qe, energy_mask, q_mask, "display");
@@ -1768,11 +1869,23 @@ end
         local_clear_axes(ax);
         pp_opts = local_preprocess_opts();
 
-        % Use cached preprocessing result
-        [qe, qe_pre, bg_diag_all] = local_get_cached_preprocess(qe, pp_opts);
+        % Try cached full preprocessing first (O(1) if already computed)
+        hash_str = local_opts_hash(pp_opts, qe);
+        q_index = state.selectedQIndex;
+        bg_diag_single = [];  % init before branch
+
+        if strcmp(state.ppCache.hash, hash_str) && ~isempty(state.ppCache.qe)
+            % Cache hit — use stored full batch result
+            qe = state.ppCache.qe;
+            qe_pre = state.ppCache.qe_pre;
+            bg_diag_all = state.ppCache.bg_diag;
+        else
+            % Cache miss — use fast SINGLE-CHANNEL preview (instant)
+            [qe, qe_pre, bg_diag_single] = local_get_single_q_bg_preview(qe, pp_opts, q_index);
+            bg_diag_all = [];  % no batch diagnostics
+        end
 
         [mask, energy_axis] = local_energy_mask(qe);
-        q_index = state.selectedQIndex;
         raw_spectrum = double(qe.intensity(mask, q_index));
         features = local_build_spectrum_features(energy_axis, raw_spectrum);
         mode_name = local_trace_mode();
@@ -1788,7 +1901,7 @@ end
             display_values = max(display_values, eps);
         end
 
-        % --- BG overlay: use cached pre-BG spectrum and diagnostics ---
+        % --- BG overlay: use cached or single-channel diagnostics ---
         bg_diag_qi = [];
         pre_bg_spectrum = [];
         if pp_opts.do_bg_sub && strcmpi(mode_name, "display")
@@ -1798,6 +1911,8 @@ end
                 end
                 if ~isempty(bg_diag_all) && q_index <= numel(bg_diag_all)
                     bg_diag_qi = bg_diag_all(q_index);
+                elseif ~isempty(bg_diag_single)
+                    bg_diag_qi = bg_diag_single;
                 end
             catch
             end
@@ -3026,6 +3141,43 @@ end
         state.ppCache.qe      = qe_pp;
         state.ppCache.qe_pre  = qe_pre;
         state.ppCache.bg_diag = bg_diag;
+    end
+
+
+    function [qe_qi, qe_pre_qi, bg_diag_qi] = local_get_single_q_bg_preview(qe_raw, pp_opts, q_index)
+        % Fast single-channel BG preview — O(1) instead of O(n_q).
+        %
+        % Processes only the selected q-channel through the pipeline:
+        %   normalize → denoise → BG subtract (single channel) + diagnostics
+        %
+        % Returns:
+        %   qe_qi      — fully preprocessed data (only q_index modified by BG)
+        %   qe_pre_qi  — preprocessed WITHOUT BG (for three-line overlay)
+        %   bg_diag_qi — single BG diagnostic struct for q_index
+
+        bg_diag_qi = [];
+        qe_pre_qi = [];
+
+        % 1. Pre-BG steps (norm + denoise) — these are fast, process all q
+        pre_opts = pp_opts;
+        pre_opts.do_bg_sub = false;
+        pre_opts.do_deconv = false;
+        qe_pre_qi = qe_preprocess(qe_raw, pre_opts);
+
+        % 2. BG subtraction on single q only
+        if pp_opts.do_bg_sub
+            bg_opts = pp_opts;
+            bg_opts.do_normalize = false;  % already done
+            bg_opts.do_denoise = false;    % already done
+            bg_opts.do_deconv = false;
+            bg_opts.q_indices = q_index;   % ← KEY: only process this channel
+            [qe_qi, bg_diag_arr] = qe_preprocess(qe_pre_qi, bg_opts);
+            if ~isempty(bg_diag_arr) && q_index <= numel(bg_diag_arr)
+                bg_diag_qi = bg_diag_arr(q_index);
+            end
+        else
+            qe_qi = qe_pre_qi;
+        end
     end
 
 

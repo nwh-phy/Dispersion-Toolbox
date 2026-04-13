@@ -366,8 +366,9 @@ function ui_handles = qe_browser_ui(cb)
     area_norm_max.Layout.Column = 13;
 
     bg_sub = uicheckbox(control_grid, ...
-        "Text", "BG Sub", ...
+        "Text", "QE BG", ...
         "Value", false, ...
+        "Tooltip", "Quasi-elastic background removal: subtract ZLP tail (Do et al. 2025)", ...
         "ValueChangedFcn", cb.on_display_change);
     bg_sub.Layout.Row = 5;
     bg_sub.Layout.Column = 14;
@@ -661,11 +662,17 @@ function ui_handles = qe_browser_ui(cb)
         "ButtonPushedFcn", cb.on_export_dispersion);
     export_disp_btn.Layout.Row = 10; export_disp_btn.Layout.Column = [7 8];
 
+    loss_map_btn = uibutton(control_grid, ...
+        "Text", "🌊 Loss Map", ...
+        "Tooltip", "Intrinsic loss function L(ω,q) = S/I_kin (Do et al. 2025)", ...
+        "ButtonPushedFcn", cb.on_show_loss_map);
+    loss_map_btn.Layout.Row = 10; loss_map_btn.Layout.Column = [9 10];
+
     disp_info_label = uilabel(control_grid, ...
         "Text", "", ...
         "HorizontalAlignment", "left");
     disp_info_label.Layout.Row = 10;
-    disp_info_label.Layout.Column = [9 16];
+    disp_info_label.Layout.Column = [11 16];
 
     % ═══════════ AXES ═══════════
     qe_axes = uiaxes(main_grid);
@@ -791,6 +798,7 @@ function ui_handles = qe_browser_ui(cb)
     ui_handles.DispModelDropdown = disp_model_dropdown;
     ui_handles.FitDispButton = fit_disp_btn;
     ui_handles.ExportDispButton = export_disp_btn;
+    ui_handles.LossMapButton = loss_map_btn;
     ui_handles.DispInfoLabel = disp_info_label;
 end
 

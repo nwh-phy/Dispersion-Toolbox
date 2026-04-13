@@ -6,10 +6,16 @@ function [qe_out, bg_diag] = qe_preprocess(qe_in, opts)
 %
 %   Applies a configurable preprocessing chain:
 %     0. Cosmic-ray removal (optional, median-threshold spike detection)
-%     1. Normalization  (ZLP Peak or Area)
+%     1. Normalization  (ZLP Peak or Area — beam current correction)
 %     2. Denoising      (Wiener2D, Savitzky-Golay, or BM3D)
-%     3. Background subtraction (Power/ExpPoly3/Pearson/PearsonVII/Power2/Exp2)
+%     3. Quasi-elastic background removal (ZLP tail subtraction)
+%        Models: Power/ExpPoly3/Pearson/PearsonVII/Power2/Exp2
 %     4. Deconvolution  (Lucy-Richardson)
+%
+%   Physical note (Do et al. 2025, Fung et al. 2020):
+%     Step 3 removes the quasi-elastic ZLP tail via **subtraction**, not
+%     division. This preserves the absolute intensity for A(q) analysis.
+%     ZLP Peak normalization (step 1) corrects for beam current only.
 %
 %   Background subtraction opts fields (all have sensible defaults):
 %     .bg_method      char     — model name (see above)
@@ -69,7 +75,14 @@ function qe_out = apply_normalization(qe_in, opts)
     if strcmpi(method, 'ZLP Peak')
         % ZLP Peak normalization: divide by ZLP peak height.
         % Preserves q-dependent spectral weight for A(q) studies.
-        zlp_mask = energy_axis >= norm_min & energy_axis <= norm_max;
+        %
+        % CRITICAL: Always use fixed [-50, 50] meV window for ZLP Peak
+        % normalization, regardless of user display range. The ZLP is
+        % at E≈0 by definition; using the display range (e.g. [300, 3836])
+        % would find the plasmon peak instead of the zero-loss peak.
+        zlp_fixed_min = -50;
+        zlp_fixed_max =  50;
+        zlp_mask = energy_axis >= zlp_fixed_min & energy_axis <= zlp_fixed_max;
         if ~any(zlp_mask)
             [~, nearest] = min(abs(energy_axis));
             zlp_mask(nearest) = true;
@@ -105,16 +118,24 @@ end
 
 
 function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
-    % Enhanced EELS background subtraction.
+    % Quasi-elastic background removal (Do et al. 2025).
     %
-    % Features (vs. original):
-    %   - Curve Fitting Toolbox fit() instead of polyfit → full gof stats
+    % Fits a model to the ZLP tail (quasi-elastic scattering) in the
+    % low-loss region and subtracts it, isolating the inelastic loss
+    % features (plasmon peaks, interband transitions).
+    %
+    % Features:
+    %   - Curve Fitting Toolbox fit() with full gof stats
     %   - Dual-window fitting: anchor before AND after loss features
     %   - Iterative refit: detect negative signal → increase weight → refit
-    %   - New models: PearsonVII (physical ZLP tail), Power2 (a*x^b+c), Exp2
+    %   - Models: Power, Power2, ExpPoly3, Pearson, PearsonVII, Exp2
+    %     (Exp2 recommended for low-loss; Fung et al. 2020)
     %   - Diagnostics: R², RMSE, h-parameter, SNR per q-channel
     %
-    % All new features are opt-in via opts fields with backward-compat defaults.
+    % Physical note:
+    %   This is "quasi-elastic background removal" — the ZLP tail extends
+    %   far beyond its FWHM and must be subtracted before peak fitting.
+    %   Do NOT confuse with "normalization" (beam current correction).
 
     if nargin < 3, want_diag = false; end
 
@@ -190,7 +211,15 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
     warning('off', 'MATLAB:illConditionedMatrix');
     cleanupObj = onCleanup(@() warning(warnState));
 
-    for qi = 1:n_q
+    % --- Selective q-channel processing for fast preview ---
+    if isfield(opts, 'q_indices') && ~isempty(opts.q_indices)
+        q_list = opts.q_indices(:)';
+        q_list = q_list(q_list >= 1 & q_list <= n_q);
+    else
+        q_list = 1:n_q;
+    end
+
+    for qi = q_list
         spec = intensity(:, qi);
         s_fit = spec(fit_mask);
         s_fit_pos = max(s_fit, eps);
