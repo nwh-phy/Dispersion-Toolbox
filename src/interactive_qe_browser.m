@@ -1643,28 +1643,31 @@ end
 
     function local_on_export_data(~, ~)
         % Export preprocessed q-E data as a lossless .mat file.
-        % Includes: intensity, energy_meV, q_Ainv, preprocessing options,
-        % BG diagnostics, source path, and export timestamp.
-        qe = local_get_active_qe();
-        if isempty(qe)
+        %
+        % IMPORTANT: Always exports from physicalQE (the true q-E map),
+        % regardless of the current view mode. This avoids exporting
+        % the normalized/comparison view as if it were raw physical data.
+        if isempty(state.physicalQE)
             ui.InfoLabel.Text = "Load data first";
             ui.InfoLabel.Visible = "on";
             return
         end
 
+        % Always use physicalQE as the source — never the active view
+        qe_physical = state.physicalQE;
+
         % Run full preprocessing (use cache if available)
         pp_opts = local_preprocess_opts();
-        [qe_pp, qe_pre, bg_diag] = local_get_cached_preprocess(qe, pp_opts);
+        [qe_pp, qe_pre, bg_diag] = local_get_cached_preprocess(qe_physical, pp_opts);
 
         % Ask user for save location
         default_dir = pwd;
+        src_name = 'qe_data';
         if ~isempty(state.dataset) && isfield(state.dataset, 'source_path')
             [src_folder, src_name, ~] = fileparts(char(state.dataset.source_path));
             if isfolder(src_folder)
                 default_dir = src_folder;
             end
-        else
-            src_name = 'qe_data';
         end
 
         % Build default filename with preprocessing summary
@@ -1690,54 +1693,62 @@ end
         end
         out_file = fullfile(fpath, fname);
 
-        % Pack export struct — all fields needed to reconstruct analysis
-        export = struct();
+        try
+            % Pack export struct — all fields needed to reconstruct analysis
+            export = struct();
 
-        % Core data (double precision, lossless)
-        export.intensity  = double(qe_pp.intensity);
-        export.energy_meV = double(qe_pp.energy_meV(:));
-        export.q_Ainv     = double(qe_pp.q_Ainv(:));
+            % Core data (double precision, lossless)
+            export.intensity  = double(qe_pp.intensity);
+            export.energy_meV = double(qe_pp.energy_meV(:));
+            export.q_Ainv     = double(qe_pp.q_Ainv(:));
 
-        % Pre-BG data (for reference / re-analysis)
-        if ~isempty(qe_pre)
-            export.intensity_pre_bg = double(qe_pre.intensity);
+            % Pre-BG data (for reference / re-analysis)
+            if ~isempty(qe_pre)
+                export.intensity_pre_bg = double(qe_pre.intensity);
+            end
+
+            % Unprocessed physical data (always from physicalQE, never from
+            % the active view — prevents Normalized view data from being
+            % mislabeled as raw physical data)
+            export.intensity_unprocessed = double(qe_physical.intensity);
+
+            % Metadata — data provenance
+            export.data_kind = 'physical';  % always physical, never 'normalized'
+            export.view_mode_at_export = char(ui.ViewModeDropdown.Value);
+            export.preprocessing = pp_opts;
+            export.source_path = '';
+            if ~isempty(state.dataset) && isfield(state.dataset, 'source_path')
+                export.source_path = char(state.dataset.source_path);
+            end
+            export.dq_Ainv = state.dataset.dq_Ainv;
+            export.export_timestamp = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+            export.toolbox_version = 'qe_browser v2.0';
+
+            % BG fit diagnostics (R², model params per channel)
+            if ~isempty(bg_diag)
+                export.bg_diagnostics = bg_diag;
+            end
+
+            % Size info
+            [nE, nQ] = size(export.intensity);
+            export.dimensions = struct('n_energy', nE, 'n_q', nQ, ...
+                'E_range_meV', [export.energy_meV(1), export.energy_meV(end)], ...
+                'q_range_Ainv', [export.q_Ainv(1), export.q_Ainv(end)]);
+
+            % Save with v7.3 for large data support
+            save(out_file, '-struct', 'export', '-v7.3');
+
+            file_info = dir(out_file);
+            size_MB = file_info.bytes / 1e6;
+
+            msg = sprintf('Exported %dx%d (%.1f MB): %s', nE, nQ, size_MB, fname);
+            fprintf('  %s\n', msg);
+            ui.InfoLabel.Text = msg;
+            ui.InfoLabel.Visible = "on";
+            local_log_operation(sprintf('Export data: %s', fname));
+        catch ME
+            local_show_error(ME, false);
         end
-
-        % Raw data reference
-        export.intensity_raw = double(qe.intensity);
-
-        % Metadata
-        export.preprocessing = pp_opts;
-        export.source_path   = '';
-        if ~isempty(state.dataset) && isfield(state.dataset, 'source_path')
-            export.source_path = char(state.dataset.source_path);
-        end
-        export.dq_Ainv = state.dataset.dq_Ainv;
-        export.export_timestamp = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
-        export.toolbox_version = 'qe_browser v2.0';
-
-        % BG fit diagnostics (R², model params per channel)
-        if ~isempty(bg_diag)
-            export.bg_diagnostics = bg_diag;
-        end
-
-        % Size info
-        [nE, nQ] = size(export.intensity);
-        export.dimensions = struct('n_energy', nE, 'n_q', nQ, ...
-            'E_range_meV', [export.energy_meV(1), export.energy_meV(end)], ...
-            'q_range_Ainv', [export.q_Ainv(1), export.q_Ainv(end)]);
-
-        % Save with v7.3 for large data support
-        save(out_file, '-struct', 'export', '-v7.3');
-
-        file_info = dir(out_file);
-        size_MB = file_info.bytes / 1e6;
-
-        msg = sprintf('Exported %dx%d (%.1f MB): %s', nE, nQ, size_MB, fname);
-        fprintf('  %s\n', msg);
-        ui.InfoLabel.Text = msg;
-        ui.InfoLabel.Visible = "on";
-        local_log_operation(sprintf('Export data: %s', fname));
     end
 
 
