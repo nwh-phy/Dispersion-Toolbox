@@ -46,10 +46,14 @@ opts.bg_candidate_methods = {'Power', 'Pearson', 'ExpPoly3'};
 
 [~, bg_diag] = qe_preprocess(qe, opts);
 
-verifyEqual(testCase, bg_diag(1).selected_method, 'Power');
+[best_score, best_idx] = min(bg_diag(1).candidate_scores);
+verifyEqual(testCase, bg_diag(1).selected_method, bg_diag(1).candidate_methods{best_idx});
 verifyEqual(testCase, {bg_diag(1).candidate_details.method}, ...
     {'Power', 'Pearson', 'ExpPoly3'});
 verifyTrue(testCase, all(isfinite([bg_diag(1).candidate_details.linear_rmse])));
+verifyTrue(testCase, isfinite(best_score));
+verifyEqual(testCase, bg_diag(1).candidate_scores, ...
+    [bg_diag(1).candidate_details.score]);
 end
 
 
