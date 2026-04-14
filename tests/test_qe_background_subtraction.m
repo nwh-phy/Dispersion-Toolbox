@@ -11,7 +11,7 @@ end
 
 
 function testPowerBackgroundSubtractionRecoversSyntheticPeakHeight(testCase)
-[qe, peak_only] = makeSyntheticQeDataset([1.0]);
+[qe, peak_only] = makeSyntheticQeDataset('power', [1.0]);
 opts = makeBgOpts('Power');
 
 [qe_out, bg_diag] = qe_preprocess(qe, opts);
@@ -27,20 +27,34 @@ end
 
 
 function testAutoBackgroundSelectionPrefersPowerForPowerLawTail(testCase)
-[qe, ~] = makeSyntheticQeDataset([1.0]);
+[qe, ~] = makeSyntheticQeDataset('power', [1.0]);
 opts = makeBgOpts('Auto');
-opts.bg_candidate_methods = {'Power', 'Exp2'};
+opts.bg_candidate_methods = {'Power', 'Exp2', 'ExpPoly3'};
 
 [~, bg_diag] = qe_preprocess(qe, opts);
 
 verifyEqual(testCase, bg_diag(1).selected_method, 'Power');
-verifyGreaterThanOrEqual(testCase, numel(bg_diag(1).candidate_methods), 2);
-verifyGreaterThanOrEqual(testCase, numel(bg_diag(1).candidate_scores), 2);
+verifyGreaterThanOrEqual(testCase, numel(bg_diag(1).candidate_methods), 3);
+verifyGreaterThanOrEqual(testCase, numel(bg_diag(1).candidate_scores), 3);
+end
+
+
+function testAutoBackgroundSelectionSupportsLogDomainCandidates(testCase)
+[qe, ~] = makeSyntheticQeDataset('power', [1.0]);
+opts = makeBgOpts('Auto');
+opts.bg_candidate_methods = {'Power', 'Pearson', 'ExpPoly3'};
+
+[~, bg_diag] = qe_preprocess(qe, opts);
+
+verifyEqual(testCase, bg_diag(1).selected_method, 'Power');
+verifyEqual(testCase, {bg_diag(1).candidate_details.method}, ...
+    {'Power', 'Pearson', 'ExpPoly3'});
+verifyTrue(testCase, all(isfinite([bg_diag(1).candidate_details.linear_rmse])));
 end
 
 
 function testBackgroundDiagnosticsExposeFractionsAndSelectedMethod(testCase)
-[qe, ~] = makeSyntheticQeDataset([1.0, 0.85]);
+[qe, ~] = makeSyntheticQeDataset('power', [1.0, 0.85]);
 opts = makeBgOpts('Auto');
 opts.bg_candidate_methods = {'Power', 'Exp2'};
 
@@ -49,6 +63,8 @@ opts.bg_candidate_methods = {'Power', 'Exp2'};
 verifyTrue(testCase, isfield(bg_diag, 'selected_method'));
 verifyTrue(testCase, isfield(bg_diag, 'candidate_methods'));
 verifyTrue(testCase, isfield(bg_diag, 'candidate_scores'));
+verifyTrue(testCase, isfield(bg_diag, 'candidate_details'));
+verifyTrue(testCase, isfield(bg_diag, 'linear_rmse'));
 verifyTrue(testCase, isfield(bg_diag, 'neg_fraction'));
 verifyTrue(testCase, isfield(bg_diag, 'neg_area_fraction'));
 verifyTrue(testCase, isfield(bg_diag, 'bg_fraction'));
@@ -60,7 +76,27 @@ for qi = 1:numel(bg_diag)
     verifyLessThanOrEqual(testCase, bg_diag(qi).neg_area_fraction, 1);
     verifyGreaterThanOrEqual(testCase, bg_diag(qi).bg_fraction, 0);
     verifyLessThanOrEqual(testCase, bg_diag(qi).bg_fraction, 1);
+    verifyGreaterThan(testCase, bg_diag(qi).linear_rmse, 0);
+    verifyEqual(testCase, numel(bg_diag(qi).candidate_details), numel(bg_diag(qi).candidate_methods));
 end
+end
+
+
+function testPearsonCandidateDetailsUseLinearDomainScore(testCase)
+[qe, ~] = makeSyntheticQeDataset('pearson_like', [1.0]);
+opts = makeBgOpts('Auto');
+opts.bg_candidate_methods = {'Pearson', 'Power'};
+
+[~, bg_diag] = qe_preprocess(qe, opts);
+
+pearson_idx = find(strcmp(bg_diag(1).candidate_methods, 'Pearson'), 1);
+power_idx = find(strcmp(bg_diag(1).candidate_methods, 'Power'), 1);
+verifyNotEmpty(testCase, pearson_idx);
+verifyNotEmpty(testCase, power_idx);
+verifyGreaterThan(testCase, bg_diag(1).candidate_details(pearson_idx).linear_rmse, 0);
+verifyGreaterThan(testCase, bg_diag(1).candidate_details(power_idx).linear_rmse, 0);
+verifyTrue(testCase, isfinite(bg_diag(1).candidate_scores(pearson_idx)));
+verifyTrue(testCase, isfinite(bg_diag(1).candidate_scores(power_idx)));
 end
 
 
@@ -78,7 +114,7 @@ opts.do_deconv = false;
 end
 
 
-function [qe, peak_only] = makeSyntheticQeDataset(scales)
+function [qe, peak_only] = makeSyntheticQeDataset(background_kind, scales)
 energy_meV = (-100:10:4000)';
 q_channel = 1:numel(scales);
 intensity = zeros(numel(energy_meV), numel(scales));
@@ -86,7 +122,14 @@ peak_only = zeros(numel(energy_meV), numel(scales));
 
 for qi = 1:numel(scales)
     scale = scales(qi);
-    background = syntheticPowerBackground(energy_meV, scale);
+    switch char(background_kind)
+        case 'power'
+            background = syntheticPowerBackground(energy_meV, scale);
+        case 'pearson_like'
+            background = syntheticPearsonLikeBackground(energy_meV, scale);
+        otherwise
+            error('Unknown background kind: %s', background_kind);
+    end
     peak = syntheticLorentzPeak(energy_meV, 1200, 180, 0.24 * scale);
     shoulder = syntheticLorentzPeak(energy_meV, 1850, 260, 0.05 * scale);
     intensity(:, qi) = background + peak + shoulder;
@@ -102,6 +145,15 @@ function bg = syntheticPowerBackground(energy_meV, scale)
 energy_pos = max(energy_meV, 1) + 25;
 bg = 18 * scale * energy_pos .^ (-1.32);
 bg(energy_meV < 0) = max(bg(energy_meV < 0), 0.02 * scale);
+end
+
+
+function bg = syntheticPearsonLikeBackground(energy_meV, scale)
+energy_pos = max(energy_meV, 1) + 30;
+log_e = log(energy_pos);
+log_bg = 2.7 - 0.95 * log_e - 0.12 * (log_e - mean(log_e)).^2;
+bg = scale * exp(log_bg);
+bg(energy_meV < 0) = max(bg(energy_meV < 0), 0.015 * scale);
 end
 
 

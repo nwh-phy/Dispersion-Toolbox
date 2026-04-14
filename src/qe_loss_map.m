@@ -137,9 +137,11 @@ fig = figure('Name', 'I_kin-Corrected Map', ...
 if opts.log_scale
     display_map = log10(max(loss_map, eps));
     clabel = 'log_{10}(S / I_{kin})';
+    raw_clabel = 'log_{10}(raw EELS intensity)';
 else
     display_map = loss_map;
     clabel = 'S / I_{kin} (a.u.)';
+    raw_clabel = 'Raw EELS intensity (a.u.)';
 end
 
 % Auto-scale: use [5th, 95th] percentile
@@ -187,7 +189,7 @@ if ~isempty(vals)
     end
 end
 cb2 = colorbar(ax2);
-cb2.Label.String = clabel;
+cb2.Label.String = raw_clabel;
 xlabel(ax2, 'q (Å⁻¹)');
 ylabel(ax2, 'Energy (meV)');
 title(ax2, 'Raw EELS probability d^2P/d\Omega dE');

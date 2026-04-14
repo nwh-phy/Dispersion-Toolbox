@@ -21,7 +21,8 @@ function phys = qe_physics_extract(branches, opts)
 %     opts     - optional struct:
 %       .branch_index      which branch to analyze (default: 1)
 %       .q_min_fit         minimum |q| for dispersion fit (default: 0.01 Å^-1)
-%       .q_max_linear      maximum |q| used for screening fit (default: 0.06 Å^-1)
+%       .q_max_fit         maximum |q| used for quasi-2D dispersion fit (default: inf)
+%       .q_max_linear      maximum |q| used for low-q screening diagnostics (default: 0.06 Å^-1)
 %       .use_raw_A         use column 12 measured peak heights when present
 %       .rho0_fallback     fallback rho0 if fit fails (default: 25 Å)
 %       .energy_unit       'meV' or 'eV' for branch energies (default: 'meV')
@@ -48,6 +49,7 @@ end
 
 if ~isfield(opts, 'branch_index'),     opts.branch_index = 1;        end
 if ~isfield(opts, 'q_min_fit'),        opts.q_min_fit = 0.01;        end
+if ~isfield(opts, 'q_max_fit'),        opts.q_max_fit = Inf;         end
 if ~isfield(opts, 'q_max_linear'),     opts.q_max_linear = 0.06;     end
 if ~isfield(opts, 'use_raw_A'),        opts.use_raw_A = true;        end
 if ~isfield(opts, 'rho0_fallback'),    opts.rho0_fallback = 25;      end
@@ -113,7 +115,7 @@ switch lower(opts.energy_unit)
             'energy_unit must be ''meV'' or ''eV''.');
 end
 
-fit_mask = q_abs >= opts.q_min_fit & q_abs <= opts.q_max_linear;
+fit_mask = q_abs >= opts.q_min_fit & q_abs <= opts.q_max_fit;
 if sum(fit_mask) < 3
     fit_mask = q_abs > 0;
 end

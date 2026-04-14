@@ -218,7 +218,7 @@ xlabel(ax8, 'q (Å^{-1})');
 title(ax8, 'Interband Screening & 1/\epsilon_{inter}');
 legend(ax8, 'Location', 'best', 'FontSize', 7); grid(ax8, 'on');
 
-sgtitle(fig, sprintf('Γ, Amplitude, EELS Prefactor & Loss Function (%d branches, %d peaks)', ...
+sgtitle(fig, sprintf('Γ, Amplitude, EELS Prefactor & Screening Trends (%d branches, %d peaks)', ...
     n_branches, size(all_peaks, 1)), 'FontSize', 14);
 
 end
@@ -291,8 +291,9 @@ end
 
 
 function plot_ikin_corrected(ax, br, b, col)
-    % Plot amplitude corrected by EELS prefactor: A_corr(q) = A(q) * |q|^3
-    % This removes I_kin ~ q^{-3} to recover the loss function amplitude.
+    % Plot amplitude corrected by the approximate low-q EELS prefactor:
+    % A_corr(q) = A(q) * |q|^3. In the 2D limit this approximates a
+    % screening-factor-like trend rather than a full Im[-1/ε] reconstruction.
     % Do et al. 2025, Eq. 3: A(q) = I_kin(q) * (1/ε_inter)
     q_abs = abs(br(:,1));
     if size(br, 2) >= 12 && ~all(isnan(br(:,12)))
@@ -328,14 +329,15 @@ end
 
 
 function plot_loss_function(ax, br, b, col)
-    % Plot loss function L(q) ≈ A(q) * |q|^3
+    % Plot a screening-factor-like proxy S(q) ≈ A(q) * |q|^3.
     %
     % Physics (Do et al. 2025, Eq. 3):
     %   A(q) = I_kin(q) / ε_inter(q)
     %   I_kin ≈ C · q^{-3}   (2D limit)
-    %   → A(q) × q³ ≈ C / ε_inter(q) ∝ intrinsic loss function
+    %   → A(q) × q³ ≈ C / ε_inter(q)
     %
-    % NOTE: We do NOT divide by ε_inter again — that was the Issue #4 bug
+    % NOTE: This is useful for tracking screening trends, but it is not a
+    % full loss-function reconstruction away from the fitted plasmon branch.
     % (double screening correction → L ∝ 1/ε_inter² instead of 1/ε_inter).
     q_abs = abs(br(:,1));
     if size(br, 2) >= 12 && ~all(isnan(br(:,12)))

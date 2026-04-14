@@ -31,11 +31,38 @@ branch(:, 4) = 0.99;
 branch(:, 5) = A_measured * 0.4;  % intentionally different from measured intensity
 branch(:,12) = A_measured;
 
-phys = qe_physics_extract({branch}, struct('q_min_fit', 0.01, 'q_max_linear', 0.10));
+phys = qe_physics_extract({branch}, struct('q_min_fit', 0.01, 'q_max_fit', 0.10));
 
 verifyEqual(testCase, numel(phys.q), numel(q_abs));
 verifyEqual(testCase, phys.rho0, rho0_true, 'AbsTol', 2.5);
 verifyEqual(testCase, phys.epsilon_inter, 1 + rho0_true .* q_abs, 'RelTol', 0.12);
+end
+
+
+function testDefaultFitUsesFullAvailableQRange(testCase)
+q_abs = [0.01; 0.02; 0.03; 0.04; 0.06; 0.08; 0.10; 0.12];
+q_signed = [-flipud(q_abs); q_abs];
+
+drude_weight_true = 1.5e6;
+rho0_true = 22;
+epsilon_inter_true = 1 + rho0_true * abs(q_signed);
+omega_p = sqrt(drude_weight_true .* abs(q_signed) ./ epsilon_inter_true);
+gamma = 0.10 .* omega_p;
+A_measured = 5 ./ epsilon_inter_true;
+
+branch = nan(numel(q_signed), 12);
+branch(:, 1) = q_signed;
+branch(:, 2) = omega_p;
+branch(:, 3) = gamma;
+branch(:, 4) = 0.98;
+branch(:, 5) = A_measured;
+branch(:,12) = A_measured;
+
+phys_default = qe_physics_extract({branch});
+phys_limited = qe_physics_extract({branch}, struct('q_max_fit', 0.06));
+
+verifyEqual(testCase, phys_default.Drude_fit.q_range(2), max(q_abs), 'AbsTol', 1e-12);
+verifyLessThan(testCase, abs(phys_default.rho0 - rho0_true), abs(phys_limited.rho0 - rho0_true) + 1e-9);
 end
 
 
@@ -69,7 +96,7 @@ branch_spurious(:, 5) = spurious_A;
 branch_spurious(:,12) = spurious_A;
 
 branch = [branch_true; branch_spurious];
-phys = qe_physics_extract({branch}, struct('q_min_fit', 0.01, 'q_max_linear', 0.05));
+phys = qe_physics_extract({branch}, struct('q_min_fit', 0.01, 'q_max_fit', 0.05));
 
 verifyEqual(testCase, phys.q, q_abs, 'AbsTol', 1e-12);
 verifyEqual(testCase, phys.omega_p, omega_true(numel(q_abs)+1:end), 'RelTol', 0.08);

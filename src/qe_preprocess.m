@@ -27,7 +27,8 @@ function [qe_out, bg_diag] = qe_preprocess(qe_in, opts)
 %   Optional second output bg_diag is a struct array (one per q-channel):
 %     .rsquare, .rmse, .bg_curve, .residuals, .h_param, .snr,
 %     .energy_fit, .iterations, .selected_method, .candidate_methods,
-%     .candidate_scores, .neg_fraction, .neg_area_fraction, .bg_fraction
+%     .candidate_scores, .candidate_details, .linear_rmse,
+%     .neg_fraction, .neg_area_fraction, .bg_fraction
 %
 %   See also: interactive_qe_browser, fit_loss_function
 
@@ -202,6 +203,8 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
             'selected_method', char(method), ...
             'candidate_methods', {candidate_methods}, ...
             'candidate_scores', NaN(1, numel(candidate_methods)), ...
+            'candidate_details', {struct([])}, ...
+            'linear_rmse', NaN, ...
             'neg_fraction', NaN, 'neg_area_fraction', NaN, ...
             'bg_fraction', NaN);
         bg_diag = repmat(empty_diag, 1, n_q);
@@ -232,7 +235,7 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
         s_fit_pos = max(s_fit, eps);
 
         try
-            [bg, rsq, rmse_val, residuals, n_iter, selected_method, candidate_scores] = ...
+            [bg, rsq, rmse_val, residuals, n_iter, selected_method, candidate_scores, candidate_details] = ...
                 local_fit_background_dispatch( ...
                     e_fit, s_fit_pos, e_sub, method, candidate_methods, ...
                     asym_penalty, spec, sub_mask);
@@ -250,6 +253,10 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
                     wt(neg_idx_in_fit) = 2;
                     [bg, rsq, rmse_val, residuals, ~] = fit_background( ...
                         e_fit, s_fit_pos, e_sub, selected_method, asym_penalty, wt);
+                    bg = local_apply_background_safety_cap(spec(sub_mask), bg);
+                    candidate_details = local_refresh_selected_candidate_details( ...
+                        candidate_details, selected_method, spec(sub_mask), bg, rsq, rmse_val, residuals);
+                    candidate_scores = [candidate_details.score];
                     n_iter = 2;
                 end
             end
@@ -257,12 +264,6 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
             bg = real(bg(:));
             bg(~isfinite(bg)) = 0;
             bg = max(bg, 0);
-
-            % --- Safety cap: prevent over-subtraction ---
-            local_signal = max(spec(sub_mask), 0);
-            local_smooth = smoothdata(local_signal, 'gaussian', ...
-                max(5, round(numel(local_signal) * 0.05)));
-            bg = min(bg, local_smooth * 0.9);
 
             subtracted_signal = spec(sub_mask) - bg;
             intensity(sub_mask, qi) = subtracted_signal;
@@ -275,6 +276,12 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
                 bg_diag(qi).selected_method = char(selected_method);
                 bg_diag(qi).candidate_methods = candidate_methods;
                 bg_diag(qi).candidate_scores = candidate_scores;
+                bg_diag(qi).candidate_details = candidate_details;
+
+                selected_idx = find(strcmp(candidate_methods, selected_method), 1);
+                if ~isempty(selected_idx) && selected_idx <= numel(candidate_details)
+                    bg_diag(qi).linear_rmse = candidate_details(selected_idx).linear_rmse;
+                end
 
                 % Full background curve for visualization
                 bg_full_vis = zeros(size(energy_axis));
@@ -336,19 +343,21 @@ function methods = local_background_model_candidates(opts, requested_method)
 end
 
 
-function [bg, rsq, rmse_val, residuals, n_iter, selected_method, candidate_scores] = ...
+function [bg, rsq, rmse_val, residuals, n_iter, selected_method, candidate_scores, candidate_details] = ...
         local_fit_background_dispatch(e_fit, s_fit, e_sub, requested_method, ...
         candidate_methods, asym_penalty, full_spec, sub_mask)
     if ~strcmpi(requested_method, 'Auto') || numel(candidate_methods) == 1
         selected_method = candidate_methods{1};
         [bg, rsq, rmse_val, residuals, n_iter] = fit_background( ...
             e_fit, s_fit, e_sub, selected_method, asym_penalty);
-        candidate_scores = NaN(1, numel(candidate_methods));
-        candidate_scores(1) = local_background_score( ...
-            rmse_val, selected_method, full_spec(sub_mask), full_spec(sub_mask) - bg, bg);
+        bg = local_apply_background_safety_cap(full_spec(sub_mask), bg);
+        candidate_details = local_make_candidate_detail( ...
+            selected_method, full_spec(sub_mask), bg, rsq, rmse_val, residuals);
+        candidate_scores = candidate_details.score;
         return
     end
 
+    candidate_details = repmat(local_empty_candidate_detail(), 1, numel(candidate_methods));
     candidate_scores = inf(1, numel(candidate_methods));
     best = struct('score', inf, 'method', candidate_methods{1}, ...
         'bg', zeros(size(e_sub)), 'rsq', NaN, 'rmse', NaN, ...
@@ -359,20 +368,21 @@ function [bg, rsq, rmse_val, residuals, n_iter, selected_method, candidate_score
         try
             [bg_i, rsq_i, rmse_i, residuals_i, n_iter_i] = fit_background( ...
                 e_fit, s_fit, e_sub, method, asym_penalty);
-            bg_i = real(bg_i(:));
-            bg_i(~isfinite(bg_i)) = 0;
-            bg_i = max(bg_i, 0);
-            subtracted_i = full_spec(sub_mask) - bg_i;
-            score_i = local_background_score(rmse_i, method, full_spec(sub_mask), subtracted_i, bg_i);
+            bg_i = local_apply_background_safety_cap(full_spec(sub_mask), bg_i);
+            detail_i = local_make_candidate_detail( ...
+                method, full_spec(sub_mask), bg_i, rsq_i, rmse_i, residuals_i);
+            score_i = detail_i.score;
         catch
             bg_i = zeros(size(e_sub));
             rsq_i = NaN;
             rmse_i = NaN;
             residuals_i = [];
             n_iter_i = 1;
+            detail_i = local_empty_candidate_detail(method);
             score_i = inf;
         end
 
+        candidate_details(ci) = detail_i;
         candidate_scores(ci) = score_i;
         if score_i < best.score
             best.score = score_i;
@@ -394,19 +404,73 @@ function [bg, rsq, rmse_val, residuals, n_iter, selected_method, candidate_score
 end
 
 
-function score = local_background_score(rmse_val, method, raw_signal, subtracted_signal, bg)
-    if ~isfinite(rmse_val)
+function detail = local_make_candidate_detail(method, raw_signal, bg, rsq, rmse_val, residuals)
+    raw_signal = raw_signal(:);
+    bg = real(bg(:));
+    bg(~isfinite(bg)) = 0;
+    bg = max(bg, 0);
+    subtracted_signal = raw_signal - bg;
+    linear_residuals = raw_signal - bg;
+    linear_rmse = sqrt(mean(linear_residuals.^2, 'omitnan'));
+    [neg_fraction, neg_area_fraction, bg_fraction] = ...
+        local_background_quality_metrics(raw_signal, subtracted_signal, bg);
+
+    detail = struct();
+    detail.method = char(method);
+    detail.rsquare = rsq;
+    detail.rmse = rmse_val;
+    detail.linear_rmse = linear_rmse;
+    detail.neg_fraction = neg_fraction;
+    detail.neg_area_fraction = neg_area_fraction;
+    detail.bg_fraction = bg_fraction;
+    detail.score = local_background_score(linear_rmse, method, ...
+        neg_fraction, neg_area_fraction, bg_fraction, raw_signal);
+    detail.residual_count = numel(residuals);
+end
+
+
+function detail = local_empty_candidate_detail(method)
+    if nargin < 1
+        method = '';
+    end
+    detail = struct('method', char(method), 'rsquare', NaN, 'rmse', NaN, ...
+        'linear_rmse', NaN, 'neg_fraction', NaN, 'neg_area_fraction', NaN, ...
+        'bg_fraction', NaN, 'score', inf, 'residual_count', 0);
+end
+
+
+function candidate_details = local_refresh_selected_candidate_details( ...
+        candidate_details, selected_method, raw_signal, bg, rsq, rmse_val, residuals)
+    selected_idx = find(strcmp({candidate_details.method}, char(selected_method)), 1);
+    if isempty(selected_idx)
+        selected_idx = numel(candidate_details) + 1;
+    end
+    candidate_details(selected_idx) = local_make_candidate_detail( ...
+        selected_method, raw_signal, bg, rsq, rmse_val, residuals);
+end
+
+
+function bg = local_apply_background_safety_cap(raw_signal, bg)
+    raw_signal = raw_signal(:);
+    bg = real(bg(:));
+    bg(~isfinite(bg)) = 0;
+    bg = max(bg, 0);
+    local_signal = max(raw_signal, 0);
+    local_smooth = smoothdata(local_signal, 'gaussian', ...
+        max(5, round(numel(local_signal) * 0.05)));
+    bg = min(bg, local_smooth * 0.9);
+end
+
+
+function score = local_background_score(linear_rmse, method, neg_fraction, neg_area_fraction, bg_fraction, raw_signal)
+    if ~isfinite(linear_rmse)
         score = inf;
         return
     end
 
     raw_signal = raw_signal(:);
-    subtracted_signal = subtracted_signal(:);
-    bg = bg(:);
     scale = max(median(abs(raw_signal), 'omitnan'), eps);
-    rmse_term = rmse_val / scale;
-    [neg_fraction, neg_area_fraction, bg_fraction] = ...
-        local_background_quality_metrics(raw_signal, subtracted_signal, bg);
+    rmse_term = linear_rmse / scale;
     complexity_term = local_background_model_complexity(method);
     score = rmse_term + 2.0 * neg_area_fraction + 0.5 * neg_fraction + ...
         0.2 * max(bg_fraction - 0.95, 0) + complexity_term;

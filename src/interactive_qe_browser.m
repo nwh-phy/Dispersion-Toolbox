@@ -1553,7 +1553,7 @@ end
             return
         end
 
-        % Stale-fit check (same logic as Loss Map — Issue #3 round 3)
+        % Stale-fit check (same logic as I_kin-corrected map generation — Issue #3 round 3)
         qe = local_get_active_qe();
         if ~isempty(qe) && isfield(state.autoFitResults, 'ppHash')
             current_hash = local_opts_hash(local_preprocess_opts(), qe);
@@ -1579,8 +1579,8 @@ end
 
 
     function local_on_show_loss_map(~, ~)
-        % Generate intrinsic loss function map L(ω,q) = S(ω,q) / I_kin(q).
-        % Uses self-consistent physics extraction from fitted branches.
+        % Generate an I_kin-corrected q-E map, or a loss-function-like
+        % visualization when self-consistent physics extraction is available.
         qe = local_get_active_qe();
         if isempty(qe)
             ui.InfoLabel.Text = "Load data first";
@@ -1600,7 +1600,7 @@ end
             current_hash = local_opts_hash(local_preprocess_opts(), qe);
             if isfield(state.autoFitResults, 'ppHash') && ...
                ~strcmp(state.autoFitResults.ppHash, current_hash)
-                fprintf('  Loss Map: WARNING — preprocessing changed since Auto Fit.\n');
+                fprintf('  I_kin Map: WARNING — preprocessing changed since Auto Fit.\n');
                 fprintf('  Falling back to simple q⁻³ mode. Re-run Auto Fit for experimental mode.\n');
                 ui.InfoLabel.Text = "⚠ Fit results stale — using simple mode. Re-run Auto Fit.";
                 ui.InfoLabel.Visible = "on";
@@ -1614,13 +1614,13 @@ end
                     end
                     phys = qe_physics_extract(branches_for_phys);
                     mode = 'experimental';
-                    fprintf('  Loss Map: using self-consistent I_kin (ρ₀=%.0fÅ)\n', phys.rho0);
+                    fprintf('  I_kin Map: using self-consistent I_kin (ρ₀=%.0fÅ)\n', phys.rho0);
                 catch ME
-                    fprintf('  Loss Map: physics extraction failed (%s), using q⁻³ fallback\n', ME.message);
+                    fprintf('  I_kin Map: physics extraction failed (%s), using q⁻³ fallback\n', ME.message);
                 end
             end
         else
-            fprintf('  Loss Map: no fit data, using simple q⁻³ mode\n');
+            fprintf('  I_kin Map: no fit data, using simple q⁻³ mode\n');
             fprintf('  Tip: run Auto Fit first for self-consistent I_kin correction\n');
         end
 
@@ -1632,8 +1632,8 @@ end
 
         try
             qe_loss_map(qe_pp, phys, map_opts);
-            local_log_operation(sprintf('Loss Map (%s mode)', mode));
-            ui.InfoLabel.Text = sprintf('Loss Map generated (%s mode)', mode);
+            local_log_operation(sprintf('I_kin Map (%s mode)', mode));
+            ui.InfoLabel.Text = sprintf('I_kin-corrected map generated (%s mode)', mode);
             ui.InfoLabel.Visible = "on";
         catch ME
             local_show_error(ME, false);
