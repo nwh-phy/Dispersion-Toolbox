@@ -2091,6 +2091,11 @@ end
 
                     % 5. Display diagnostics in FitInfoLabel
                     diag_parts = {};
+                    if isfield(bg_diag_qi, 'selected_method') && ~isempty(bg_diag_qi.selected_method)
+                        selected_bg_method = char(bg_diag_qi.selected_method);
+                    else
+                        selected_bg_method = pp_opts.bg_method;
+                    end
                     if isfinite(bg_diag_qi.rsquare)
                         diag_parts{end+1} = sprintf('R²=%.4f', bg_diag_qi.rsquare);
                     end
@@ -2103,12 +2108,21 @@ end
                     if isfinite(bg_diag_qi.snr)
                         diag_parts{end+1} = sprintf('SNR=%.1f', bg_diag_qi.snr);
                     end
+                    if isfield(bg_diag_qi, 'neg_fraction') && isfinite(bg_diag_qi.neg_fraction)
+                        diag_parts{end+1} = sprintf('neg=%.1f%%', 100 * bg_diag_qi.neg_fraction);
+                    end
+                    if isfield(bg_diag_qi, 'neg_area_fraction') && isfinite(bg_diag_qi.neg_area_fraction)
+                        diag_parts{end+1} = sprintf('negA=%.1f%%', 100 * bg_diag_qi.neg_area_fraction);
+                    end
+                    if isfield(bg_diag_qi, 'bg_fraction') && isfinite(bg_diag_qi.bg_fraction)
+                        diag_parts{end+1} = sprintf('bg=%.1f%%', 100 * bg_diag_qi.bg_fraction);
+                    end
                     if bg_diag_qi.iterations > 1
                         diag_parts{end+1} = sprintf('iter=%d', bg_diag_qi.iterations);
                     end
                     if ~isempty(diag_parts)
                         ui.FitInfoLabel.Text = sprintf('BG [%s]: %s', ...
-                            pp_opts.bg_method, strjoin(diag_parts, ' | '));
+                            selected_bg_method, strjoin(diag_parts, ' | '));
                     end
                 else
                     % No BG overlay — standard display

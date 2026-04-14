@@ -9,7 +9,7 @@ function [qe_out, bg_diag] = qe_preprocess(qe_in, opts)
 %     1. Normalization  (ZLP Peak or Area — beam current correction)
 %     2. Denoising      (Wiener2D, Savitzky-Golay, or BM3D)
 %     3. Quasi-elastic background removal (ZLP tail subtraction)
-%        Models: Power/ExpPoly3/Pearson/PearsonVII/Power2/Exp2
+%        Models: Power/ExpPoly3/Pearson/PearsonVII/Power2/Exp2/Auto
 %     4. Deconvolution  (Lucy-Richardson)
 %
 %   Physical note (Do et al. 2025, Fung et al. 2020):
@@ -18,7 +18,7 @@ function [qe_out, bg_diag] = qe_preprocess(qe_in, opts)
 %     ZLP Peak normalization (step 1) corrects for beam current only.
 %
 %   Background subtraction opts fields (all have sensible defaults):
-%     .bg_method      char     — model name (see above)
+%     .bg_method      char     — model name (Power/ExpPoly3/Pearson/PearsonVII/Power2/Exp2/Auto)
 %     .bg_win_lo      [lo hi]  — primary fit window in meV (default [50 300])
 %     .bg_win_hi      [lo hi]  — secondary fit window in meV ([] = single window)
 %     .bg_iterative   logical  — enable iterative refit (default false)
@@ -26,7 +26,8 @@ function [qe_out, bg_diag] = qe_preprocess(qe_in, opts)
 %
 %   Optional second output bg_diag is a struct array (one per q-channel):
 %     .rsquare, .rmse, .bg_curve, .residuals, .h_param, .snr,
-%     .energy_fit, .iterations
+%     .energy_fit, .iterations, .selected_method, .candidate_methods,
+%     .candidate_scores, .neg_fraction, .neg_area_fraction, .bg_fraction
 %
 %   See also: interactive_qe_browser, fit_loss_function
 
@@ -144,6 +145,7 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
     intensity = double(qe_in.intensity);
     n_q = size(intensity, 2);
     method = char(opts.bg_method);
+    candidate_methods = local_background_model_candidates(opts, method);
 
     % --- Defaults for new opts fields (backward compatible) ---
     if isfield(opts, 'bg_win_lo') && numel(opts.bg_win_lo) == 2
@@ -196,7 +198,12 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
             'bg_curve', zeros(size(energy_axis)), ...
             'residuals', zeros(nnz(fit_mask), 1), ...
             'h_param', NaN, 'snr', NaN, ...
-            'energy_fit', e_fit, 'iterations', 1);
+            'energy_fit', e_fit, 'iterations', 1, ...
+            'selected_method', char(method), ...
+            'candidate_methods', {candidate_methods}, ...
+            'candidate_scores', NaN(1, numel(candidate_methods)), ...
+            'neg_fraction', NaN, 'neg_area_fraction', NaN, ...
+            'bg_fraction', NaN);
         bg_diag = repmat(empty_diag, 1, n_q);
     else
         bg_diag = [];
@@ -225,8 +232,10 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
         s_fit_pos = max(s_fit, eps);
 
         try
-            [bg, rsq, rmse_val, residuals, n_iter] = fit_background( ...
-                e_fit, s_fit_pos, e_sub, method, asym_penalty);
+            [bg, rsq, rmse_val, residuals, n_iter, selected_method, candidate_scores] = ...
+                local_fit_background_dispatch( ...
+                    e_fit, s_fit_pos, e_sub, method, candidate_methods, ...
+                    asym_penalty, spec, sub_mask);
 
             % --- Iterative refit (Ruishi Qi style) ---
             if do_iterative && any(signal_region)
@@ -239,10 +248,8 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
                     % Map back to fit indices
                     neg_idx_in_fit = neg_fit_overlap(fit_mask);
                     wt(neg_idx_in_fit) = 2;
-                    % For points in the signal region that went negative,
-                    % add them to the fit domain with high weight
                     [bg, rsq, rmse_val, residuals, ~] = fit_background( ...
-                        e_fit, s_fit_pos, e_sub, method, asym_penalty, wt);
+                        e_fit, s_fit_pos, e_sub, selected_method, asym_penalty, wt);
                     n_iter = 2;
                 end
             end
@@ -257,13 +264,17 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
                 max(5, round(numel(local_signal) * 0.05)));
             bg = min(bg, local_smooth * 0.9);
 
-            intensity(sub_mask, qi) = spec(sub_mask) - bg;
+            subtracted_signal = spec(sub_mask) - bg;
+            intensity(sub_mask, qi) = subtracted_signal;
 
             % --- Compute diagnostics ---
             if want_diag
                 bg_diag(qi).rsquare = rsq;
                 bg_diag(qi).rmse = rmse_val;
                 bg_diag(qi).iterations = n_iter;
+                bg_diag(qi).selected_method = char(selected_method);
+                bg_diag(qi).candidate_methods = candidate_methods;
+                bg_diag(qi).candidate_scores = candidate_scores;
 
                 % Full background curve for visualization
                 bg_full_vis = zeros(size(energy_axis));
@@ -279,17 +290,175 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
                 end
 
                 % SNR (Fung et al.): SNR = I_k / sqrt(I_k + h * I_B)
-                signal_vals = spec(sub_mask) - bg;
-                I_k = max(max(signal_vals), eps);
+                I_k = max(max(subtracted_signal), eps);
                 h = bg_diag(qi).h_param;
                 if isfinite(h) && I_B > eps
                     bg_diag(qi).snr = I_k / sqrt(abs(I_k) + h * I_B);
                 end
+
+                [neg_fraction, neg_area_fraction, bg_fraction] = ...
+                    local_background_quality_metrics(spec(sub_mask), subtracted_signal, bg);
+                bg_diag(qi).neg_fraction = neg_fraction;
+                bg_diag(qi).neg_area_fraction = neg_area_fraction;
+                bg_diag(qi).bg_fraction = bg_fraction;
             end
         catch
         end
     end
     qe_out.intensity = intensity;
+end
+
+
+function methods = local_background_model_candidates(opts, requested_method)
+    supported = {'Power', 'ExpPoly3', 'Pearson', 'PearsonVII', 'Power2', 'Exp2'};
+
+    if strcmpi(requested_method, 'Auto')
+        if isfield(opts, 'bg_candidate_methods') && ~isempty(opts.bg_candidate_methods)
+            raw_methods = opts.bg_candidate_methods;
+        else
+            raw_methods = supported;
+        end
+    else
+        raw_methods = {requested_method};
+    end
+
+    methods = {};
+    for k = 1:numel(raw_methods)
+        method = char(string(raw_methods(k)));
+        if any(strcmpi(method, supported)) && ~any(strcmpi(method, methods))
+            methods{end+1} = method; %#ok<AGROW>
+        end
+    end
+
+    if isempty(methods)
+        methods = {'Power'};
+    end
+end
+
+
+function [bg, rsq, rmse_val, residuals, n_iter, selected_method, candidate_scores] = ...
+        local_fit_background_dispatch(e_fit, s_fit, e_sub, requested_method, ...
+        candidate_methods, asym_penalty, full_spec, sub_mask)
+    if ~strcmpi(requested_method, 'Auto') || numel(candidate_methods) == 1
+        selected_method = candidate_methods{1};
+        [bg, rsq, rmse_val, residuals, n_iter] = fit_background( ...
+            e_fit, s_fit, e_sub, selected_method, asym_penalty);
+        candidate_scores = NaN(1, numel(candidate_methods));
+        candidate_scores(1) = local_background_score( ...
+            rmse_val, selected_method, full_spec(sub_mask), full_spec(sub_mask) - bg, bg);
+        return
+    end
+
+    candidate_scores = inf(1, numel(candidate_methods));
+    best = struct('score', inf, 'method', candidate_methods{1}, ...
+        'bg', zeros(size(e_sub)), 'rsq', NaN, 'rmse', NaN, ...
+        'residuals', [], 'n_iter', 1);
+
+    for ci = 1:numel(candidate_methods)
+        method = candidate_methods{ci};
+        try
+            [bg_i, rsq_i, rmse_i, residuals_i, n_iter_i] = fit_background( ...
+                e_fit, s_fit, e_sub, method, asym_penalty);
+            bg_i = real(bg_i(:));
+            bg_i(~isfinite(bg_i)) = 0;
+            bg_i = max(bg_i, 0);
+            subtracted_i = full_spec(sub_mask) - bg_i;
+            score_i = local_background_score(rmse_i, method, full_spec(sub_mask), subtracted_i, bg_i);
+        catch
+            bg_i = zeros(size(e_sub));
+            rsq_i = NaN;
+            rmse_i = NaN;
+            residuals_i = [];
+            n_iter_i = 1;
+            score_i = inf;
+        end
+
+        candidate_scores(ci) = score_i;
+        if score_i < best.score
+            best.score = score_i;
+            best.method = method;
+            best.bg = bg_i;
+            best.rsq = rsq_i;
+            best.rmse = rmse_i;
+            best.residuals = residuals_i;
+            best.n_iter = n_iter_i;
+        end
+    end
+
+    bg = best.bg;
+    rsq = best.rsq;
+    rmse_val = best.rmse;
+    residuals = best.residuals;
+    n_iter = best.n_iter;
+    selected_method = best.method;
+end
+
+
+function score = local_background_score(rmse_val, method, raw_signal, subtracted_signal, bg)
+    if ~isfinite(rmse_val)
+        score = inf;
+        return
+    end
+
+    raw_signal = raw_signal(:);
+    subtracted_signal = subtracted_signal(:);
+    bg = bg(:);
+    scale = max(median(abs(raw_signal), 'omitnan'), eps);
+    rmse_term = rmse_val / scale;
+    [neg_fraction, neg_area_fraction, bg_fraction] = ...
+        local_background_quality_metrics(raw_signal, subtracted_signal, bg);
+    complexity_term = local_background_model_complexity(method);
+    score = rmse_term + 2.0 * neg_area_fraction + 0.5 * neg_fraction + ...
+        0.2 * max(bg_fraction - 0.95, 0) + complexity_term;
+end
+
+
+function [neg_fraction, neg_area_fraction, bg_fraction] = ...
+        local_background_quality_metrics(raw_signal, subtracted_signal, bg)
+    raw_signal = raw_signal(:);
+    subtracted_signal = subtracted_signal(:);
+    bg = bg(:);
+
+    valid = isfinite(raw_signal) & isfinite(subtracted_signal) & isfinite(bg);
+    if ~any(valid)
+        neg_fraction = NaN;
+        neg_area_fraction = NaN;
+        bg_fraction = NaN;
+        return
+    end
+
+    raw_signal = raw_signal(valid);
+    subtracted_signal = subtracted_signal(valid);
+    bg = bg(valid);
+
+    neg_mask = subtracted_signal < 0;
+    neg_fraction = nnz(neg_mask) / max(numel(subtracted_signal), 1);
+    neg_area = sum(-subtracted_signal(neg_mask), 'omitnan');
+    total_area = sum(abs(subtracted_signal), 'omitnan') + eps;
+    neg_area_fraction = neg_area / total_area;
+
+    raw_area = sum(max(raw_signal, 0), 'omitnan') + eps;
+    bg_fraction = sum(max(bg, 0), 'omitnan') / raw_area;
+end
+
+
+function penalty = local_background_model_complexity(method)
+    switch char(method)
+        case 'Power'
+            penalty = 0.00;
+        case 'Power2'
+            penalty = 0.02;
+        case 'Exp2'
+            penalty = 0.03;
+        case 'ExpPoly3'
+            penalty = 0.04;
+        case 'Pearson'
+            penalty = 0.05;
+        case 'PearsonVII'
+            penalty = 0.06;
+        otherwise
+            penalty = 0.08;
+    end
 end
 
 
