@@ -11,7 +11,7 @@ function fig = qe_gamma_dashboard(all_peaks, branches)
 %     (3,1) Raw A(q)      — log-log raw peak height with power-law fit
 %     (3,2) I_kin-corrected A(q)·q³ — EELS prefactor removed (Do et al. 2025)
 %     (4,1) Q-factor(q)   — plasmon quality factor E₀/Γ
-%     (4,2) Loss function  — A(q)·q³/ε_inter(q) with Keldysh screening
+%     (4,2) Screening factor  — 1/ε_inter(q) with Keldysh screening
 %
 %   Inputs:
 %     all_peaks  — Nx12 matrix [q E Γ R² A E_lo E_hi G_lo G_hi A_lo A_hi raw_h]
@@ -179,7 +179,7 @@ xlabel(ax7, 'q (Å^{-1})'); ylabel(ax7, 'Q = ω_p / Γ');
 title(ax7, 'Plasmon Quality Factor vs q');
 legend(ax7, 'Location', 'best'); grid(ax7, 'on');
 
-% --- Subplot 8: Self-consistent loss function & ε_inter ---
+% --- Subplot 8: Self-consistent screening factor & ε_inter ---
 ax8 = subplot(4, 2, 8, 'Parent', fig);
 hold(ax8, 'on');
 for b = 1:n_branches
@@ -206,8 +206,8 @@ for b = 1:n_branches
         semilogy(ax8, phys_b.q, phys_b.loss_function, 'o', ...
             'Color', col*0.7, 'MarkerFaceColor', col*0.7, ...
             'MarkerSize', 4, 'DisplayName', ...
-            sprintf('B%d: L(q)', b));
-        ylabel(ax8, 'L(q) = 1/ε_{inter}');
+            sprintf('B%d: 1/ε_{inter}', b));
+        ylabel(ax8, '1/ε_{inter}(q)');
     catch
         % Fallback to ad-hoc calculation
         plot_loss_function(ax8, br, b, col);
@@ -215,7 +215,7 @@ for b = 1:n_branches
 end
 hold(ax8, 'off');
 xlabel(ax8, 'q (Å^{-1})');
-title(ax8, 'Interband Screening & Loss Function');
+title(ax8, 'Interband Screening & 1/\epsilon_{inter}');
 legend(ax8, 'Location', 'best', 'FontSize', 7); grid(ax8, 'on');
 
 sgtitle(fig, sprintf('Γ, Amplitude, EELS Prefactor & Loss Function (%d branches, %d peaks)', ...

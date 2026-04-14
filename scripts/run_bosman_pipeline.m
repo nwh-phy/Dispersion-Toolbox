@@ -124,10 +124,8 @@ for k = 1:n_q
                 
                 if gamma_p / omega_p > fit_cfg.max_gamma_ratio, continue; end
                 
-                raw_h = NaN;
-                if isfield(result, 'peak_heights') && p <= numel(result.peak_heights)
-                    raw_h = result.peak_heights(p);
-                end
+                raw_h = measure_peak_height( ...
+                    energy_axis, spec, omega_p, gamma_p);
                 
                 row = [q_val, omega_p, gamma_p, result.R_squared, amp_p, ...
                        NaN, NaN, NaN, NaN, NaN, NaN, raw_h];
@@ -168,9 +166,10 @@ end
 fprintf('\n── PHASE 3: Physics extraction (Do et al. 2025) ──\n');
 
 phys = qe_physics_extract(branches, struct('branch_index', 1, ...
-    'q_min_fit', 0.01, 'q_max_linear', 0.08));
+    'q_min_fit', 0.01, 'q_max_linear', 0.08, ...
+    'epsilon_s', 1, 'symmetry_average', true));
 
-fprintf('  Drude weight D = %.4f eV²·Å\n', phys.Drude_weight);
+fprintf('  Quasi-2D A = %.4g meV²·Å\n', phys.Drude_weight);
 fprintf('  Keldysh ρ₀ = %.1f Å\n', phys.rho0);
 fprintf('  I_kin slopes: low-q = %.2f (expect -3), high-q = %.2f (expect -2)\n', ...
     phys.I_kin_slope_lo, phys.I_kin_slope_hi);

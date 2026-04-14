@@ -1,13 +1,16 @@
 function fig = qe_loss_map(qe_processed, phys, opts)
-%QE_LOSS_MAP  Generate intrinsic loss function map L(ω,q).
+%QE_LOSS_MAP  Apply a q-dependent I_kin correction to a q-E EELS map.
 %
 %   fig = qe_loss_map(qe_processed, phys)
 %   fig = qe_loss_map(qe_processed, phys, opts)
 %
-%   Divides the preprocessed EELS map by I_kin(q) to produce the
-%   material-intrinsic loss function Im[-1/ε(ω,q)].
+%   Divides the preprocessed EELS map by I_kin(q) to produce an
+%   I_kin-corrected EELS map.
 %
-%   This is Do et al. 2025, Fig. 3a,b — the "unscreened" loss function.
+%   In experimental mode this is a loss-function-like visualization. It is
+%   useful for comparing q-dependent spectral trends, but it should not be
+%   over-interpreted as a full reconstruction of Im[-1/ε(ω,q)] away from
+%   the fitted plasmon branch.
 %
 %   Two modes:
 %     'simple'       — use I_kin ≈ C·q⁻³ (pure 2D assumption)
@@ -65,8 +68,6 @@ energy_disp = energy_meV(E_mask);
 q_disp      = q_Ainv(q_mask);
 map         = intensity(E_mask, q_mask);
 
-n_q = numel(q_disp);
-
 %% Build I_kin(q) correction vector
 switch lower(opts.mode)
     case 'simple'
@@ -76,7 +77,7 @@ switch lower(opts.mode)
         q_abs(q_abs < eps) = eps;  % avoid division by zero
         I_kin_q = q_abs.^(-3);
         I_kin_q = I_kin_q / max(I_kin_q);  % normalized
-        mode_label = 'L(ω,q) — simple q⁻³ correction (2D assumption)';
+        mode_label = 'I_{kin}-corrected map — simple q^{-3} correction';
         
     case 'experimental'
         if isempty(phys) || ~isfield(phys, 'I_kin')
@@ -115,30 +116,30 @@ switch lower(opts.mode)
         end
         I_kin_interp(I_kin_interp <= 0) = eps;
         I_kin_q = I_kin_interp;
-        mode_label = sprintf('L(ω,q) — experimental I_{kin} (ρ₀=%.0fÅ)', phys.rho0);
+        mode_label = sprintf('I_{kin}-corrected map — experimental correction (ρ₀=%.0fÅ)', phys.rho0);
         
     otherwise
         error('qe_loss_map:badMode', 'Mode must be ''simple'' or ''experimental''.');
 end
 
 %% Divide map by I_kin(q) column-wise
-%   L(ω,q) = S(ω,q) / I_kin(q)
+%   S_corr(ω,q) = S(ω,q) / I_kin(q)
 loss_map = map ./ I_kin_q(:)';
 
 % Clip negatives
 loss_map = max(loss_map, 0);
 
 %% Create figure
-fig = figure('Name', 'Intrinsic Loss Function Map', ...
+fig = figure('Name', 'I_kin-Corrected Map', ...
     'NumberTitle', 'off', 'Color', 'w', ...
     'Position', [100, 100, 900, 700]);
 
 if opts.log_scale
     display_map = log10(max(loss_map, eps));
-    clabel = 'log_{10} L(ω,q)';
+    clabel = 'log_{10}(S / I_{kin})';
 else
     display_map = loss_map;
-    clabel = 'L(ω,q) (a.u.)';
+    clabel = 'S / I_{kin} (a.u.)';
 end
 
 % Auto-scale: use [5th, 95th] percentile
@@ -189,7 +190,7 @@ cb2 = colorbar(ax2);
 cb2.Label.String = clabel;
 xlabel(ax2, 'q (Å⁻¹)');
 ylabel(ax2, 'Energy (meV)');
-title(ax2, 'Raw EELS probability d²P/dΩdE');
+title(ax2, 'Raw EELS probability d^2P/d\Omega dE');
 
 % Overlay dispersion if available from phys
 if ~isempty(phys) && isfield(phys, 'q') && isfield(phys, 'omega_p')
@@ -204,5 +205,6 @@ if ~isempty(phys) && isfield(phys, 'q') && isfield(phys, 'omega_p')
     hold(ax2, 'off');
 end
 
-sgtitle(fig, 'Loss Function Extraction (Do et al. 2025)', 'FontWeight', 'bold');
+sgtitle(fig, 'Momentum-Dependent I_{kin} Correction (Do et al. 2025-inspired)', ...
+    'FontWeight', 'bold');
 end

@@ -121,11 +121,8 @@ else
             raw_spectrum = double(qe_raw.intensity(mask, k));
             raw_peak_heights = NaN(result.n_peaks, 1);
             for p = 1:result.n_peaks
-                E0 = result.omega_p(p);
-                [~, e_idx] = min(abs(energy_axis - E0));
-                hw = max(3, round(result.gamma(p) / mean(diff(energy_axis))));
-                win = max(1, e_idx-hw):min(numel(raw_spectrum), e_idx+hw);
-                raw_peak_heights(p) = max(raw_spectrum(win));
+                raw_peak_heights(p) = measure_peak_height( ...
+                    energy_axis, raw_spectrum, result.omega_p(p), result.gamma(p));
             end
 
             for p = 1:result.n_peaks
