@@ -247,7 +247,7 @@ end
             % Log to operation history
             [~, fname] = fileparts(char(path_to_load));
             local_log_operation(sprintf('Loaded: %s (dq=%.4f)', fname, dataset.dq_Ainv));
-            
+
             local_update_all_views();
         catch ME
             local_show_error(ME, throw_on_error);
@@ -369,9 +369,9 @@ end
 
             ui.ViewModeDropdown.Value = 'Physical';
             state.selectedQIndex = 1;
-            
+
             local_sync_controls_from_qe(local_get_reference_qe());
-            
+
             local_update_all_views();
         catch ME
             local_show_error(ME, false);
@@ -751,7 +751,7 @@ end
         state.comparisonQE = local_reaxis_qe(state.comparisonQE, dq_Ainv);
 
         local_sync_controls_from_qe(local_get_reference_qe());
-        
+
         local_update_all_views();
     end
 
@@ -1311,10 +1311,10 @@ end
             ui.InfoLabel.Visible = "on";
             return
         end
-        
+
         ui.InfoLabel.Text = "Draw a region on the Dispersion map to select points to move...";
         ui.InfoLabel.Visible = "on";
-        
+
         ax = ui.DispersionAxes;
         try
             roi = drawfreehand(ax, 'Color', 'r', 'LineWidth', 1.5);
@@ -1322,38 +1322,38 @@ end
             ui.InfoLabel.Text = "Selection cancelled or not supported.";
             return
         end
-        
+
         if isempty(roi) || isempty(roi.Position)
             ui.InfoLabel.Text = "No region drawn.";
             return
         end
-        
+
         % Check which points are inside
         in_b_idx = [];
         in_p_idx = [];
         poly_x = roi.Position(:,1);
         poly_y = roi.Position(:,2);
-        
+
         for bi = 1:numel(state.manual_branches)
             bpts = state.manual_branches{bi};
             if isempty(bpts), continue; end
             in = inpolygon(bpts(:,1), bpts(:,2), poly_x, poly_y);
-            
+
             p_idx = find(in);
             for k = 1:numel(p_idx)
                 in_b_idx(end+1,1) = bi; %#ok<AGROW>
                 in_p_idx(end+1,1) = p_idx(k); %#ok<AGROW>
             end
         end
-        
+
         if isempty(in_b_idx)
             delete(roi);
             ui.InfoLabel.Text = "No points inside selected region.";
             return
         end
-        
+
         n_sel = numel(in_b_idx);
-        
+
         % Prompt for target branch
         cur_n_branches = numel(state.manual_branches);
         opts = cell(1, cur_n_branches + 2);
@@ -1362,31 +1362,31 @@ end
         end
         opts{cur_n_branches + 1} = sprintf('New Branch %d', cur_n_branches + 1);
         opts{end} = '❌ Delete Points';
-        
+
         [sel_idx, ok] = listdlg('PromptString', sprintf('Move %d selected points to:', n_sel), ...
                                 'SelectionMode', 'single', ...
                                 'ListString', opts, ...
                                 'Name', 'Reassign / Delete');
-        
+
         if ~ok || isempty(sel_idx)
             delete(roi);
             ui.InfoLabel.Text = "Reassign cancelled.";
             return
         end
-        
+
         % Delete points from original branches first
         pts_to_move = zeros(n_sel, size(state.manual_branches{1},2));
         for k = 1:n_sel
             pts_to_move(k,:) = state.manual_branches{in_b_idx(k)}(in_p_idx(k),:);
         end
-        
+
         for bi = 1:cur_n_branches
             if ~any(in_b_idx == bi), continue; end
             keep_mask = true(size(state.manual_branches{bi}, 1), 1);
             keep_mask(in_p_idx(in_b_idx == bi)) = false;
             state.manual_branches{bi} = state.manual_branches{bi}(keep_mask, :);
         end
-        
+
         % If not deleting, put them in target branch
         if sel_idx < numel(opts)
             if sel_idx > cur_n_branches
@@ -1395,7 +1395,7 @@ end
                 state.manual_branches{sel_idx} = [state.manual_branches{sel_idx}; pts_to_move];
             end
         end
-        
+
         % Clean up empty branches and sort
         new_b = {};
         for bi = 1:numel(state.manual_branches)
@@ -1404,9 +1404,9 @@ end
             end
         end
         state.manual_branches = new_b;
-        
+
         delete(roi);
-        
+
         if sel_idx == numel(opts)
             ui.InfoLabel.Text = sprintf("Successfully deleted %d points.", n_sel);
             local_log_operation(sprintf("Deleted %d points", n_sel));
@@ -1414,7 +1414,7 @@ end
             ui.InfoLabel.Text = sprintf("Successfully moved %d points.", n_sel);
             local_log_operation(sprintf("Reassigned %d points to Branch %d", n_sel, sel_idx));
         end
-        
+
         % Force update of overlay
         local_update_all_views();
     end
@@ -1882,7 +1882,7 @@ end
         end
 
         state.selectedQIndex = min(max(1, state.selectedQIndex), size(state.physicalQE.intensity, 2));
-        
+
         % Render single spectrum FIRST — uses fast single-q preview if
         % the full batch cache is stale. This gives instant BG feedback.
         was_cache_miss = ~strcmp(state.ppCache.hash, local_opts_hash(local_preprocess_opts(), qe));

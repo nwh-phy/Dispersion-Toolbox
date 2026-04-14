@@ -78,23 +78,23 @@ switch lower(opts.mode)
         I_kin_q = q_abs.^(-3);
         I_kin_q = I_kin_q / max(I_kin_q);  % normalized
         mode_label = 'I_{kin}-corrected map — simple q^{-3} correction';
-        
+
     case 'experimental'
         if isempty(phys) || ~isfield(phys, 'I_kin')
             error('qe_loss_map:noPhysics', ...
                 'Experimental mode requires phys struct from qe_physics_extract.');
         end
-        
+
         % Interpolate I_kin onto the qe display grid
         % Deduplicate phys.q (both +q and -q → same |q|)
         [q_uniq, ia] = unique(phys.q);
         Ik_uniq = phys.I_kin(ia);
-        
+
         q_abs_disp = abs(q_disp);
         if numel(q_uniq) >= 2
             % interp1 with 'linear' returns NaN outside the data range
             I_kin_interp = interp1(q_uniq, Ik_uniq, q_abs_disp, 'linear');
-            
+
             % For q slightly outside the fitted range, fill with nearest
             % neighbor (clamped). For q far beyond (>1.5× coverage), keep
             % NaN to prevent bright-edge artifacts (Issue #3).
@@ -103,11 +103,11 @@ switch lower(opts.mode)
             nan_mask = isnan(I_kin_interp);
             near_mask = nan_mask & q_abs_disp >= q_lo*0.5 & q_abs_disp <= q_hi*1.5;
             far_mask  = nan_mask & ~near_mask;
-            
+
             % Fill near-range NaN with edge values (nearest-neighbor clamp)
             I_kin_interp(near_mask & q_abs_disp < q_lo) = Ik_uniq(1);
             I_kin_interp(near_mask & q_abs_disp > q_hi) = Ik_uniq(end);
-            
+
             % Far-range stays NaN → loss_map will show as blank (not bright)
             I_kin_interp(far_mask) = NaN;
         else
@@ -117,7 +117,7 @@ switch lower(opts.mode)
         I_kin_interp(I_kin_interp <= 0) = eps;
         I_kin_q = I_kin_interp;
         mode_label = sprintf('I_{kin}-corrected map — experimental correction (ρ₀=%.0fÅ)', phys.rho0);
-        
+
     otherwise
         error('qe_loss_map:badMode', 'Mode must be ''simple'' or ''experimental''.');
 end
@@ -198,7 +198,7 @@ if ~isempty(phys) && isfield(phys, 'q') && isfield(phys, 'omega_p')
     plot(ax1, phys.q, phys.omega_p, 'w.', 'MarkerSize', 8);
     plot(ax1, -phys.q, phys.omega_p, 'w.', 'MarkerSize', 8);
     hold(ax1, 'off');
-    
+
     hold(ax2, 'on');
     plot(ax2, phys.q, phys.omega_p, 'w.', 'MarkerSize', 8);
     plot(ax2, -phys.q, phys.omega_p, 'w.', 'MarkerSize', 8);

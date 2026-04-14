@@ -200,7 +200,7 @@ for b = 1:n_branches
             'Color', col, 'LineWidth', 1.5, ...
             'DisplayName', sprintf('Keldysh: ρ₀=%.0fÅ', phys_b.rho0));
         ylabel(ax8, 'ε_{inter}(q)');
-        
+
         % Right y-axis: L(q) = 1/ε_inter
         yyaxis(ax8, 'right');
         semilogy(ax8, phys_b.q, phys_b.loss_function, 'o', ...

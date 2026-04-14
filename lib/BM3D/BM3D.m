@@ -1,11 +1,11 @@
 function [PSNR, y_est] = BM3D(y, z, sigma, profile, print_to_screen)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  BM3D is an algorithm for attenuation of additive white Gaussian noise from 
+%  BM3D is an algorithm for attenuation of additive white Gaussian noise from
 %  grayscale images. This algorithm reproduces the results from the article:
 %
-%  [1] K. Dabov, A. Foi, V. Katkovnik, and K. Egiazarian, "Image Denoising 
-%      by Sparse 3D Transform-Domain Collaborative Filtering," 
+%  [1] K. Dabov, A. Foi, V. Katkovnik, and K. Egiazarian, "Image Denoising
+%      by Sparse 3D Transform-Domain Collaborative Filtering,"
 %      IEEE Transactions on Image Processing, vol. 16, no. 8, August, 2007.
 %      preprint at http://www.cs.tut.fi/~foi/GCF-BM3D.
 %
@@ -14,43 +14,43 @@ function [PSNR, y_est] = BM3D(y, z, sigma, profile, print_to_screen)
 %
 %  [PSNR, y_est] = BM3D(y, z, sigma, profile, print_to_screen)
 %
-%  ! The function can work without any of the input arguments, 
+%  ! The function can work without any of the input arguments,
 %   in which case, the internal default ones are used !
-% 
+%
 %  BASIC USAGE EXAMPLES:
 %
 %     Case 1) Using the default parameters (i.e., image name, sigma, etc.)
-% 
+%
 %      [PSNR, y_est] = BM3D;
-% 
+%
 %     Case 2) Using an external noisy image:
 %
 %      % Read a grayscale image and scale its intensities in range [0,1]
-%      y = im2double(imread('Cameraman256.png')); 
+%      y = im2double(imread('Cameraman256.png'));
 %      % Generate the same seed used in the experimental results of [1]
 %      randn('seed', 0);
-%      % Standard deviation of the noise --- corresponding to intensity 
+%      % Standard deviation of the noise --- corresponding to intensity
 %      %  range [0,255], despite that the input was scaled in [0,1]
 %      sigma = 25;
 %      % Add the AWGN with zero mean and standard deviation 'sigma'
 %      z = y + (sigma/255)*randn(size(y));
-%      % Denoise 'z'. The denoised image is 'y_est', and 'NA = 1' because 
+%      % Denoise 'z'. The denoised image is 'y_est', and 'NA = 1' because
 %      %  the true image was not provided
-%      [NA, y_est] = BM3D(1, z, sigma); 
+%      [NA, y_est] = BM3D(1, z, sigma);
 %      % Compute the putput PSNR
 %      PSNR = 10*log10(1/mean((y(:)-y_est(:)).^2))
 %      % show the noisy image 'z' and the denoised 'y_est'
-%      figure; imshow(z);   
+%      figure; imshow(z);
 %      figure; imshow(y_est);
-% 
-%     Case 3) If the original image y is provided as the first input 
-%      argument, then some additional information is printed (PSNRs, 
+%
+%     Case 3) If the original image y is provided as the first input
+%      argument, then some additional information is printed (PSNRs,
 %      figures, etc.). That is, "[NA, y_est] = BM3D(1, z, sigma);" in the
 %      above code should be replaced with:
-% 
+%
 %      [PSNR, y_est] = BM3D(y, z, sigma);
-% 
-% 
+%
+%
 %  INPUT ARGUMENTS (OPTIONAL):
 %
 %     1) y (matrix M x N): Noise-free image (needed for computing PSNR),
@@ -58,15 +58,15 @@ function [PSNR, y_est] = BM3D(y, z, sigma, profile, print_to_screen)
 %     2) z (matrix M x N): Noisy image (intensities in range [0,1] or [0,255])
 %     3) sigma (double)  : Std. dev. of the noise (corresponding to intensities
 %                          in range [0,255] even if the range of z is [0,1])
-%     4) profile (char)  : 'np' --> Normal Profile 
+%     4) profile (char)  : 'np' --> Normal Profile
 %                          'lc' --> Fast Profile
-%     5) print_to_screen : 0 --> do not print output information (and do 
+%     5) print_to_screen : 0 --> do not print output information (and do
 %                                not plot figures)
 %                          1 --> print information and plot figures
 %
 %  OUTPUTS:
-%     1) PSNR (double)          : Output PSNR (dB), only if the original 
-%                                 image is available, otherwise PSNR = 0                                               
+%     1) PSNR (double)          : Output PSNR (dB), only if the original
+%                                 image is available, otherwise PSNR = 0
 %     2) y_est (matrix M x N): Final estimate (in the range [0,1])
 %
 %
@@ -83,9 +83,9 @@ function [PSNR, y_est] = BM3D(y, z, sigma, profile, print_to_screen)
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%% In case, a noisy image z is not provided, then use the filename 
-%%%%  below to read an original image (might contain path also). Later, 
-%%%%  artificial AWGN noise is added and this noisy image is processed 
+%%%% In case, a noisy image z is not provided, then use the filename
+%%%%  below to read an original image (might contain path also). Later,
+%%%%  artificial AWGN noise is added and this noisy image is processed
 %%%%  by the BM3D.
 %%%%
 image_name = [
@@ -110,11 +110,11 @@ image_name = [
 %%%%
 %%%%  'high' --> High Profile (high quality, not documented in [1])
 %%%%
-%%%%  'vn' --> This profile is automatically enabled for high noise 
+%%%%  'vn' --> This profile is automatically enabled for high noise
 %%%%           when sigma > 40
 %%%%
 %%%%  'vn_old' --> This is the old 'vn' profile that was used in [1].
-%%%%           It gives inferior results than 'vn' in most cases. 
+%%%%           It gives inferior results than 'vn' in most cases.
 %%%%
 if (exist('profile') ~= 1)
     profile         = 'np'; %% default profile
@@ -178,7 +178,7 @@ if strcmp(profile, 'lc') == 1,
 
 end
 
-% Profile 'vn' was proposed in 
+% Profile 'vn' was proposed in
 %  Y. Hou, C. Zhao, D. Yang, and Y. Cheng, 'Comment on "Image Denoising by Sparse 3D Transform-Domain
 %  Collaborative Filtering"', accepted for publication, IEEE Trans. on Image Processing, July, 2010.
 % as a better alternative to that initially proposed in [1] (which is currently in profile 'vn_old')
@@ -186,7 +186,7 @@ if (strcmp(profile, 'vn') == 1) | (sigma > 40),
 
     N2                  = 32;
     Nstep               = 4;
- 
+
     N1_wiener           = 11;
     Nstep_wiener        = 6;
 
@@ -194,19 +194,19 @@ if (strcmp(profile, 'vn') == 1) | (sigma > 40),
     thrToIncStep        = 3;
     tau_match_wiener    = 3500;
     tau_match           = 25000;
-    
+
     Ns_wiener           = 39;
-    
+
 end
 
 % The 'vn_old' profile corresponds to the original parameters for strong noise proposed in [1].
 if (strcmp(profile, 'vn_old') == 1) & (sigma > 40),
 
-    transform_2D_HT_name = 'dct'; 
-    
+    transform_2D_HT_name = 'dct';
+
     N1                  = 12;
     Nstep               = 4;
- 
+
     N1_wiener           = 11;
     Nstep_wiener        = 6;
 
@@ -215,25 +215,25 @@ if (strcmp(profile, 'vn_old') == 1) & (sigma > 40),
     thrToIncStep        = 3;
     tau_match_wiener    = 3500;
     tau_match           = 5000;
-    
+
     Ns_wiener           = 39;
-    
+
 end
 
 decLevel = 0;        %% dec. levels of the dyadic wavelet 2D transform for blocks (0 means full decomposition, higher values decrease the dec. number)
 thr_mask = ones(N1); %% N1xN1 mask of threshold scaling coeff. --- by default there is no scaling, however the use of different thresholds for different wavelet decompoistion subbands can be done with this matrix
 
 if strcmp(profile, 'high') == 1, %% this profile is not documented in [1]
-    
-    decLevel     = 1; 
+
+    decLevel     = 1;
     Nstep        = 2;
     Nstep_wiener = 2;
     lambda_thr3D = 2.5;
     vMask = ones(N1,1); vMask((end/4+1):end/2)= 1.01; vMask((end/2+1):end) = 1.07; %% this allows to have different threhsolds for the finest and next-to-the-finest subbands
-    thr_mask = vMask * vMask'; 
+    thr_mask = vMask * vMask';
     beta         = 2.5;
     beta_wiener  = 1.5;
-    
+
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -287,7 +287,7 @@ else
     Wwin2D_wiener    = kaiser(N1_wiener, beta_wiener) * kaiser(N1_wiener, beta_wiener)'; % Kaiser window used in the aggregation of the Wiener filt. part
 end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%% If needed, read images, generate noise, or scale the images to the 
+%%%% If needed, read images, generate noise, or scale the images to the
 %%%% [0,1] interval
 %%%%
 if (exist('y') ~= 1) | (exist('z') ~= 1)
@@ -295,20 +295,20 @@ if (exist('y') ~= 1) | (exist('z') ~= 1)
     randn('seed', 0);                          %% generate seed
     z        = y + (sigma/255)*randn(size(y)); %% create a noisy image
 else  % external images
-    
+
     image_name = 'External image';
-    
+
     % convert z to double precision if needed
     z = double(z);
-    
+
     % convert y to double precision if needed
     y = double(y);
-    
+
     % if z's range is [0, 255], then convert to [0, 1]
     if (max(z(:)) > 10), % a naive check for intensity range
         z = z / 255;
     end
-    
+
     % if y's range is [0, 255], then convert to [0, 1]
     if (max(y(:)) > 10), % a naive check for intensity range
         y = y / 255;
@@ -350,7 +350,7 @@ end
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%% Step 2. Produce the final estimate by Wiener filtering (using the 
+%%%% Step 2. Produce the final estimate by Wiener filtering (using the
 %%%%  hard-thresholding initial estimate)
 %%%%
 tic;
@@ -378,7 +378,7 @@ if dump_output_information == 1,
 
     figure, imshow(y_est); title(sprintf('Denoised %s, PSNR: %.3f dB', ...
         image_name(1:end-4), PSNR));
-    
+
 end
 
 return;
@@ -389,7 +389,7 @@ return;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Some auxiliary functions 
+% Some auxiliary functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -399,7 +399,7 @@ return;
 function [Tforward, Tinverse] = getTransfMatrix (N, transform_type, dec_levels)
 %
 % Create forward and inverse transform matrices, which allow for perfect
-% reconstruction. The forward transform matrix is normalized so that the 
+% reconstruction. The forward transform matrix is normalized so that the
 % l2-norm of each basis element is 1.
 %
 % [Tforward, Tinverse] = getTransfMatrix (N, transform_type, dec_levels)
@@ -408,7 +408,7 @@ function [Tforward, Tinverse] = getTransfMatrix (N, transform_type, dec_levels)
 %
 %   N               --> Size of the transform (for wavelets, must be 2^K)
 %
-%   transform_type  --> 'dct', 'dst', 'hadamard', or anything that is 
+%   transform_type  --> 'dct', 'dst', 'hadamard', or anything that is
 %                       listed by 'help wfilters' (bi-orthogonal wavelets)
 %                       'DCrand' -- an orthonormal transform with a DC and all
 %                       the other basis elements of random nature
@@ -441,7 +441,7 @@ elseif (N == 8) & strcmp(transform_type, 'bior1.5')==1 % hardcoded transform so 
        0.707106781186547  -0.707106781186547                   0                   0                   0                   0                   0                   0;
                        0                   0   0.707106781186547  -0.707106781186547                   0                   0                   0                   0;
                        0                   0                   0                   0   0.707106781186547  -0.707106781186547                   0                   0;
-                       0                   0                   0                   0                   0                   0   0.707106781186547  -0.707106781186547];   
+                       0                   0                   0                   0                   0                   0   0.707106781186547  -0.707106781186547];
 elseif (N == 8) & strcmp(transform_type, 'dct')==1 % hardcoded transform so that the signal processing toolbox is not needed to generate it
     Tforward = [ 0.353553390593274   0.353553390593274   0.353553390593274   0.353553390593274   0.353553390593274   0.353553390593274   0.353553390593274   0.353553390593274;
        0.490392640201615   0.415734806151273   0.277785116509801   0.097545161008064  -0.097545161008064  -0.277785116509801  -0.415734806151273  -0.490392640201615;
@@ -465,15 +465,15 @@ elseif strcmp(transform_type, 'dct') == 1,
 elseif strcmp(transform_type, 'dst') == 1,
     Tforward    = dst(eye(N));
 elseif strcmp(transform_type, 'DCrand') == 1,
-    x = randn(N); x(1:end,1) = 1; [Q,R] = qr(x); 
-    if (Q(1) < 0), 
-        Q = -Q; 
+    x = randn(N); x(1:end,1) = 1; [Q,R] = qr(x);
+    if (Q(1) < 0),
+        Q = -Q;
     end;
     Tforward = Q';
 else %% a wavelet decomposition supported by 'wavedec'
     %%% Set periodic boundary conditions, to preserve bi-orthogonality
-    dwtmode('per','nodisp');  
-    
+    dwtmode('per','nodisp');
+
     Tforward = zeros(N,N);
     for i = 1:N
         Tforward(:,i)=wavedec(circshift([1 zeros(1,N-1)],[dec_levels i-1]), log2(N), transform_type);  %% construct transform matrix
@@ -481,7 +481,7 @@ else %% a wavelet decomposition supported by 'wavedec'
 end
 
 %%% Normalize the basis elements
-Tforward = (Tforward' * diag(sqrt(1./sum(Tforward.^2,2))))'; 
+Tforward = (Tforward' * diag(sqrt(1./sum(Tforward.^2,2))))';
 
 %%% Compute the inverse transform matrix
 Tinverse = inv(Tforward);

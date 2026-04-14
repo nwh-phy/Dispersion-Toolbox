@@ -104,10 +104,10 @@ fprintf('  Fitting %d channels...\n', n_q);
 for k = 1:n_q
     q_val = q_axis(k);
     if abs(q_val) < fit_cfg.q_skip, continue; end
-    
+
     spec = intensity(:, k);
     if max(spec) <= 0, continue; end
-    
+
     try
         result = fit_loss_function(energy_axis, spec, ...
             'E_min', fit_cfg.E_min, 'E_max', fit_cfg.E_max, ...
@@ -115,18 +115,18 @@ for k = 1:n_q
             'min_prominence', fit_cfg.min_prominence, ...
             'smooth_width', fit_cfg.smooth_width, ...
             'pre_subtracted', true);
-        
+
         if result.R_squared >= fit_cfg.R2_threshold
             for p = 1:result.n_peaks
                 omega_p = result.omega_p(p);
                 gamma_p = result.gamma(p);
                 amp_p   = result.amplitude(p);
-                
+
                 if gamma_p / omega_p > fit_cfg.max_gamma_ratio, continue; end
-                
+
                 raw_h = measure_peak_height( ...
                     energy_axis, spec, omega_p, gamma_p);
-                
+
                 row = [q_val, omega_p, gamma_p, result.R_squared, amp_p, ...
                        NaN, NaN, NaN, NaN, NaN, NaN, raw_h];
                 all_peaks = [all_peaks; row]; %#ok<AGROW>
@@ -145,11 +145,11 @@ if size(all_peaks, 1) >= 6
     E_threshold = 1500;  % meV
     mask_lo = all_peaks(:,2) < E_threshold;
     mask_hi = all_peaks(:,2) >= E_threshold;
-    
+
     branches = {};
     if any(mask_lo), branches{end+1} = all_peaks(mask_lo, :); end
     if any(mask_hi), branches{end+1} = all_peaks(mask_hi, :); end
-    
+
     fprintf('  Branch separation: %d branches (threshold = %d meV)\n', numel(branches), E_threshold);
     for b = 1:numel(branches)
         fprintf('    B%d: %d peaks, <E>=%.0f meV, <Γ>=%.0f meV\n', ...
