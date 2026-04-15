@@ -702,17 +702,39 @@ function ui_handles = qe_browser_ui(cb)
     xlabel(single_axes, "Energy relative to ZLP (meV)");
     ylabel(single_axes, "Intensity");
 
-    dispersion_axes = uiaxes(main_grid);
-    dispersion_axes.Layout.Row = 3;
-    dispersion_axes.Layout.Column = 2;
+    lower_right_tabs = uitabgroup(main_grid);
+    lower_right_tabs.Layout.Row = 3;
+    lower_right_tabs.Layout.Column = 2;
+
+    dispersion_tab = uitab(lower_right_tabs, "Title", "Dispersion");
+    dispersion_grid = uigridlayout(dispersion_tab, [1 1]);
+    dispersion_grid.Padding = [0 0 0 0];
+    dispersion_grid.RowSpacing = 0;
+    dispersion_grid.ColumnSpacing = 0;
+    dispersion_axes = uiaxes(dispersion_grid);
+    dispersion_axes.Layout.Row = 1;
+    dispersion_axes.Layout.Column = 1;
     title(dispersion_axes, "Dispersion");
     xlabel(dispersion_axes, "q (1/A)");
     ylabel(dispersion_axes, "Peak energy (meV)");
+
+    waterfall_tab = uitab(lower_right_tabs, "Title", "Stacked Spectra");
+    waterfall_grid = uigridlayout(waterfall_tab, [1 1]);
+    waterfall_grid.Padding = [0 0 0 0];
+    waterfall_grid.RowSpacing = 0;
+    waterfall_grid.ColumnSpacing = 0;
+    waterfall_axes = uiaxes(waterfall_grid);
+    waterfall_axes.Layout.Row = 1;
+    waterfall_axes.Layout.Column = 1;
+    title(waterfall_axes, "Stacked Spectra");
+    xlabel(waterfall_axes, "Energy relative to ZLP (meV)");
+    ylabel(waterfall_axes, "Offset intensity");
 
     attach_toolbar(qe_axes);
     attach_toolbar(comparison_axes);
     attach_toolbar(single_axes);
     attach_toolbar(dispersion_axes);
+    attach_toolbar(waterfall_axes);
 
     % ═══════════ PACK HANDLES ═══════════
     ui_handles = struct();
@@ -764,7 +786,10 @@ function ui_handles = qe_browser_ui(cb)
     ui_handles.QEAxes = qe_axes;
     ui_handles.ComparisonAxes = comparison_axes;
     ui_handles.SingleAxes = single_axes;
-    ui_handles.WaterfallAxes = gobjects(1);
+    ui_handles.LowerRightTabs = lower_right_tabs;
+    ui_handles.DispersionTab = dispersion_tab;
+    ui_handles.WaterfallTab = waterfall_tab;
+    ui_handles.WaterfallAxes = waterfall_axes;
     ui_handles.DispersionAxes = dispersion_axes;
     ui_handles.ZLPAxes = dispersion_axes;
     ui_handles.PickPtsButton = pick_pts;

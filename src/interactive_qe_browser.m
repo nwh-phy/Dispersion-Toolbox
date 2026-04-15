@@ -1874,10 +1874,12 @@ end
             local_clear_axes(ui.ComparisonAxes);
             local_clear_axes(ui.SingleAxes);
             local_clear_axes(ui.DispersionAxes);
+            local_clear_axes(ui.WaterfallAxes);
             title(ui.QEAxes, "Physical q-E Map");
             title(ui.ComparisonAxes, "Normalized Off-axis Component");
             title(ui.SingleAxes, "Spectrum");
             title(ui.DispersionAxes, "Dispersion");
+            title(ui.WaterfallAxes, "Stacked Spectra");
             return
         end
 
@@ -1894,6 +1896,7 @@ end
         local_plot_qe_map(ui.QEAxes, state.physicalQE, "Physical");
         local_plot_normalized_map();
         local_plot_dispersion_result();
+        local_plot_waterfall(qe);
 
         % If the cache was stale and deconv is on, the single spectrum
         % was drawn without deconv (fast preview skips it). Now that
@@ -2194,51 +2197,66 @@ end
     function local_plot_waterfall(qe)
         ax = ui.WaterfallAxes;
         local_clear_axes(ax);
-
-        [mask, energy_axis] = local_energy_mask(qe);
-        q_indices = local_waterfall_indices(qe);
-        if isempty(q_indices)
-            title(ax, "Waterfall");
+        if isempty(ax) || ~isgraphics(ax)
             return
         end
 
-        offset_value = ui.OffsetField.Value;
-        plotted_values = [];
+        [qe, ~, ~] = local_get_cached_preprocess(qe, local_preprocess_opts());
+        [mask, energy_axis] = local_energy_mask(qe);
+        all_q_mask = true(1, size(qe.intensity, 2));
+        spectra_matrix = local_build_map_values(qe, mask, all_q_mask, local_trace_mode());
 
+        if strcmpi(local_trace_y_scale(), "log")
+            spectra_matrix = max(spectra_matrix, eps);
+        end
+
+        stack_opts = struct( ...
+            'q_start', ui.QStartField.Value, ...
+            'q_end', ui.QEndField.Value, ...
+            'q_step', ui.QStepField.Value, ...
+            'offset', ui.OffsetField.Value);
+        stack = qe_prepare_stacked_spectra(energy_axis, spectra_matrix, qe.q_Ainv, stack_opts);
+        if isempty(stack.q_indices)
+            title(ax, "Stacked Spectra");
+            return
+        end
+
+        plotted_values = stack.shifted_traces(:);
         hold(ax, "on");
-        for idx = 1:numel(q_indices)
-            q_index = q_indices(idx);
-            spectrum = double(qe.intensity(mask, q_index));
-            features = local_build_spectrum_features(energy_axis, spectrum);
-            spectrum = local_trace_values(features, local_trace_mode());
-            if strcmpi(local_trace_y_scale(), "log")
-                spectrum = max(spectrum, eps);
-            end
-
-            shifted = spectrum + (idx - 1) * offset_value;
-            plotted_values = [plotted_values; shifted(:)]; %#ok<AGROW>
-
+        for idx = 1:numel(stack.q_indices)
+            q_index = stack.q_indices(idx);
+            trace_color = local_signed_q_color(stack.q_values(idx), qe.q_Ainv);
             line_width = 1.0;
             if q_index == state.selectedQIndex
-                line_width = 1.8;
+                trace_color = [0 0 0];
+                line_width = 2.2;
             end
 
-            trace_color = local_signed_q_color(qe.q_Ainv(q_index), qe.q_Ainv);
-            plot(ax, energy_axis, shifted, "-", ...
+            plot(ax, stack.energy_meV, stack.shifted_traces(:, idx), "-", ...
                 "Color", trace_color, ...
                 "LineWidth", line_width, ...
-                "DisplayName", sprintf("q=%.4f", qe.q_Ainv(q_index)));
+                "HandleVisibility", "off");
+
+            if numel(stack.q_indices) <= 12
+                text(ax, stack.energy_meV(end), stack.shifted_traces(end, idx), ...
+                    sprintf('  q=%.4f', stack.q_values(idx)), ...
+                    'Color', trace_color, ...
+                    'FontSize', 10, ...
+                    'HorizontalAlignment', 'left', ...
+                    'VerticalAlignment', 'middle', ...
+                    'Clipping', 'on');
+            end
         end
         hold(ax, "off");
 
         grid(ax, "on");
         xlabel(ax, "Energy relative to ZLP (meV)");
-        ylabel(ax, "Offset intensity");
-        title(ax, sprintf("%s view waterfall | %s | q=0 auto-centered", ...
-            local_current_view_name(), local_trace_mode()), ...
+        ylabel(ax, sprintf("%s + offset", local_single_ylabel()));
+        title(ax, sprintf("Stacked spectra | %s | %s | %d traces", ...
+            local_current_view_name(), local_trace_mode(), numel(stack.q_indices)), ...
             "Interpreter", "none");
         ax.YScale = local_trace_y_scale();
-        xlim(ax, [energy_axis(1), energy_axis(end)]);
+        xlim(ax, [stack.energy_meV(1), stack.energy_meV(end)]);
         local_apply_y_limits(ax, plotted_values);
     end
 
