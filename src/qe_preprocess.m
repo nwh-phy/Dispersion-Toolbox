@@ -147,6 +147,14 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
     n_q = size(intensity, 2);
     method = char(opts.bg_method);
     candidate_methods = local_background_model_candidates(opts, method);
+    do_group_auto = strcmpi(method, 'Auto') && ...
+        isfield(opts, 'bg_auto_group_qmax') && isfinite(opts.bg_auto_group_qmax) && ...
+        opts.bg_auto_group_qmax > 0;
+    if do_group_auto
+        auto_group_qmax = double(opts.bg_auto_group_qmax);
+    else
+        auto_group_qmax = NaN;
+    end
 
     % --- Defaults for new opts fields (backward compatible) ---
     if isfield(opts, 'bg_win_lo') && numel(opts.bg_win_lo) == 2
@@ -228,6 +236,12 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
     else
         q_list = 1:n_q;
     end
+    if do_group_auto
+        auto_candidate_scores = NaN(n_q, numel(candidate_methods));
+        auto_group_selected_method = '';
+        auto_group_focus_idx = [];
+        auto_group_aggregate_scores = NaN(1, numel(candidate_methods));
+    end
 
     for qi = q_list
         spec = intensity(:, qi);
@@ -264,6 +278,9 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
             bg = real(bg(:));
             bg(~isfinite(bg)) = 0;
             bg = max(bg, 0);
+            if do_group_auto
+                auto_candidate_scores(qi, :) = candidate_scores;
+            end
 
             subtracted_signal = spec(sub_mask) - bg;
             intensity(sub_mask, qi) = subtracted_signal;
@@ -311,6 +328,104 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
                 bg_diag(qi).bg_fraction = bg_fraction;
             end
         catch
+        end
+    end
+
+    if do_group_auto
+        if isfield(qe_in, 'q_abs_Ainv') && numel(qe_in.q_abs_Ainv) >= n_q
+            q_abs_axis = double(qe_in.q_abs_Ainv(:)');
+        elseif isfield(qe_in, 'q_Ainv') && numel(qe_in.q_Ainv) >= n_q
+            q_abs_axis = abs(double(qe_in.q_Ainv(:)'));
+        else
+            q_abs_axis = [];
+        end
+
+        if ~isempty(q_abs_axis)
+            auto_group_focus_idx = q_list(q_abs_axis(q_list) <= auto_group_qmax);
+        end
+
+        if numel(auto_group_focus_idx) >= 2
+            auto_group_aggregate_scores = sum(auto_candidate_scores(auto_group_focus_idx, :), 1, 'omitnan');
+            [~, auto_group_best_idx] = min(auto_group_aggregate_scores);
+            auto_group_selected_method = candidate_methods{auto_group_best_idx};
+
+            for qi = auto_group_focus_idx
+                spec = double(qe_in.intensity(:, qi));
+                s_fit = spec(fit_mask);
+                s_fit_pos = max(s_fit, eps);
+
+                try
+                    [bg, rsq, rmse_val, residuals, n_iter] = local_fit_background_dispatch( ...
+                        e_fit, s_fit_pos, e_sub, auto_group_selected_method, ...
+                        {auto_group_selected_method}, asym_penalty, spec, sub_mask);
+
+                    if do_iterative && any(signal_region)
+                        bg_full = interp1(e_sub, bg, energy_axis, 'linear', 0);
+                        neg_in_signal = (spec - bg_full < 0) & signal_region;
+                        if any(neg_in_signal)
+                            wt = ones(size(e_fit));
+                            neg_fit_overlap = fit_mask & neg_in_signal;
+                            neg_idx_in_fit = neg_fit_overlap(fit_mask);
+                            wt(neg_idx_in_fit) = 2;
+                            [bg, rsq, rmse_val, residuals, ~] = fit_background( ...
+                                e_fit, s_fit_pos, e_sub, auto_group_selected_method, asym_penalty, wt);
+                            bg = local_apply_background_safety_cap(spec(sub_mask), bg);
+                            n_iter = 2;
+                        end
+                    end
+
+                    bg = real(bg(:));
+                    bg(~isfinite(bg)) = 0;
+                    bg = max(bg, 0);
+                    subtracted_signal = spec(sub_mask) - bg;
+                    intensity(sub_mask, qi) = subtracted_signal;
+
+                    if want_diag
+                        bg_diag(qi).rsquare = rsq;
+                        bg_diag(qi).rmse = rmse_val;
+                        bg_diag(qi).iterations = n_iter;
+                        bg_diag(qi).selected_method = char(auto_group_selected_method);
+                        bg_diag(qi).candidate_methods = candidate_methods;
+                        bg_diag(qi).candidate_scores = auto_candidate_scores(qi, :);
+                        bg_diag(qi).candidate_details = local_refresh_selected_candidate_details( ...
+                            bg_diag(qi).candidate_details, auto_group_selected_method, ...
+                            spec(sub_mask), bg, rsq, rmse_val, residuals);
+
+                        selected_idx = find(strcmp(candidate_methods, auto_group_selected_method), 1);
+                        if ~isempty(selected_idx) && selected_idx <= numel(bg_diag(qi).candidate_details)
+                            bg_diag(qi).candidate_scores(selected_idx) = ...
+                                bg_diag(qi).candidate_details(selected_idx).score;
+                            bg_diag(qi).linear_rmse = ...
+                                bg_diag(qi).candidate_details(selected_idx).linear_rmse;
+                        end
+
+                        bg_full_vis = zeros(size(energy_axis));
+                        bg_full_vis(sub_mask) = bg;
+                        bg_diag(qi).bg_curve = bg_full_vis;
+                        bg_diag(qi).residuals = residuals;
+
+                        I_B = mean(bg, 'omitnan');
+                        var_I_B = var(bg, 'omitnan');
+                        if I_B > eps
+                            bg_diag(qi).h_param = (I_B + var_I_B) / I_B;
+                        end
+
+                        I_k = max(max(subtracted_signal), eps);
+                        h = bg_diag(qi).h_param;
+                        if isfinite(h) && I_B > eps
+                            bg_diag(qi).snr = I_k / sqrt(abs(I_k) + h * I_B);
+                        end
+
+                        [neg_fraction, neg_area_fraction, neg_peak_fraction, bg_fraction] = ...
+                            local_background_quality_metrics(spec(sub_mask), subtracted_signal, bg);
+                        bg_diag(qi).neg_fraction = neg_fraction;
+                        bg_diag(qi).neg_area_fraction = neg_area_fraction;
+                        bg_diag(qi).neg_peak_fraction = neg_peak_fraction;
+                        bg_diag(qi).bg_fraction = bg_fraction;
+                    end
+                catch
+                end
+            end
         end
     end
     qe_out.intensity = intensity;
