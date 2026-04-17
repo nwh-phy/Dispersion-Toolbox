@@ -206,7 +206,7 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
             'candidate_details', {struct([])}, ...
             'linear_rmse', NaN, ...
             'neg_fraction', NaN, 'neg_area_fraction', NaN, ...
-            'bg_fraction', NaN);
+            'neg_peak_fraction', NaN, 'bg_fraction', NaN);
         bg_diag = repmat(empty_diag, 1, n_q);
     else
         bg_diag = [];
@@ -303,10 +303,11 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
                     bg_diag(qi).snr = I_k / sqrt(abs(I_k) + h * I_B);
                 end
 
-                [neg_fraction, neg_area_fraction, bg_fraction] = ...
+                [neg_fraction, neg_area_fraction, neg_peak_fraction, bg_fraction] = ...
                     local_background_quality_metrics(spec(sub_mask), subtracted_signal, bg);
                 bg_diag(qi).neg_fraction = neg_fraction;
                 bg_diag(qi).neg_area_fraction = neg_area_fraction;
+                bg_diag(qi).neg_peak_fraction = neg_peak_fraction;
                 bg_diag(qi).bg_fraction = bg_fraction;
             end
         catch
@@ -412,7 +413,7 @@ function detail = local_make_candidate_detail(method, raw_signal, bg, rsq, rmse_
     subtracted_signal = raw_signal - bg;
     linear_residuals = raw_signal - bg;
     linear_rmse = sqrt(mean(linear_residuals.^2, 'omitnan'));
-    [neg_fraction, neg_area_fraction, bg_fraction] = ...
+    [neg_fraction, neg_area_fraction, neg_peak_fraction, bg_fraction] = ...
         local_background_quality_metrics(raw_signal, subtracted_signal, bg);
 
     detail = struct();
@@ -422,9 +423,10 @@ function detail = local_make_candidate_detail(method, raw_signal, bg, rsq, rmse_
     detail.linear_rmse = linear_rmse;
     detail.neg_fraction = neg_fraction;
     detail.neg_area_fraction = neg_area_fraction;
+    detail.neg_peak_fraction = neg_peak_fraction;
     detail.bg_fraction = bg_fraction;
     detail.score = local_background_score(linear_rmse, method, ...
-        neg_fraction, neg_area_fraction, bg_fraction, raw_signal);
+        neg_fraction, neg_area_fraction, neg_peak_fraction, bg_fraction, raw_signal);
     detail.residual_count = numel(residuals);
 end
 
@@ -435,7 +437,7 @@ function detail = local_empty_candidate_detail(method)
     end
     detail = struct('method', char(method), 'rsquare', NaN, 'rmse', NaN, ...
         'linear_rmse', NaN, 'neg_fraction', NaN, 'neg_area_fraction', NaN, ...
-        'bg_fraction', NaN, 'score', inf, 'residual_count', 0);
+        'neg_peak_fraction', NaN, 'bg_fraction', NaN, 'score', inf, 'residual_count', 0);
 end
 
 
@@ -462,22 +464,22 @@ function bg = local_apply_background_safety_cap(raw_signal, bg)
 end
 
 
-function score = local_background_score(linear_rmse, method, neg_fraction, neg_area_fraction, bg_fraction, raw_signal)
+function score = local_background_score(linear_rmse, method, neg_fraction, neg_area_fraction, neg_peak_fraction, bg_fraction, raw_signal)
     if ~isfinite(linear_rmse)
         score = inf;
         return
     end
 
     raw_signal = raw_signal(:);
-    scale = max(median(abs(raw_signal), 'omitnan'), eps);
+    scale = max(prctile(abs(raw_signal), 95), eps);
     rmse_term = linear_rmse / scale;
     complexity_term = local_background_model_complexity(method);
     score = rmse_term + 2.0 * neg_area_fraction + 0.5 * neg_fraction + ...
-        0.2 * max(bg_fraction - 0.95, 0) + complexity_term;
+        0.6 * neg_peak_fraction + 0.2 * max(bg_fraction - 0.95, 0) + complexity_term;
 end
 
 
-function [neg_fraction, neg_area_fraction, bg_fraction] = ...
+function [neg_fraction, neg_area_fraction, neg_peak_fraction, bg_fraction] = ...
         local_background_quality_metrics(raw_signal, subtracted_signal, bg)
     raw_signal = raw_signal(:);
     subtracted_signal = subtracted_signal(:);
@@ -487,6 +489,7 @@ function [neg_fraction, neg_area_fraction, bg_fraction] = ...
     if ~any(valid)
         neg_fraction = NaN;
         neg_area_fraction = NaN;
+        neg_peak_fraction = NaN;
         bg_fraction = NaN;
         return
     end
@@ -500,6 +503,8 @@ function [neg_fraction, neg_area_fraction, bg_fraction] = ...
     neg_area = sum(-subtracted_signal(neg_mask), 'omitnan');
     total_area = sum(abs(subtracted_signal), 'omitnan') + eps;
     neg_area_fraction = neg_area / total_area;
+    peak_scale = max(prctile(abs(raw_signal), 95), eps);
+    neg_peak_fraction = max(-min(subtracted_signal, [], 'omitnan'), 0) / peak_scale;
 
     raw_area = sum(max(raw_signal, 0), 'omitnan') + eps;
     bg_fraction = sum(max(bg, 0), 'omitnan') / raw_area;
