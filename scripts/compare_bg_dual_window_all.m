@@ -18,13 +18,14 @@ datasets = {
 };
 
 configs = {
-    struct('name','single_auto_core4', 'method','Auto', 'candidates',{{'Power','Exp2','ExpPoly3','Pearson'}}, 'win_lo',[50 300], 'win_hi',[]), ...
-    struct('name','single_auto_plus_vii', 'method','Auto', 'candidates',{{'Power','Exp2','ExpPoly3','Pearson','PearsonVII'}}, 'win_lo',[50 300], 'win_hi',[]), ...
-    struct('name','dual_auto_plus_vii', 'method','Auto', 'candidates',{{'Power','Exp2','ExpPoly3','Pearson','PearsonVII'}}, 'win_lo',[50 300], 'win_hi',[2800 3400]), ...
-    struct('name','dual_exp2', 'method','Exp2', 'candidates',{{'Exp2'}}, 'win_lo',[50 300], 'win_hi',[2800 3400]), ...
-    struct('name','dual_exppoly3', 'method','ExpPoly3', 'candidates',{{'ExpPoly3'}}, 'win_lo',[50 300], 'win_hi',[2800 3400]), ...
-    struct('name','dual_pearson', 'method','Pearson', 'candidates',{{'Pearson'}}, 'win_lo',[50 300], 'win_hi',[2800 3400]), ...
-    struct('name','dual_pearsonvii', 'method','PearsonVII', 'candidates',{{'PearsonVII'}}, 'win_lo',[50 300], 'win_hi',[2800 3400]) ...
+    struct('name','single_auto_core4', 'method','Auto', 'candidates',{{'Power','Exp2','ExpPoly3','Pearson'}}, 'win_lo',[50 300], 'win_hi',[], 'group_qmax', NaN), ...
+    struct('name','single_auto_plus_vii', 'method','Auto', 'candidates',{{'Power','Exp2','ExpPoly3','Pearson','PearsonVII'}}, 'win_lo',[50 300], 'win_hi',[], 'group_qmax', NaN), ...
+    struct('name','dual_auto_plus_vii', 'method','Auto', 'candidates',{{'Power','Exp2','ExpPoly3','Pearson','PearsonVII'}}, 'win_lo',[50 300], 'win_hi',[2800 3400], 'group_qmax', NaN), ...
+    struct('name','dual_auto_plus_vii_group_0p01', 'method','Auto', 'candidates',{{'Power','Exp2','ExpPoly3','Pearson','PearsonVII'}}, 'win_lo',[50 300], 'win_hi',[2800 3400], 'group_qmax', 0.01), ...
+    struct('name','dual_exp2', 'method','Exp2', 'candidates',{{'Exp2'}}, 'win_lo',[50 300], 'win_hi',[2800 3400], 'group_qmax', NaN), ...
+    struct('name','dual_exppoly3', 'method','ExpPoly3', 'candidates',{{'ExpPoly3'}}, 'win_lo',[50 300], 'win_hi',[2800 3400], 'group_qmax', NaN), ...
+    struct('name','dual_pearson', 'method','Pearson', 'candidates',{{'Pearson'}}, 'win_lo',[50 300], 'win_hi',[2800 3400], 'group_qmax', NaN), ...
+    struct('name','dual_pearsonvii', 'method','PearsonVII', 'candidates',{{'PearsonVII'}}, 'win_lo',[50 300], 'win_hi',[2800 3400], 'group_qmax', NaN) ...
 };
 
 results = cell(1, numel(datasets));
@@ -70,11 +71,15 @@ for ci = 1:numel(configs)
     opts.bg_win_hi = cfg.win_hi;
     opts.bg_iterative = false;
     opts.do_deconv = false;
+    if isfield(cfg, 'group_qmax') && isfinite(cfg.group_qmax) && cfg.group_qmax > 0
+        opts.bg_auto_group_qmax = cfg.group_qmax;
+    end
 
     [qe_bg, bg_diag] = qe_preprocess(qe_focus, opts);
 
     neg_fraction = [bg_diag.neg_fraction];
     neg_area_fraction = [bg_diag.neg_area_fraction];
+    neg_peak_fraction = [bg_diag.neg_peak_fraction];
     bg_fraction = [bg_diag.bg_fraction];
     linear_rmse = [bg_diag.linear_rmse];
     selected = string({bg_diag.selected_method});
@@ -92,12 +97,15 @@ for ci = 1:numel(configs)
     item.method = cfg.method;
     item.win_lo = cfg.win_lo;
     item.win_hi = cfg.win_hi;
+    item.group_qmax = cfg.group_qmax;
     item.selected_methods = cellstr(unique_methods);
     item.selected_method_counts = counts;
     item.neg_fraction_mean = mean(neg_fraction, 'omitnan');
     item.neg_fraction_median = median(neg_fraction, 'omitnan');
     item.neg_area_fraction_mean = mean(neg_area_fraction, 'omitnan');
     item.neg_area_fraction_median = median(neg_area_fraction, 'omitnan');
+    item.neg_peak_fraction_mean = mean(neg_peak_fraction, 'omitnan');
+    item.neg_peak_fraction_median = median(neg_peak_fraction, 'omitnan');
     item.bg_fraction_mean = mean(bg_fraction, 'omitnan');
     item.linear_rmse_mean = mean(linear_rmse, 'omitnan');
     item.channels_neg_fraction_gt_0p10 = sum(neg_fraction > 0.10);
@@ -108,6 +116,7 @@ for ci = 1:numel(configs)
     item.q0_selected_method = bg_diag(q0_idx).selected_method;
     item.q0_neg_fraction = bg_diag(q0_idx).neg_fraction;
     item.q0_neg_area_fraction = bg_diag(q0_idx).neg_area_fraction;
+    item.q0_neg_peak_fraction = bg_diag(q0_idx).neg_peak_fraction;
     item.q0_branch1_peak = max(q0_proc(branch1_mask(sub_mask)));
     item.q0_branch2_peak = max(q0_proc(branch2_mask(sub_mask)));
     item.q0_branch3_peak = max(q0_proc(branch3_mask(sub_mask)));
