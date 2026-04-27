@@ -18,6 +18,7 @@ function results = qe_auto_fit(qe, qe_raw, opts)
 %       .smooth_width  double — pre-fit smoothing width
 %       .max_peaks     double — max peaks per spectrum
 %       .peak_model    char   — 'lorentz', 'gaussian', 'voigt', 'damped_ho'
+%       .pre_subtracted logical — true when qe has already had background removed
 %       .guesses       double — manual peak guesses (meV), [] for blind mode
 %       .seed_idx      double — q-channel index for seed propagation
 %       .max_shift     double — max shift between adjacent q-channels (meV)
@@ -47,6 +48,7 @@ end
 if ~isfield(opts, 'R2_threshold'), opts.R2_threshold = 0.3; end
 if ~isfield(opts, 'verbose'), opts.verbose = false; end
 if ~isfield(opts, 'progress_fn'), opts.progress_fn = []; end
+if ~isfield(opts, 'pre_subtracted'), opts.pre_subtracted = false; end
 
 mask = opts.energy_mask;
 energy_axis = opts.energy_axis;
@@ -69,6 +71,7 @@ if ~isempty(opts.guesses)
             'direction', 'both', ...
             'max_shift', opts.max_shift, ...
             'peak_model', opts.peak_model, ...
+            'pre_subtracted', opts.pre_subtracted, ...
             'E_min', opts.E_min, 'E_max', opts.E_max, ...
             'smooth_width', opts.smooth_width, ...
             'verbose', false);
@@ -113,7 +116,8 @@ else
                 'smooth_width', opts.smooth_width, ...
                 'max_peaks', opts.max_peaks, ...
                 'initial_guesses', [], ...
-                'peak_model', opts.peak_model);
+                'peak_model', opts.peak_model, ...
+                'pre_subtracted', opts.pre_subtracted);
             fit_details{k} = result;
             n_success = n_success + 1;
 

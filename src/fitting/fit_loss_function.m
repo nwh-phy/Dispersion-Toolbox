@@ -53,29 +53,36 @@ S_scale = max(abs(S_w));
 if S_scale == 0; S_scale = 1; end
 S_n = S_w / S_scale;
 
-%% Estimate power-law background from the data edges
-% Fit log(S) ~ -alpha*log(E) + log(B0) using the first and last portions
+%% Estimate detection background/baseline from the data edges
 n_pts = numel(E_w);
 n_edge = max(5, round(n_pts * 0.12));
 edge_idx = [1:n_edge, (n_pts-n_edge+1):n_pts]';
-E_edge = E_w(edge_idx);
-S_edge = S_n(edge_idx);
-valid = S_edge > 0 & E_edge > 0;
 
-if sum(valid) >= 4
-    P = polyfit(log(E_edge(valid)), log(S_edge(valid)), 1);
-    alpha_init = -P(1);
-    B0_init = exp(P(2));
+if options.pre_subtracted
+    % Background was already removed upstream. Use only a constant baseline
+    % for peak detection so initialization does not subtract a second model.
+    C_init = local_robust_constant_baseline(S_n, edge_idx);
+    S_detrended = max(S_n - C_init, 0);
 else
-    alpha_init = 1.0;
-    B0_init = S_n(1) * E_w(1);
-end
-alpha_init = max(0.1, min(alpha_init, 5));
+    % Fit log(S) ~ -alpha*log(E) + log(B0) using the first and last portions.
+    E_edge = E_w(edge_idx);
+    S_edge = S_n(edge_idx);
+    valid = S_edge > 0 & E_edge > 0;
 
-%% Peak detection: subtract estimated background, then findpeaks
-bg_est = B0_init * E_w .^ (-alpha_init);
-bg_est = min(bg_est, S_n * 0.95);  % don't over-subtract
-S_detrended = max(S_n - bg_est, 0);
+    if sum(valid) >= 4
+        P = polyfit(log(E_edge(valid)), log(S_edge(valid)), 1);
+        alpha_init = -P(1);
+        B0_init = exp(P(2));
+    else
+        alpha_init = 1.0;
+        B0_init = S_n(1) * E_w(1);
+    end
+    alpha_init = max(0.1, min(alpha_init, 5));
+
+    bg_est = B0_init * E_w .^ (-alpha_init);
+    bg_est = min(bg_est, S_n * 0.95);  % don't over-subtract
+    S_detrended = max(S_n - bg_est, 0);
+end
 
 smooth_spec = smoothdata(S_detrended, 'gaussian', options.smooth_width);
 max_val = max(smooth_spec);
@@ -141,9 +148,6 @@ lb = zeros(n_params, 1);
 ub = zeros(n_params, 1);
 
 if options.pre_subtracted
-    % Constant offset: initial guess = median of lowest 20% of spectrum
-    sorted_S = sort(S_n);
-    C_init = median(sorted_S(1:max(1, round(numel(sorted_S)*0.2))));
     p0(1) = C_init;    lb(1) = -Inf;   ub(1) = Inf;  % allow negative offset
 else
     % Background: B0, alpha
@@ -349,5 +353,32 @@ function S = local_composite_model(p, E, n_peaks, peak_fn, n_bg_params)
         width = abs(p(base+2));
         A = abs(p(base+3));
         S = S + peak_fn(E0, width, A, E);
+    end
+end
+
+
+function C = local_robust_constant_baseline(S, edge_idx)
+    S = S(:);
+    finite = isfinite(S);
+    S_finite = S(finite);
+    if isempty(S_finite)
+        C = 0;
+        return
+    end
+
+    edge_idx = edge_idx(edge_idx >= 1 & edge_idx <= numel(S));
+    edge_vals = S(edge_idx);
+    edge_vals = edge_vals(isfinite(edge_vals));
+
+    sorted_S = sort(S_finite);
+    n_tail = max(1, round(numel(sorted_S) * 0.20));
+    lower_tail = sorted_S(1:n_tail);
+
+    baseline_vals = [edge_vals(:); lower_tail(:)];
+    baseline_vals = baseline_vals(isfinite(baseline_vals));
+    if isempty(baseline_vals)
+        C = 0;
+    else
+        C = median(baseline_vals);
     end
 end

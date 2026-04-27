@@ -67,6 +67,7 @@ for ci = 1:numel(configs)
     end
 
     [qe_bg, bg_diag] = qe_preprocess(qe_focus, opts);
+    summary = qe_summarize_lowq_background_eval(qe_focus, qe_bg, bg_diag);
 
     neg_fraction = [bg_diag.neg_fraction];
     neg_area_fraction = [bg_diag.neg_area_fraction];
@@ -89,6 +90,11 @@ for ci = 1:numel(configs)
     item.win_lo = cfg.win_lo;
     item.win_hi = cfg.win_hi;
     item.group_qmax = cfg.group_qmax;
+    item.group_ranges = cfg.group_ranges;
+    item.evaluation_ranges = summary.evaluation_ranges;
+    item.branch_windows = summary.branch_windows;
+    item.regions = summary.regions;
+    item.q0_summary = summary.q0;
     item.selected_methods = cellstr(unique_methods);
     item.selected_method_counts = counts;
     item.neg_fraction_mean = mean(neg_fraction, 'omitnan');

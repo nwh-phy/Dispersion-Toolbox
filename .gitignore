@@ -46,6 +46,8 @@ WORKSPACE_INDEX.md
 ~$*
 tracked_files.txt
 toolbox_config.m
+.hermes/
+output/
 
 # Experimental data directories (CONFIDENTIAL — never commit)
 20260120 Bi/

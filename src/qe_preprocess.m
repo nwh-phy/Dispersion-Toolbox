@@ -9,7 +9,7 @@ function [qe_out, bg_diag] = qe_preprocess(qe_in, opts)
 %     1. Normalization  (ZLP Peak or Area — beam current correction)
 %     2. Denoising      (Wiener2D, Savitzky-Golay, or BM3D)
 %     3. Quasi-elastic background removal (ZLP tail subtraction)
-%        Models: Power/ExpPoly3/Pearson/PearsonVII/Power2/Exp2/Auto
+%        Models: Power/ExpPoly3/Pearson/PearsonVII/Power2/Exp2/DualWindow/Auto
 %     4. Deconvolution  (Lucy-Richardson)
 %
 %   Physical note (Do et al. 2025, Fung et al. 2020):
@@ -18,11 +18,12 @@ function [qe_out, bg_diag] = qe_preprocess(qe_in, opts)
 %     ZLP Peak normalization (step 1) corrects for beam current only.
 %
 %   Background subtraction opts fields (all have sensible defaults):
-%     .bg_method      char     — model name (Power/ExpPoly3/Pearson/PearsonVII/Power2/Exp2/Auto)
+%     .bg_method      char     — model name (Power/ExpPoly3/Pearson/PearsonVII/Power2/Exp2/DualWindow/Auto)
 %     .bg_win_lo      [lo hi]  — primary fit window in meV (default [50 300])
 %     .bg_win_hi      [lo hi]  — secondary fit window in meV ([] = single window)
 %     .bg_iterative   logical  — enable iterative refit (default false)
 %     .bg_asym_penalty double  — negative-residual penalty factor (default 1)
+%        DualWindow uses side-band windows as robust log-linear anchors.
 %
 %   Optional second output bg_diag is a struct array (one per q-channel):
 %     .rsquare, .rmse, .bg_curve, .residuals, .h_param, .snr,
@@ -130,8 +131,8 @@ function [qe_out, bg_diag] = apply_bg_subtraction(qe_in, opts, want_diag)
     %   - Curve Fitting Toolbox fit() with full gof stats
     %   - Dual-window fitting: anchor before AND after loss features
     %   - Iterative refit: detect negative signal → increase weight → refit
-    %   - Models: Power, Power2, ExpPoly3, Pearson, PearsonVII, Exp2
-    %     (Exp2 recommended for low-loss; Fung et al. 2020)
+    %   - Models: Power, Power2, ExpPoly3, Pearson, PearsonVII, Exp2,
+    %     DualWindow (explicit side-band log-linear anchors)
     %   - Diagnostics: R², RMSE, h-parameter, SNR per q-channel
     %
     % Physical note:
@@ -477,28 +478,54 @@ end
 
 
 function methods = local_background_model_candidates(opts, requested_method)
-    supported = {'Power', 'ExpPoly3', 'Pearson', 'PearsonVII', 'Power2', 'Exp2'};
+    default_auto_methods = {'Power', 'ExpPoly3', 'Pearson', 'PearsonVII', 'Power2', 'Exp2'};
+    supported = [default_auto_methods, {'DualWindow'}];
 
     if strcmpi(requested_method, 'Auto')
         if isfield(opts, 'bg_candidate_methods') && ~isempty(opts.bg_candidate_methods)
             raw_methods = opts.bg_candidate_methods;
         else
-            raw_methods = supported;
+            % Keep Auto's default candidates unchanged; DualWindow is only
+            % considered by Auto when explicitly requested.
+            raw_methods = default_auto_methods;
         end
     else
         raw_methods = {requested_method};
     end
 
+    if ischar(raw_methods) || isstring(raw_methods)
+        raw_methods = cellstr(raw_methods);
+    end
+
     methods = {};
     for k = 1:numel(raw_methods)
-        method = char(string(raw_methods(k)));
-        if any(strcmpi(method, supported)) && ~any(strcmpi(method, methods))
-            methods{end+1} = method; %#ok<AGROW>
+        if iscell(raw_methods)
+            method = char(string(raw_methods{k}));
+        else
+            method = char(string(raw_methods(k)));
+        end
+        [is_supported, canonical_method] = local_canonical_background_method(method, supported);
+        if is_supported && ~any(strcmpi(canonical_method, methods))
+            methods{end+1} = canonical_method; %#ok<AGROW>
         end
     end
 
     if isempty(methods)
         methods = {'Power'};
+    end
+end
+
+
+function [is_supported, canonical_method] = local_canonical_background_method(method, supported)
+    if nargin < 2
+        supported = {'Power', 'ExpPoly3', 'Pearson', 'PearsonVII', 'Power2', 'Exp2', 'DualWindow'};
+    end
+    match_idx = find(strcmpi(strtrim(char(method)), supported), 1);
+    is_supported = ~isempty(match_idx);
+    if is_supported
+        canonical_method = supported{match_idx};
+    else
+        canonical_method = char(method);
     end
 end
 
@@ -674,6 +701,8 @@ function penalty = local_background_model_complexity(method)
     switch char(method)
         case 'Power'
             penalty = 0.00;
+        case 'DualWindow'
+            penalty = 0.00;
         case 'Power2'
             penalty = 0.02;
         case 'Exp2'
@@ -683,7 +712,7 @@ function penalty = local_background_model_complexity(method)
         case 'Pearson'
             penalty = 0.05;
         case 'PearsonVII'
-            penalty = 0.06;
+            penalty = 0.02;  % physics-motivated ZLP tail model, not arbitrarily complex
         otherwise
             penalty = 0.08;
     end
@@ -709,6 +738,18 @@ function [bg, rsq, rmse_val, residuals, n_iter] = fit_background( ...
     weights = weights(:);
 
     switch method
+        case 'DualWindow'
+            [bg, fitted_vals, residuals, fit_valid] = local_fit_dual_window_background( ...
+                e_fit, s_fit, e_sub);
+            if any(fit_valid)
+                s_valid = s_fit(fit_valid);
+                fitted_valid = fitted_vals(fit_valid);
+                ss_res = sum((s_valid - fitted_valid).^2, 'omitnan');
+                ss_tot = sum((s_valid - mean(s_valid, 'omitnan')).^2, 'omitnan');
+                rsq = 1 - ss_res / max(ss_tot, eps);
+                rmse_val = sqrt(ss_res / max(nnz(fit_valid) - 2, 1));
+            end
+
         case 'Power'
             valid = e_fit > 0 & s_fit > 0;
             if nnz(valid) < 3
@@ -854,6 +895,113 @@ function [bg, rsq, rmse_val, residuals, n_iter] = fit_background( ...
             bg(overshoot) = s_sub(overshoot) + excess / asym_penalty;
         end
     end
+end
+
+
+function [bg, fitted_vals, residuals, fit_valid] = local_fit_dual_window_background(e_fit, s_fit, e_sub)
+    % Explicit side-band background: robust log-linear interpolation between
+    % the first and last contiguous positive fit-window segments.
+    e_fit = e_fit(:);
+    s_fit = s_fit(:);
+    e_sub = e_sub(:);
+
+    bg = zeros(size(e_sub));
+    fitted_vals = zeros(size(e_fit));
+    residuals = [];
+    fit_valid = isfinite(e_fit) & isfinite(s_fit) & s_fit > eps;
+
+    if ~any(fit_valid)
+        baseline = eps;
+        bg(:) = baseline;
+        fitted_vals(:) = baseline;
+        return
+    end
+
+    segments = local_contiguous_energy_segments(e_fit);
+    positive_segments = {};
+    for si = 1:numel(segments)
+        seg_idx = segments{si};
+        seg_pos = seg_idx(fit_valid(seg_idx));
+        if ~isempty(seg_pos)
+            positive_segments{end+1} = seg_pos; %#ok<AGROW>
+        end
+    end
+
+    if numel(positive_segments) >= 2
+        first_idx = positive_segments{1};
+        last_idx = positive_segments{end};
+        e1 = median(e_fit(first_idx), 'omitnan');
+        e2 = median(e_fit(last_idx), 'omitnan');
+        log_i1 = median(log(s_fit(first_idx)), 'omitnan');
+        log_i2 = median(log(s_fit(last_idx)), 'omitnan');
+
+        if isfinite(e1) && isfinite(e2) && isfinite(log_i1) && isfinite(log_i2) && ...
+                abs(e2 - e1) > eps(max(abs([e1, e2, 1])))
+            slope = (log_i2 - log_i1) / (e2 - e1);
+            bg = local_eval_log_linear_background(e_sub, e1, log_i1, slope);
+            fitted_vals = local_eval_log_linear_background(e_fit, e1, log_i1, slope);
+        else
+            baseline = median(s_fit(fit_valid), 'omitnan');
+            bg(:) = max(baseline, eps);
+            fitted_vals(:) = max(baseline, eps);
+        end
+    else
+        % Conservative fallback for a missing/invalid side band: do not fail
+        % or extrapolate from one anchor; use the positive fit-sample median.
+        baseline = median(s_fit(fit_valid), 'omitnan');
+        bg(:) = max(baseline, eps);
+        fitted_vals(:) = max(baseline, eps);
+    end
+
+    bg = real(bg(:));
+    bg(~isfinite(bg)) = 0;
+    bg = max(bg, eps);
+    fitted_vals = real(fitted_vals(:));
+    fitted_vals(~isfinite(fitted_vals)) = 0;
+    fitted_vals = max(fitted_vals, eps);
+    residuals = s_fit(fit_valid) - fitted_vals(fit_valid);
+end
+
+
+function segments = local_contiguous_energy_segments(e_fit)
+    e_fit = e_fit(:);
+    finite_idx = find(isfinite(e_fit));
+    if isempty(finite_idx)
+        segments = {};
+        return
+    end
+
+    [sorted_e, order] = sort(e_fit(finite_idx));
+    sorted_idx = finite_idx(order);
+    if numel(sorted_e) == 1
+        segments = {sorted_idx};
+        return
+    end
+
+    d_e = diff(sorted_e);
+    positive_steps = d_e(isfinite(d_e) & d_e > 0);
+    if isempty(positive_steps)
+        break_after = false(size(d_e));
+    else
+        nominal_step = median(positive_steps, 'omitnan');
+        gap_threshold = max(1.5 * nominal_step, nominal_step + eps(max(abs(sorted_e))) * 16);
+        break_after = d_e > gap_threshold;
+    end
+
+    break_pos = find(break_after);
+    starts = [1; break_pos(:) + 1];
+    stops = [break_pos(:); numel(sorted_e)];
+    segments = cell(1, numel(starts));
+    for si = 1:numel(starts)
+        segments{si} = sorted_idx(starts(si):stops(si));
+    end
+end
+
+
+function bg = local_eval_log_linear_background(e, anchor_e, anchor_log_i, slope)
+    log_bg = anchor_log_i + slope .* (e(:) - anchor_e);
+    log_bg = min(max(log_bg, log(realmin('double'))), log(realmax('double')));
+    bg = exp(log_bg);
 end
 
 

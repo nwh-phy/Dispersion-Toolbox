@@ -1225,6 +1225,9 @@ end
         auto_opts.smooth_width = ui.SmoothField.Value;
         auto_opts.max_peaks = ui.MaxPeaksField.Value;
         auto_opts.peak_model = ui.PeakModelDropdown.Value;
+        % qe above is produced with the same background-subtraction checkbox,
+        % so Auto Fit must not fit another power-law background when it is on.
+        auto_opts.pre_subtracted = ui.BgSubCheckbox.Value;
         auto_opts.guesses = guesses;
         auto_opts.seed_idx = state.selectedQIndex;
         auto_opts.max_shift = ui.MaxShiftField.Value;
