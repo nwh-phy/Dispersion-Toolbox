@@ -133,7 +133,7 @@ for ci = 1:numel(configs)
     item.q0_processed_min_after50 = min(q0_proc);
     item.q0_negative_points_after50 = sum(q0_proc < 0);
     if strcmp(cfg.method, 'Auto')
-        item.q0_candidate_methods = {bg_diag(q0_idx).candidate_methods};
+        item.q0_candidate_methods = bg_diag(q0_idx).candidate_methods;
         item.q0_candidate_scores = bg_diag(q0_idx).candidate_scores;
         item.q0_candidate_linear_rmse = [bg_diag(q0_idx).candidate_details.linear_rmse];
     end

@@ -63,7 +63,7 @@ else
     q0_idx = NaN;
 end
 
-if ~isfinite(q0_idx) || isempty(bg_diag)
+if ~isfinite(q0_idx) || isempty(bg_diag) || q0_idx > numel(bg_diag)
     summary.q0 = local_empty_q0_summary();
     return;
 end

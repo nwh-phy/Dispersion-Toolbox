@@ -110,6 +110,18 @@ verifyEqual(testCase, summary.q0.selected_method, 'PearsonVII');
 end
 
 
+function testReturnsEmptyQ0SummaryWhenBgDiagLengthIsShort(testCase)
+[qe_focus, qe_bg, bg_diag] = makeSyntheticBackgroundEvaluationFixture();
+bg_diag = bg_diag(1:3);
+
+summary = qe_summarize_lowq_background_eval(qe_focus, qe_bg, bg_diag);
+
+verifyTrue(testCase, isnan(summary.q0.q_index));
+verifyTrue(testCase, isnan(summary.q0.q_Ainv));
+verifyEqual(testCase, summary.q0.selected_method, '');
+end
+
+
 function [qe_focus, qe_bg, bg_diag] = makeSyntheticBackgroundEvaluationFixture()
 qe_focus = struct();
 qe_focus.energy_meV = [0; 100; 1000; 2000; 3200];
