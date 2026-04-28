@@ -144,25 +144,36 @@ end
 
 region.q_min = min(q_axis(idx));
 region.q_max = max(q_axis(idx));
-selected = string({bg_diag(idx).selected_method});
-unique_methods = unique(selected);
-counts = zeros(1, numel(unique_methods));
-for i = 1:numel(unique_methods)
-    counts(i) = sum(selected == unique_methods(i));
-end
-region.selected_methods = cellstr(unique_methods);
-region.selected_method_counts = counts;
+diag_idx = idx(idx <= numel(bg_diag));
+if isempty(diag_idx)
+    region.selected_methods = {};
+    region.selected_method_counts = [];
+    region.neg_fraction_mean = NaN;
+    region.neg_area_fraction_mean = NaN;
+    region.neg_peak_fraction_mean = NaN;
+    region.bg_fraction_mean = NaN;
+    region.linear_rmse_mean = NaN;
+else
+    selected = string({bg_diag(diag_idx).selected_method});
+    unique_methods = unique(selected);
+    counts = zeros(1, numel(unique_methods));
+    for i = 1:numel(unique_methods)
+        counts(i) = sum(selected == unique_methods(i));
+    end
+    region.selected_methods = cellstr(unique_methods);
+    region.selected_method_counts = counts;
 
-neg_fraction = [bg_diag(idx).neg_fraction];
-neg_area_fraction = [bg_diag(idx).neg_area_fraction];
-neg_peak_fraction = [bg_diag(idx).neg_peak_fraction];
-bg_fraction = [bg_diag(idx).bg_fraction];
-linear_rmse = [bg_diag(idx).linear_rmse];
-region.neg_fraction_mean = mean(neg_fraction, 'omitnan');
-region.neg_area_fraction_mean = mean(neg_area_fraction, 'omitnan');
-region.neg_peak_fraction_mean = mean(neg_peak_fraction, 'omitnan');
-region.bg_fraction_mean = mean(bg_fraction, 'omitnan');
-region.linear_rmse_mean = mean(linear_rmse, 'omitnan');
+    neg_fraction = [bg_diag(diag_idx).neg_fraction];
+    neg_area_fraction = [bg_diag(diag_idx).neg_area_fraction];
+    neg_peak_fraction = [bg_diag(diag_idx).neg_peak_fraction];
+    bg_fraction = [bg_diag(diag_idx).bg_fraction];
+    linear_rmse = [bg_diag(diag_idx).linear_rmse];
+    region.neg_fraction_mean = mean(neg_fraction, 'omitnan');
+    region.neg_area_fraction_mean = mean(neg_area_fraction, 'omitnan');
+    region.neg_peak_fraction_mean = mean(neg_peak_fraction, 'omitnan');
+    region.bg_fraction_mean = mean(bg_fraction, 'omitnan');
+    region.linear_rmse_mean = mean(linear_rmse, 'omitnan');
+end
 
 region_proc = proc(:, idx);
 [region.branch1_peak_mean, region.branch1_peak_min] = local_region_branch_stats(region_proc, sub_energy, opts.branch1_meV);
