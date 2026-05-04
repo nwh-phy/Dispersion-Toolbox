@@ -38,6 +38,55 @@ verifyEqual(testCase, size(updated{2}, 1), size(branches{2}, 1) + 1);
 verifyEqual(testCase, updated{2}(end, 1:2), [0.0450 1620], 'AbsTol', 1e-12);
 end
 
+function testExplicitBranchTargetOverridesAutoChoice(testCase)
+branches = makeBranches();
+
+[updated, correction] = qe_apply_branch_correction(branches, 0.0200, 735, ...
+    'Branch', 'Branch 2', ...
+    'QTolerance', 0.001);
+
+verifyEqual(testCase, correction.action, 'replace');
+verifyEqual(testCase, correction.branch_index, 2);
+verifyEqual(testCase, correction.old_energy_meV, 1500, 'AbsTol', 1e-12);
+verifyEqual(testCase, updated{2}(2, 2), 735, 'AbsTol', 1e-12);
+verifyEqual(testCase, updated{1}, branches{1});
+end
+
+function testNewBranchTargetAddsTrailingBranch(testCase)
+branches = makeBranches();
+
+[updated, correction] = qe_apply_branch_correction(branches, 0.0250, 990, ...
+    'Branch', 'New Branch 3', ...
+    'QTolerance', 0.001);
+
+verifyEqual(testCase, correction.action, 'add');
+verifyEqual(testCase, correction.branch_index, 3);
+verifyEqual(testCase, numel(updated), 3);
+verifyEqual(testCase, updated{3}(:, 1:2), [0.0250 990], 'AbsTol', 1e-12);
+end
+
+function testUndoReplaceCorrectionRestoresPreviousPeak(testCase)
+branches = makeBranches();
+
+[updated, correction] = qe_apply_branch_correction(branches, 0.0202, 735, ...
+    'Branch', 'auto', ...
+    'QTolerance', 0.001);
+restored = qe_revert_branch_correction(updated, correction);
+
+verifyEqual(testCase, restored, branches);
+end
+
+function testUndoAddCorrectionRemovesInsertedPeak(testCase)
+branches = makeBranches();
+
+[updated, correction] = qe_apply_branch_correction(branches, 0.0450, 1620, ...
+    'Branch', 2, ...
+    'QTolerance', 0.001);
+restored = qe_revert_branch_correction(updated, correction);
+
+verifyEqual(testCase, restored, branches);
+end
+
 function testFlattenBranchesUsesAllBranchPoints(testCase)
 branches = makeBranches();
 

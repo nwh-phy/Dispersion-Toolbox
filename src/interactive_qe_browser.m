@@ -98,6 +98,7 @@ end
         cb.on_pick_guesses = @local_on_pick_guesses;
         cb.on_reassign_points = @local_on_reassign_points;
         cb.on_correct_auto_peak = @local_on_correct_auto_peak;
+        cb.on_undo_correction = @local_on_undo_correction;
         cb.on_fit_dispersion = @local_on_fit_dispersion;
         cb.on_export_dispersion = @local_on_export_dispersion;
         cb.on_show_loss_map = @local_on_show_loss_map;
@@ -848,6 +849,7 @@ end
         state.manual_branches = {};
         state.branchCorrectionLog = [];
         ui.PtsLabel.Text = "0 pts";
+        local_sync_correction_controls();
         local_update_all_views();
     end
 
@@ -910,6 +912,7 @@ end
             return
         end
         ui.PtsLabel.Text = sprintf("%d pts (loaded)", size(state.manual_points, 1));
+        local_sync_correction_controls();
         local_update_all_views();
     end
 
@@ -1188,11 +1191,12 @@ end
             % Hybrid mode: use the accepted single-spectrum fit as a manual
             % correction of the existing auto-fit branch point at this q.
             n_corrected = 0;
+            branch_spec = local_selected_correction_branch_spec();
             for p = 1:result.n_peaks
                 if ~keep(p); continue; end
                 [state.manual_branches, correction] = qe_apply_branch_correction( ...
                     state.manual_branches, q_value, result.omega_p(p), ...
-                    'Branch', 'auto', ...
+                    'Branch', branch_spec, ...
                     'QTolerance', local_branch_correction_q_tolerance());
                 local_append_branch_correction(correction);
                 n_corrected = n_corrected + 1;
@@ -1329,6 +1333,7 @@ end
         state.manual_points = qe_flatten_branch_points(branches);
         state.branchCorrectionLog = [];
         state.fitResults = {};
+        local_sync_correction_controls();
 
         % ═══════════ Plot ═══════════
         ax = ui.DispersionAxes;
@@ -1512,13 +1517,39 @@ end
             ui.PickGuessesButton.BackgroundColor = [0.96 0.96 0.96];
             ui.CorrectAutoButton.Text = "Click peak...";
             ui.CorrectAutoButton.BackgroundColor = [1.0 0.92 0.55];
-            ui.InfoLabel.Text = "Correct Auto: click the corrected peak in the single-spectrum panel.";
+            ui.InfoLabel.Text = sprintf("Correct Auto [%s]: click the corrected peak in the single-spectrum panel.", ...
+                char(string(ui.CorrectionBranchDropdown.Value)));
             ui.InfoLabel.Visible = "on";
         else
             ui.CorrectAutoButton.Text = "Correct Auto";
             ui.CorrectAutoButton.BackgroundColor = [0.96 0.96 0.96];
             ui.InfoLabel.Text = "Correct Auto cancelled.";
             ui.InfoLabel.Visible = "on";
+        end
+    end
+
+
+    function local_on_undo_correction(~, ~)
+        if isempty(state.branchCorrectionLog)
+            ui.InfoLabel.Text = "No manual correction to undo.";
+            ui.InfoLabel.Visible = "on";
+            local_sync_correction_controls();
+            return
+        end
+
+        correction = state.branchCorrectionLog(end);
+        try
+            state.manual_branches = qe_revert_branch_correction(state.manual_branches, correction);
+            state.branchCorrectionLog(end) = [];
+            local_sync_manual_points_from_branches();
+            local_update_all_views();
+            ui.InfoLabel.Text = sprintf("Undid %s correction on Branch %d at q=%.4f.", ...
+                char(correction.action), correction.branch_index, correction.new_q_Ainv);
+            ui.InfoLabel.Visible = "on";
+            local_log_operation(sprintf('Undo correction: B%d q=%.4f', ...
+                correction.branch_index, correction.new_q_Ainv));
+        catch ME
+            local_show_error(ME, false);
         end
     end
 
@@ -2521,10 +2552,11 @@ end
                 end
                 energy_value = min(max(energy_value, energy_axis(1)), energy_axis(end));
                 q_value = state.physicalQE.q_Ainv(state.selectedQIndex);
+                branch_spec = local_selected_correction_branch_spec();
 
                 [state.manual_branches, correction] = qe_apply_branch_correction( ...
                     state.manual_branches, q_value, energy_value, ...
-                    'Branch', 'auto', ...
+                    'Branch', branch_spec, ...
                     'QTolerance', local_branch_correction_q_tolerance());
                 local_append_branch_correction(correction);
                 local_sync_manual_points_from_branches();
@@ -2532,9 +2564,14 @@ end
                 ui.CorrectAutoButton.Text = "Correct Auto";
                 ui.CorrectAutoButton.BackgroundColor = [0.96 0.96 0.96];
                 state.autoCorrectionArmed = false;
-                ui.InfoLabel.Text = sprintf("%s Branch %d at q=%.4f: %.0f → %.0f meV", ...
-                    upper(correction.action), correction.branch_index, ...
-                    correction.new_q_Ainv, correction.old_energy_meV, correction.new_energy_meV);
+                if isnan(correction.old_energy_meV)
+                    ui.InfoLabel.Text = sprintf("Added Branch %d at q=%.4f: %.0f meV", ...
+                        correction.branch_index, correction.new_q_Ainv, correction.new_energy_meV);
+                else
+                    ui.InfoLabel.Text = sprintf("Replaced Branch %d at q=%.4f: %.0f → %.0f meV", ...
+                        correction.branch_index, correction.new_q_Ainv, ...
+                        correction.old_energy_meV, correction.new_energy_meV);
+                end
                 ui.InfoLabel.Visible = "on";
                 local_log_operation(sprintf('Correct auto peak: B%d q=%.4f %.0f meV', ...
                     correction.branch_index, correction.new_q_Ainv, correction.new_energy_meV));
@@ -2599,8 +2636,11 @@ end
     function local_sync_manual_points_from_branches()
         if ~isempty(state.manual_branches)
             state.manual_points = qe_flatten_branch_points(state.manual_branches);
+        else
+            state.manual_points = [];
         end
         ui.PtsLabel.Text = sprintf('%d pts', size(state.manual_points, 1));
+        local_sync_correction_controls();
     end
 
 
@@ -2610,6 +2650,59 @@ end
         else
             state.branchCorrectionLog(end+1) = correction;
         end
+        local_sync_correction_controls();
+    end
+
+
+    function branch_spec = local_selected_correction_branch_spec()
+        branch_spec = 'auto';
+        if ~isfield(ui, 'CorrectionBranchDropdown') || isempty(ui.CorrectionBranchDropdown)
+            return
+        end
+        value = char(string(ui.CorrectionBranchDropdown.Value));
+        value = strtrim(value);
+        if isempty(value) || strcmpi(value, 'Auto')
+            return
+        end
+        nums = regexp(value, '\d+', 'match');
+        if ~isempty(nums)
+            branch_spec = str2double(nums{end});
+        end
+    end
+
+
+    function local_sync_correction_controls()
+        if ~isfield(ui, 'CorrectionBranchDropdown') || isempty(ui.CorrectionBranchDropdown)
+            return
+        end
+
+        n_branches = numel(state.manual_branches);
+        items = [{'Auto'}, arrayfun(@(b) sprintf('Branch %d', b), 1:n_branches, 'UniformOutput', false)];
+        if n_branches > 0
+            items{end+1} = sprintf('New Branch %d', n_branches + 1); %#ok<AGROW>
+        end
+
+        old_value = char(string(ui.CorrectionBranchDropdown.Value));
+        ui.CorrectionBranchDropdown.Items = items;
+        if any(strcmp(old_value, items))
+            ui.CorrectionBranchDropdown.Value = old_value;
+        else
+            nums = regexp(old_value, 'New Branch\s+(\d+)', 'tokens', 'once');
+            if ~isempty(nums)
+                promoted = sprintf('Branch %s', nums{1});
+                if any(strcmp(promoted, items))
+                    ui.CorrectionBranchDropdown.Value = promoted;
+                else
+                    ui.CorrectionBranchDropdown.Value = 'Auto';
+                end
+            else
+                ui.CorrectionBranchDropdown.Value = 'Auto';
+            end
+        end
+
+        ui.CorrectionBranchDropdown.Enable = local_on_off(n_branches > 0);
+        ui.CorrectAutoButton.Enable = local_on_off(n_branches > 0);
+        ui.UndoCorrectionButton.Enable = local_on_off(~isempty(state.branchCorrectionLog));
     end
 
 
@@ -2665,6 +2758,7 @@ end
         ui.BuildViewsButton.Enable = local_on_off(has_dataset);
         ui.ResetButton.Enable = local_on_off(has_dataset);
         ui.UndoButton.Enable = local_on_off(numel(state.opHistory) >= 2);
+        local_sync_correction_controls();
         ui.QNormCheckbox.Enable = local_on_off(has_raw);
 
         if ~has_raw

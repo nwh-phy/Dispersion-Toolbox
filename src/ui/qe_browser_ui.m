@@ -11,7 +11,8 @@ function ui_handles = qe_browser_ui(cb)
 %         .on_load_pts, .on_split_branches, .on_fit_model, .on_export,
 %         .on_auto_fit_dispersion, .on_fit_spectrum, .on_accept_fit,
 %         .on_show_gamma, .on_pick_guesses, .on_reassign_points,
-%         .on_correct_auto_peak, .on_fit_dispersion, .on_export_dispersion,
+%         .on_correct_auto_peak, .on_undo_correction,
+%         .on_fit_dispersion, .on_export_dispersion,
 %         .on_history_select, .on_save_history, .on_load_history,
 %         .on_clear_history
 %
@@ -643,11 +644,24 @@ function ui_handles = qe_browser_ui(cb)
         "ButtonPushedFcn", cb.on_correct_auto_peak);
     correct_auto_btn.Layout.Row = 9; correct_auto_btn.Layout.Column = [10 11];
 
+    undo_corr_btn = uibutton(control_grid, ...
+        "Text", "Undo Corr", ...
+        "Tooltip", "Undo the most recent manual correction of auto-fit branches", ...
+        "ButtonPushedFcn", cb.on_undo_correction);
+    undo_corr_btn.Layout.Row = 9; undo_corr_btn.Layout.Column = 12;
+
+    corr_branch_dropdown = uidropdown(control_grid, ...
+        "Items", {'Auto'}, ...
+        "Value", 'Auto', ...
+        "Tooltip", "Correction target: Auto chooses nearest branch; Branch N forces that branch; New Branch adds a branch");
+    corr_branch_dropdown.Layout.Row = 9;
+    corr_branch_dropdown.Layout.Column = [13 14];
+
     seed_info_label = uilabel(control_grid, ...
         "Text", "", ...
         "HorizontalAlignment", "left");
     seed_info_label.Layout.Row = 9;
-    seed_info_label.Layout.Column = [12 16];
+    seed_info_label.Layout.Column = [15 16];
 
     % ═══════════ ROW 10: Dispersion Model Selector ═══════════
     disp_model_lbl = uilabel(control_grid, "Text", "Disp Model:"); %#ok<NASGU>
@@ -828,6 +842,8 @@ function ui_handles = qe_browser_ui(cb)
     ui_handles.PickGuessesButton = pick_guesses_btn;
     ui_handles.ReassignButton = reassign_btn;
     ui_handles.CorrectAutoButton = correct_auto_btn;
+    ui_handles.UndoCorrectionButton = undo_corr_btn;
+    ui_handles.CorrectionBranchDropdown = corr_branch_dropdown;
     ui_handles.DeconvCheckbox = deconv_cb;
     ui_handles.DeconvIterField = deconv_iter;
     ui_handles.DenoiseCheckbox = denoise_cb;

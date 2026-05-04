@@ -7,9 +7,10 @@ function [branches_out, correction] = qe_apply_branch_correction(branches, q_Ain
 %   is mostly trusted, but isolated q channels need manual correction.
 %
 %   Name-value options:
-%     Branch        'auto' (default) or a positive branch index.  In 'auto'
-%                   mode, the nearest same-q point is replaced; if none exists,
-%                   the branch with the closest median energy is used.
+%     Branch        'auto' (default), 'Branch N', 'New Branch N', or a
+%                   positive branch index.  In 'auto' mode, the nearest
+%                   same-q point is replaced; if none exists, the branch
+%                   with the closest median energy is used.
 %     QTolerance    Same-q tolerance in Å^-1.  Default: 1e-6.
 %     PreserveExtra Keep columns 3:end from the replaced auto point.  Default:
 %                   true.  Added points receive NaN in extra columns.
@@ -113,10 +114,10 @@ if isnumeric(branch_spec)
 end
 
 branch_text = lower(strtrim(char(string(branch_spec))));
-if startsWith(branch_text, 'branch')
+if startsWith(branch_text, 'branch') || startsWith(branch_text, 'new branch')
     nums = regexp(branch_text, '\d+', 'match');
     if ~isempty(nums)
-        target_branch = str2double(nums{1});
+        target_branch = str2double(nums{end});
         return
     end
 end
