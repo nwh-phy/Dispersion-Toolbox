@@ -56,8 +56,10 @@ end
         state_out.selectedQIndex = 1;
         state_out.manualPickArmed = false;
         state_out.guessPickArmed = false;
-        state_out.manual_points = [];  % Nx2 [abs_q, energy]
-        state_out.manual_branches = {};  % cell array of Nx2, one per branch
+        state_out.autoCorrectionArmed = false;
+        state_out.manual_points = [];  % Nx2 [q, energy], kept in sync with manual_branches when available
+        state_out.manual_branches = {};  % cell array of branch matrices; first two columns are [q, energy]
+        state_out.branchCorrectionLog = [];  % struct array of auto-fit manual corrections
         state_out.fitResults = {};       % cell array of fit_quasi2d_plasmon results
         state_out.autoFitResults = [];   % struct array from auto Drude-Lorentz fit
         state_out.pendingFit = [];       % pending single-spectrum Lorentz fit result
@@ -95,6 +97,7 @@ end
         cb.on_show_gamma = @local_on_show_gamma;
         cb.on_pick_guesses = @local_on_pick_guesses;
         cb.on_reassign_points = @local_on_reassign_points;
+        cb.on_correct_auto_peak = @local_on_correct_auto_peak;
         cb.on_fit_dispersion = @local_on_fit_dispersion;
         cb.on_export_dispersion = @local_on_export_dispersion;
         cb.on_show_loss_map = @local_on_show_loss_map;
@@ -820,8 +823,14 @@ end
             return
         end
         state.manualPickArmed = true;
+        state.guessPickArmed = false;
+        state.autoCorrectionArmed = false;
         ui.PickPtsButton.Text = "Picking...";
         ui.PickPtsButton.BackgroundColor = [0.85 1 0.85];
+        ui.PickGuessesButton.Text = "Pick Guesses";
+        ui.PickGuessesButton.BackgroundColor = [0.96 0.96 0.96];
+        ui.CorrectAutoButton.Text = "Correct Auto";
+        ui.CorrectAutoButton.BackgroundColor = [0.96 0.96 0.96];
     end
 
 
@@ -837,25 +846,36 @@ end
     function local_on_clear_pts(~, ~)
         state.manual_points = [];
         state.manual_branches = {};
+        state.branchCorrectionLog = [];
         ui.PtsLabel.Text = "0 pts";
         local_update_all_views();
     end
 
 
     function local_on_save_pts(~, ~)
-        if isempty(state.manual_points)
+        if isempty(state.manual_points) && isempty(state.manual_branches)
             return
         end
         [file, path] = uiputfile('*.mat', 'Save dispersion points', 'dispersion_points.mat');
         if isequal(file, 0)
             return
         end
+        if ~isempty(state.manual_branches)
+            pts = qe_flatten_branch_points(state.manual_branches);
+        else
+            pts = state.manual_points;
+        end
         manual_dispersion = struct();
-        manual_dispersion.abs_q_Ainv = state.manual_points(:, 1);
-        manual_dispersion.energy_meV = state.manual_points(:, 2);
+        manual_dispersion.q_Ainv = pts(:, 1);
+        manual_dispersion.abs_q_Ainv = abs(pts(:, 1));  % backwards-compatible field name
+        manual_dispersion.energy_meV = pts(:, 2);
+        manual_dispersion.branches = state.manual_branches;
+        manual_dispersion.corrections = state.branchCorrectionLog;
+        manual_dispersion.snapshot = local_capture_snapshot();
+        manual_dispersion.source = 'gui_auto_fit_with_manual_corrections';
         manual_dispersion.timestamp = datestr(now);
         save(fullfile(path, file), 'manual_dispersion');
-        ui.PtsLabel.Text = sprintf("%d pts (saved)", size(state.manual_points, 1));
+        ui.PtsLabel.Text = sprintf("%d pts (saved)", size(pts, 1));
     end
 
 
@@ -867,12 +887,28 @@ end
         loaded = load(fullfile(path, file));
         if isfield(loaded, 'manual_dispersion')
             md = loaded.manual_dispersion;
-            state.manual_points = [md.abs_q_Ainv(:), md.energy_meV(:)];
+            if isfield(md, 'branches') && ~isempty(md.branches)
+                state.manual_branches = md.branches;
+                state.manual_points = qe_flatten_branch_points(state.manual_branches);
+            elseif isfield(md, 'q_Ainv')
+                state.manual_points = [md.q_Ainv(:), md.energy_meV(:)];
+                state.manual_branches = {};
+            elseif isfield(md, 'abs_q_Ainv')
+                state.manual_points = [md.abs_q_Ainv(:), md.energy_meV(:)];
+                state.manual_branches = {};
+            else
+                warning('File does not contain q/energy dispersion data.');
+                return
+            end
+            if isfield(md, 'corrections')
+                state.branchCorrectionLog = md.corrections;
+            else
+                state.branchCorrectionLog = [];
+            end
         else
             warning('File does not contain manual_dispersion data.');
             return
         end
-        state.manual_branches = {};
         ui.PtsLabel.Text = sprintf("%d pts (loaded)", size(state.manual_points, 1));
         local_update_all_views();
     end
@@ -1019,7 +1055,8 @@ end
 
         [mask, energy_axis] = local_energy_mask(qe);
         q_index = state.selectedQIndex;
-        abs_q = abs(qe.q_Ainv(q_index));
+        q_value = qe.q_Ainv(q_index);
+        abs_q = abs(q_value);
         spectrum = double(qe.intensity(mask, q_index));
 
         if all(spectrum == 0) || all(isnan(spectrum))
@@ -1064,6 +1101,7 @@ end
         % Store pending fit
         state.pendingFit = struct();
         state.pendingFit.abs_q = abs_q;
+        state.pendingFit.q_Ainv = q_value;
         state.pendingFit.q_index = q_index;
         state.pendingFit.result = result;
         state.pendingFit.keep = keep;
@@ -1140,11 +1178,40 @@ end
         result = pf.result;
         keep = pf.keep;
         abs_q = pf.abs_q;
+        if isfield(pf, 'q_Ainv')
+            q_value = pf.q_Ainv;
+        else
+            q_value = abs_q;
+        end
 
-        % Add accepted peaks to manual_points
+        if ~isempty(state.manual_branches)
+            % Hybrid mode: use the accepted single-spectrum fit as a manual
+            % correction of the existing auto-fit branch point at this q.
+            n_corrected = 0;
+            for p = 1:result.n_peaks
+                if ~keep(p); continue; end
+                [state.manual_branches, correction] = qe_apply_branch_correction( ...
+                    state.manual_branches, q_value, result.omega_p(p), ...
+                    'Branch', 'auto', ...
+                    'QTolerance', local_branch_correction_q_tolerance());
+                local_append_branch_correction(correction);
+                n_corrected = n_corrected + 1;
+            end
+            local_sync_manual_points_from_branches();
+            local_update_all_views();
+            ui.AcceptFitButton.Enable = "off";
+            ui.FitInfoLabel.Text = sprintf('%s  ✓ Corrected auto (%d)', ...
+                ui.FitInfoLabel.Text, n_corrected);
+            local_log_operation(sprintf('Correct auto from fit: q=%.4f, %d peaks', ...
+                q_value, n_corrected));
+            state.pendingFit = [];
+            return
+        end
+
+        % Add accepted peaks to unbranched manual_points when no auto branches exist.
         for p = 1:result.n_peaks
             if ~keep(p); continue; end
-            new_pt = [abs_q, result.omega_p(p)];
+            new_pt = [q_value, result.omega_p(p)];
             if isempty(state.manual_points)
                 state.manual_points = new_pt;
             else
@@ -1157,12 +1224,12 @@ end
         hold(ax, 'on');
         for p = 1:result.n_peaks
             if ~keep(p); continue; end
-            scatter(ax, abs_q, result.omega_p(p), 40, ...
+            scatter(ax, q_value, result.omega_p(p), 40, ...
                 [0.1 0.5 0.9], 'filled', ...
                 'HandleVisibility', 'off');
         end
         hold(ax, 'off');
-        xlabel(ax, '|q| (Å^{-1})');
+        xlabel(ax, 'q (Å^{-1})');
         ylabel(ax, 'Energy (meV)');
         title(ax, sprintf('Dispersion: %d pts', size(state.manual_points, 1)));
         grid(ax, 'on');
@@ -1173,7 +1240,7 @@ end
         ui.FitInfoLabel.Text = sprintf('%s  ✓ Accepted', ui.FitInfoLabel.Text);
 
         local_log_operation(sprintf('Accept fit: q=%.4f, %d peaks', ...
-            abs_q, sum(keep)));
+            q_value, sum(keep)));
 
         % Clear pending
         state.pendingFit = [];
@@ -1258,8 +1325,10 @@ end
         autoResults.n_success = results.n_success;
         state.autoFitResults = autoResults;
         state.autoFitResults.ppHash = local_opts_hash(local_preprocess_opts(), local_get_active_qe());
-        state.manual_points = branches{1}(:, 1:min(2, size(branches{1},2)));
         state.manual_branches = branches;
+        state.manual_points = qe_flatten_branch_points(branches);
+        state.branchCorrectionLog = [];
+        state.fitResults = {};
 
         % ═══════════ Plot ═══════════
         ax = ui.DispersionAxes;
@@ -1418,9 +1487,41 @@ end
             local_log_operation(sprintf("Reassigned %d points to Branch %d", n_sel, sel_idx));
         end
 
+        local_sync_manual_points_from_branches();
+
         % Force update of overlay
         local_update_all_views();
     end
+
+    function local_on_correct_auto_peak(~, ~)
+        % Toggle hybrid correction mode: click the corrected peak energy in
+        % the single-spectrum panel to replace/add a point in auto branches.
+        if isempty(state.manual_branches)
+            ui.InfoLabel.Text = "Run Auto Fit first, then use Correct Auto.";
+            ui.InfoLabel.Visible = "on";
+            return
+        end
+
+        state.autoCorrectionArmed = ~state.autoCorrectionArmed;
+        if state.autoCorrectionArmed
+            state.manualPickArmed = false;
+            state.guessPickArmed = false;
+            ui.PickPtsButton.Text = "Pick Peaks";
+            ui.PickPtsButton.BackgroundColor = [0.96 0.96 0.96];
+            ui.PickGuessesButton.Text = "Pick Guesses";
+            ui.PickGuessesButton.BackgroundColor = [0.96 0.96 0.96];
+            ui.CorrectAutoButton.Text = "Click peak...";
+            ui.CorrectAutoButton.BackgroundColor = [1.0 0.92 0.55];
+            ui.InfoLabel.Text = "Correct Auto: click the corrected peak in the single-spectrum panel.";
+            ui.InfoLabel.Visible = "on";
+        else
+            ui.CorrectAutoButton.Text = "Correct Auto";
+            ui.CorrectAutoButton.BackgroundColor = [0.96 0.96 0.96];
+            ui.InfoLabel.Text = "Correct Auto cancelled.";
+            ui.InfoLabel.Visible = "on";
+        end
+    end
+
 
     function local_on_fit_dispersion(~, ~)
         % Re-fit dispersion to existing branches with the selected model
@@ -1535,8 +1636,11 @@ end
             % Arm — clear old guess markers and GuessField
             state.guessPickArmed = true;
             state.manualPickArmed = false;  % disarm the other picker
+            state.autoCorrectionArmed = false;
             ui.PickPtsButton.Text = "Pick Peaks";
             ui.PickPtsButton.BackgroundColor = [0.96 0.96 0.96];
+            ui.CorrectAutoButton.Text = "Correct Auto";
+            ui.CorrectAutoButton.BackgroundColor = [0.96 0.96 0.96];
             ui.GuessField.Value = "";
             delete(findobj(ui.SingleAxes, 'Tag', 'guess_marker'));
             ui.PickGuessesButton.Text = "Picking...";
@@ -2276,6 +2380,7 @@ end
                     'MarkerFaceColor', bc, 'MarkerEdgeColor', [1 1 1], ...
                     'LineWidth', 0.8, 'HandleVisibility', 'off');
             end
+            local_plot_correction_markers(ax);
         elseif ~isempty(state.manual_points)
             pts = sortrows(state.manual_points, 1);
             mc = [0.1 0.8 0.2];
@@ -2309,6 +2414,7 @@ end
                 col = qe_plot_helpers.branch_color(bi);
                 qe_plot_helpers.plot_branch_scatter(ax, bpts, col, sprintf('Branch %d', bi));
             end
+            local_plot_correction_markers(ax);
         elseif ~isempty(state.manual_points)
             pts = sortrows(state.manual_points, 1);
             mc = [0.1 0.8 0.2];
@@ -2399,6 +2505,46 @@ end
             return
         end
 
+        % --- Hybrid auto-fit correction mode ---
+        if state.autoCorrectionArmed
+            try
+                if isempty(state.manual_branches)
+                    ui.InfoLabel.Text = "Run Auto Fit first.";
+                    ui.InfoLabel.Visible = "on";
+                    return
+                end
+                current_point = ui.SingleAxes.CurrentPoint;
+                energy_value = current_point(1, 1);
+                [~, energy_axis] = local_energy_mask(state.physicalQE);
+                if isempty(energy_axis)
+                    return
+                end
+                energy_value = min(max(energy_value, energy_axis(1)), energy_axis(end));
+                q_value = state.physicalQE.q_Ainv(state.selectedQIndex);
+
+                [state.manual_branches, correction] = qe_apply_branch_correction( ...
+                    state.manual_branches, q_value, energy_value, ...
+                    'Branch', 'auto', ...
+                    'QTolerance', local_branch_correction_q_tolerance());
+                local_append_branch_correction(correction);
+                local_sync_manual_points_from_branches();
+
+                ui.CorrectAutoButton.Text = "Correct Auto";
+                ui.CorrectAutoButton.BackgroundColor = [0.96 0.96 0.96];
+                state.autoCorrectionArmed = false;
+                ui.InfoLabel.Text = sprintf("%s Branch %d at q=%.4f: %.0f → %.0f meV", ...
+                    upper(correction.action), correction.branch_index, ...
+                    correction.new_q_Ainv, correction.old_energy_meV, correction.new_energy_meV);
+                ui.InfoLabel.Visible = "on";
+                local_log_operation(sprintf('Correct auto peak: B%d q=%.4f %.0f meV', ...
+                    correction.branch_index, correction.new_q_Ainv, correction.new_energy_meV));
+                local_update_all_views();
+            catch ME
+                local_show_error(ME, false);
+            end
+            return
+        end
+
         % --- Manual peak picking mode ---
         if state.manualPickArmed
             try
@@ -2446,6 +2592,65 @@ end
                 local_show_error(ME, false);
             end
             return
+        end
+    end
+
+
+    function local_sync_manual_points_from_branches()
+        if ~isempty(state.manual_branches)
+            state.manual_points = qe_flatten_branch_points(state.manual_branches);
+        end
+        ui.PtsLabel.Text = sprintf('%d pts', size(state.manual_points, 1));
+    end
+
+
+    function local_append_branch_correction(correction)
+        if isempty(state.branchCorrectionLog)
+            state.branchCorrectionLog = correction;
+        else
+            state.branchCorrectionLog(end+1) = correction;
+        end
+    end
+
+
+    function q_tol = local_branch_correction_q_tolerance()
+        q_tol = 1e-6;
+        try
+            dq = local_current_dq();
+            if isfinite(dq) && dq > 0
+                q_tol = max(0.55 * abs(dq), q_tol);
+                return
+            end
+        catch
+        end
+        try
+            qe = local_get_active_qe();
+            if ~isempty(qe) && isfield(qe, 'q_Ainv') && numel(qe.q_Ainv) > 1
+                dq_vals = diff(sort(unique(qe.q_Ainv(:))));
+                dq_vals = dq_vals(isfinite(dq_vals) & dq_vals > 0);
+                if ~isempty(dq_vals)
+                    q_tol = max(0.55 * median(dq_vals), q_tol);
+                end
+            end
+        catch
+        end
+    end
+
+
+    function local_plot_correction_markers(ax)
+        if isempty(state.branchCorrectionLog)
+            return
+        end
+        try
+            q_vals = [state.branchCorrectionLog.new_q_Ainv];
+            e_vals = [state.branchCorrectionLog.new_energy_meV];
+            if isempty(q_vals), return; end
+            scatter(ax, q_vals, e_vals, 52, 'd', ...
+                'MarkerFaceColor', [1.0 0.95 0.2], ...
+                'MarkerEdgeColor', [0.05 0.05 0.05], ...
+                'LineWidth', 0.9, ...
+                'HandleVisibility', 'off');
+        catch
         end
     end
 
