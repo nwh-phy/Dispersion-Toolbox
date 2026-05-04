@@ -126,6 +126,8 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 | **Save Pts** | curated 峰位点数据：包含 signed `q_Ainv`、`energy_meV`、`branches`、`corrections` 和当前 GUI `snapshot` |
 | History 面板 **Save** | 操作历史 `op_history.mat`，可在下次加载时恢复 |
 
+> **保存手动调参状态时建议同时保存两类文件**：先点 **Save Pts** 保存被接受/矫正的 branch 点，再点 History 面板 **Save** 保存 `op_history.mat`。History 保存前会强制追加当前 live GUI snapshot，因此即使某个控件没有单独生成一条 history 记录，最后保存的 `opHistory{end}.snapshot` 仍应包含当前状态。该 snapshot 会记录预处理/显示参数，也会记录自动拟合与 curated workflow 的关键控件，例如 `Prominence`、`Smooth W`、`Max Peaks`、`Peak Model`、`Guesses`、correction target、`Disp Model`、导出比例和当前选中 q 通道。
+
 ---
 
 ## 推荐流程

@@ -83,6 +83,8 @@ end
         cb.on_qnorm_changed = @local_on_qnorm_changed;
         cb.on_norm_method_changed = @local_on_norm_method_changed;
         cb.on_auto_y_changed = @local_on_auto_y_changed;
+        cb.on_fit_param_change = @local_on_fit_param_change;
+        cb.on_correction_target_change = @local_on_correction_target_change;
         cb.on_pick_peaks = @local_on_pick_peaks;
         cb.on_undo_pt = @local_on_undo_pt;
         cb.on_clear_pts = @local_on_clear_pts;
@@ -410,6 +412,17 @@ end
     end
 
 
+    function local_ensure_latest_history_snapshot(label)
+        % Save History is the thesis-profile anchor.  Do not rely only on
+        % per-widget callbacks: append the current live UI state if it differs
+        % from the last logged snapshot.
+        current = local_capture_snapshot();
+        if isempty(state.opHistory) || ~isequaln(state.opHistory{end}.snapshot, current)
+            local_log_operation(label);
+        end
+    end
+
+
     function local_push_param_snapshot()
         % Backwards-compatible wrapper — logs as "Param change"
         local_log_operation("Param change");
@@ -456,6 +469,22 @@ end
         snap.denoiseSigma = ui.DenoiseSigmaField.Value;
         snap.deconv = ui.DeconvCheckbox.Value;
         snap.deconvIter = ui.DeconvIterField.Value;
+        snap.prominence = ui.PromField.Value;
+        snap.autoFitSmoothWidth = ui.SmoothField.Value;
+        snap.maxPeaks = ui.MaxPeaksField.Value;
+        snap.peakModel = char(ui.PeakModelDropdown.Value);
+        snap.maxShift = ui.MaxShiftField.Value;
+        snap.guessText = char(string(ui.GuessField.Value));
+        snap.dispModel = char(ui.DispModelDropdown.Value);
+        snap.correctionBranchTarget = char(string(ui.CorrectionBranchDropdown.Value));
+        snap.exportRatio = char(ui.ExportRatioDropdown.Value);
+        snap.selectedQIndex = state.selectedQIndex;
+        snap.selectedQ_Ainv = NaN;
+        qe_snap = local_get_reference_qe();
+        if ~isempty(qe_snap) && isfield(qe_snap, 'q_Ainv') && ~isempty(qe_snap.q_Ainv)
+            q_idx = min(max(1, state.selectedQIndex), numel(qe_snap.q_Ainv));
+            snap.selectedQ_Ainv = qe_snap.q_Ainv(q_idx);
+        end
 
         snap.viewMode = char(ui.ViewModeDropdown.Value);
         snap.activeStage = char(state.activeStage);
@@ -503,8 +532,47 @@ end
         ui.DenoiseSigmaField.Value = snap.denoiseSigma;
         ui.DeconvCheckbox.Value = snap.deconv;
         ui.DeconvIterField.Value = snap.deconvIter;
+        if isfield(snap, 'prominence')
+            ui.PromField.Value = snap.prominence;
+        end
+        if isfield(snap, 'autoFitSmoothWidth')
+            ui.SmoothField.Value = snap.autoFitSmoothWidth;
+        end
+        if isfield(snap, 'maxPeaks')
+            ui.MaxPeaksField.Value = snap.maxPeaks;
+        end
+        if isfield(snap, 'peakModel') && any(strcmp(snap.peakModel, ui.PeakModelDropdown.ItemsData))
+            ui.PeakModelDropdown.Value = snap.peakModel;
+        end
+        if isfield(snap, 'maxShift')
+            ui.MaxShiftField.Value = snap.maxShift;
+        end
+        if isfield(snap, 'guessText')
+            ui.GuessField.Value = string(snap.guessText);
+        end
+        if isfield(snap, 'dispModel') && any(strcmp(snap.dispModel, ui.DispModelDropdown.ItemsData))
+            ui.DispModelDropdown.Value = snap.dispModel;
+        end
+        if isfield(snap, 'exportRatio') && any(strcmp(snap.exportRatio, ui.ExportRatioDropdown.Items))
+            ui.ExportRatioDropdown.Value = snap.exportRatio;
+        end
+        if isfield(snap, 'selectedQ_Ainv') && isfinite(snap.selectedQ_Ainv)
+            qe_snap = local_get_reference_qe();
+            if ~isempty(qe_snap) && isfield(qe_snap, 'q_Ainv') && ~isempty(qe_snap.q_Ainv)
+                [~, state.selectedQIndex] = min(abs(qe_snap.q_Ainv - snap.selectedQ_Ainv));
+            end
+        elseif isfield(snap, 'selectedQIndex')
+            state.selectedQIndex = snap.selectedQIndex;
+        end
 
         ui.ViewModeDropdown.Value = snap.viewMode;
+        if isfield(snap, 'correctionBranchTarget')
+            local_sync_correction_controls();
+            target = char(string(snap.correctionBranchTarget));
+            if any(strcmp(target, ui.CorrectionBranchDropdown.Items))
+                ui.CorrectionBranchDropdown.Value = target;
+            end
+        end
     end
 
 
@@ -563,7 +631,10 @@ end
 
 
     function local_on_save_history(~, ~)
-        % Save opHistory to a .mat file in the data folder
+        % Save opHistory to a .mat file in the data folder.  Always append a
+        % final live snapshot first so manually tuned controls are captured
+        % even when an individual widget did not emit a history callback.
+        local_ensure_latest_history_snapshot("Saved current GUI state");
         if isempty(state.opHistory)
             ui.InfoLabel.Text = "No history to save";
             ui.InfoLabel.Visible = "on";
@@ -702,8 +773,17 @@ end
             'denoiseSigma', 'Denoise σ', ...
             'deconv', 'Deconv', ...
             'deconvIter', 'Deconv iter', ...
-            'searchHW', 'Search HW', ...
-            'minConf', 'Min conf', ...
+            'prominence', 'Prominence', ...
+            'autoFitSmoothWidth', 'Auto smooth W', ...
+            'maxPeaks', 'Max peaks', ...
+            'peakModel', 'Peak model', ...
+            'maxShift', 'Max shift', ...
+            'guessText', 'Guesses', ...
+            'dispModel', 'Disp model', ...
+            'correctionBranchTarget', 'Corr target', ...
+            'exportRatio', 'Export ratio', ...
+            'selectedQIndex', 'q index', ...
+            'selectedQ_Ainv', 'selected q', ...
             'viewMode', 'View');
 
         fields = fieldnames(names);
@@ -715,7 +795,7 @@ end
             end
             old_val = prev.(f);
             new_val = current.(f);
-            if isequal(old_val, new_val)
+            if isequaln(old_val, new_val)
                 continue
             end
             short = names.(f);
@@ -756,6 +836,7 @@ end
 
         local_sync_controls_from_qe(local_get_reference_qe());
 
+        local_log_operation(local_describe_changes());
         local_update_all_views();
     end
 
@@ -815,6 +896,19 @@ end
         local_log_operation(local_describe_changes());
         local_sync_manual_y_state();
         local_update_all_views();
+    end
+
+
+    function local_on_fit_param_change(~, ~)
+        % Auto-fit/dispersion/export parameters may not redraw the view, but
+        % they are part of a reusable GUI profile and must enter history.
+        local_log_operation(local_describe_changes());
+    end
+
+
+    function local_on_correction_target_change(~, ~)
+        % Correction target affects where subsequent curated peak edits go.
+        local_log_operation(local_describe_changes());
     end
 
 
@@ -2624,6 +2718,7 @@ end
                         'Tag', 'guess_marker');
                     hold(ax, 'off');
                     ui.SeedInfoLabel.Text = sprintf('Picked: %s', ui.GuessField.Value);
+                    local_log_operation(local_describe_changes());
                 end
             catch ME
                 local_show_error(ME, false);
