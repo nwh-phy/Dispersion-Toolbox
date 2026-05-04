@@ -117,6 +117,47 @@ verifyTrue(testCase, isfield(manifest, 'caution'));
 end
 
 
+function testBuildThesisManifestKeepsResultsCompact(testCase)
+cfg = thesis_config();
+sessions = thesis_sessions(cfg);
+result = struct();
+result.session_name = 'synthetic';
+result.session_role = 'unit_test';
+result.data_path = 'synthetic/path';
+result.dq_Ainv = 0.005;
+result.success = true;
+result.error = '';
+result.dataset_label = 'synthetic dataset';
+result.q_zero_index = 42;
+result.energy_range_meV = [0 4000];
+result.q_range_Ainv = [-0.2 0.2];
+result.n_fit_success = 4;
+result.n_raw_peaks = 5;
+result.branch_summary = struct('low_n', 2, 'high_n', 3, 'rejected_n', 1);
+result.branches = struct('low', rand(20, 12), 'high', rand(20, 12));
+result.bg_diag = repmat(struct('bg_curve', rand(200, 1)), 1, 3);
+result.fit_details = {rand(100, 3)};
+result.models.low = struct('branch', 'low', 'model', 'quasi2d_plasmon', ...
+    'success', true, 'error', '', 'fit', struct('rho0', 21, ...
+    'E_flat_meV', 1800, 'R_squared', 0.93, 'RMSE_meV', 40, ...
+    'q_fit', linspace(0, 1, 200)'));
+result.models.high = struct('branch', 'high', 'model', 'optical_constant', ...
+    'success', true, 'error', '', 'fit', struct('params', 3400, ...
+    'R_squared', 0.01, 'RMSE_meV', 100, 'residuals_meV', rand(20, 1)));
+
+manifest = build_thesis_manifest(cfg, sessions(1), result, struct('git_commit', 'abc123'));
+
+verifyFalse(testCase, isfield(manifest.results, 'branches'));
+verifyFalse(testCase, isfield(manifest.results, 'bg_diag'));
+verifyFalse(testCase, isfield(manifest.results, 'fit_details'));
+verifyEqual(testCase, manifest.results.branch_summary.low_n, 2);
+verifyEqual(testCase, manifest.results.models.low.fit.rho0, 21);
+verifyEqual(testCase, manifest.results.models.high.fit.params, 3400);
+verifyFalse(testCase, isfield(manifest.results.models.low.fit, 'q_fit'));
+verifyFalse(testCase, isfield(manifest.results.models.high.fit, 'residuals_meV'));
+end
+
+
 function testSummarizeThesisResultsIncludesModelParameters(testCase)
 result = struct();
 result.session_name = 'synthetic';
