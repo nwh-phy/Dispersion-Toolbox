@@ -73,14 +73,14 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 
 ### Step 4：拟合色散
 
-有两种方式提取 ω(q)：
+有四种方式提取或修正 ω(q)：
 
 **方式 A — 自动拟合**（推荐首选）：
 
 1. 设置 **Prominence**、**Max Peaks**（每个 q 通道最多几个峰）
 2. 选择 **Peak Model**（一般用 Lorentz）
 3. 点击 **Auto Fit ω(q)**
-4. 检查散点是否合理
+4. 检查散点和 branch assignment 是否合理
 
 **方式 B — Seed propagation**（峰位漂移大时更稳定）：
 
@@ -88,7 +88,19 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 2. 点击 **Auto Fit ω(q)**
 3. 算法会从 seed 点逐通道追踪峰位
 
-**方式 C — 手动选点**：
+**方式 C — 自动拟合 + 局部人工矫正**（论文级 curated workflow 推荐）：
+
+1. 先点击 **Auto Fit ω(q)**，把自动结果作为 branch 底稿
+2. 在 q-E map 中选中需要复查的 q 通道，并在单谱窗口确认正确峰位
+3. 用 correction target 下拉框选择 **Auto**、**Branch N** 或 **New Branch N+1**
+   - **Auto**：自动选择当前 q 附近、能量最接近的 branch 点
+   - **Branch N**：强制把本次矫正写入指定 branch
+   - **New Branch N+1**：把本次矫正写入新 branch
+4. 点击 **Correct Auto**，再在单谱窗口点击正确峰位；被矫正点会以黄色菱形标出
+5. 如误点，点击 **Undo Corr** 撤销最近一次 correction
+6. 也可先用 **Fit Spectrum** 拟合当前单谱，再用 **Accept Fit** 把拟合峰位写回所选 target branch
+
+**方式 D — 手动选点**（旧式 fallback）：
 
 1. 点击 **Pick Peaks**，在 q-E map 上逐点选取
 2. 用 **Split 3** 分离不同 branch
@@ -111,7 +123,7 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 | **Export** (📷) | 当前显示的图像（q-E map / 单谱 / 色散图） |
 | **Export Data** (📦) | 预处理后的数据 `.mat`（含 axes、预处理参数、背景诊断） |
 | **Export Disp.** | 色散拟合结果 |
-| **Save Pts** | 峰位点数据 |
+| **Save Pts** | curated 峰位点数据：包含 signed `q_Ainv`、`energy_meV`、`branches`、`corrections` 和当前 GUI `snapshot` |
 | History 面板 **Save** | 操作历史 `op_history.mat`，可在下次加载时恢复 |
 
 ---
@@ -127,8 +139,8 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 5. 调整背景窗口，避免过扣除（切换到 `background-subtracted` trace 查看）
 6. 先做单谱拟合（**Fit Spectrum**），确认峰型合理
 7. 再做全局自动拟合（**Auto Fit ω(q)**）
-8. 检查 branch assignment 后拟合色散
-9. 保存操作历史，确保可复现
+8. 逐 q 检查 branch assignment；对少数明显错误点，用 **Correct Auto** + target branch 下拉框做局部矫正，必要时用 **Undo Corr** 回退误操作
+9. 保存 **Save Pts**（curated branches + correction log）和操作历史，确保可复现、可审计
 
 ---
 
