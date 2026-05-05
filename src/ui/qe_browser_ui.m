@@ -688,6 +688,16 @@ function ui_handles = qe_browser_ui(cb)
         "ValueChangedFcn", cb.on_fit_param_change);
     max_shift_field.Layout.Row = 9; max_shift_field.Layout.Column = 5;
 
+    ci_samples_lbl = uilabel(control_grid, "Text", "CI Samples:");
+    ci_samples_lbl.Layout.Row = 9; ci_samples_lbl.Layout.Column = 11;
+
+    ci_samples_field = uispinner(control_grid, ...
+        "Value", 0, "Step", 5, ...
+        "Limits", [0 200], "RoundFractionalValues", "on", ...
+        "Tooltip", "Bootstrap samples for apex CI. Use 0 for fast preview, 25+ for final Fano error bars.", ...
+        "ValueChangedFcn", cb.on_fit_param_change);
+    ci_samples_field.Layout.Row = 9; ci_samples_field.Layout.Column = 12;
+
     pick_guesses_btn = uibutton(control_grid, ...
         "Text", "Pick Guesses", ...
         "Visible", "off", ...
@@ -724,7 +734,7 @@ function ui_handles = qe_browser_ui(cb)
         "Text", "", ...
         "HorizontalAlignment", "left");
     seed_info_label.Layout.Row = 9;
-    seed_info_label.Layout.Column = [11 16];
+    seed_info_label.Layout.Column = [13 16];
 
     % ═══════════ ROW 10: Dispersion Model Selector ═══════════
     disp_model_lbl = uilabel(control_grid, "Text", "Disp Model:");
@@ -921,6 +931,7 @@ function ui_handles = qe_browser_ui(cb)
     ui_handles.HistoryLoadButton = history_load_btn;
     ui_handles.PeakModelDropdown = pk_model_dropdown;
     ui_handles.MaxShiftField = max_shift_field;
+    ui_handles.BootstrapCiSamplesField = ci_samples_field;
     ui_handles.SeedInfoLabel = seed_info_label;
     ui_handles.PickGuessesButton = pick_guesses_btn;
     ui_handles.ReassignButton = reassign_btn;

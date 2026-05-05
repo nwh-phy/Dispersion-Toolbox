@@ -50,7 +50,7 @@ if ~isfield(opts, 'verbose'), opts.verbose = false; end
 if ~isfield(opts, 'progress_fn'), opts.progress_fn = []; end
 if ~isfield(opts, 'pre_subtracted'), opts.pre_subtracted = false; end
 if ~isfield(opts, 'bootstrap_ci_samples')
-    opts.bootstrap_ci_samples = local_default_bootstrap_ci_samples(opts.peak_model);
+    opts.bootstrap_ci_samples = local_default_bootstrap_ci_samples();
 end
 
 mask = opts.energy_mask;
@@ -259,12 +259,9 @@ function [peak_energy, peak_ci] = local_branch_peak_energy(result)
 end
 
 
-function n_samples = local_default_bootstrap_ci_samples(peak_model)
-    if strcmpi(peak_model, 'fano')
-        n_samples = 25;
-    else
-        n_samples = 0;
-    end
+function n_samples = local_default_bootstrap_ci_samples()
+    % Bootstrap is opt-in because each sample triggers another nonlinear fit.
+    n_samples = 0;
 end
 
 

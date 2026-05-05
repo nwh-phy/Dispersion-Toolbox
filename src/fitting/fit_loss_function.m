@@ -34,11 +34,7 @@ end
 pk_model = peak_models(options.peak_model);
 n_peak_params = pk_model.n_params;
 if isnan(options.bootstrap_ci_samples)
-    if strcmpi(options.peak_model, 'fano')
-        options.bootstrap_ci_samples = 25;
-    else
-        options.bootstrap_ci_samples = 0;
-    end
+    options.bootstrap_ci_samples = 0;
 elseif ~isfinite(options.bootstrap_ci_samples) || options.bootstrap_ci_samples < 0 || ...
         options.bootstrap_ci_samples ~= floor(options.bootstrap_ci_samples)
     error('fit_loss_function:InvalidBootstrapSamples', ...

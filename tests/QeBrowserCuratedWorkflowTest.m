@@ -27,6 +27,8 @@ classdef QeBrowserCuratedWorkflowTest < matlab.unittest.TestCase
             body = extractLocalFunctionBody(src, ...
                 'local_on_auto_fit_dispersion', 'local_on_reassign_points');
 
+            testCase.verifyTrue(contains(body, ...
+                'auto_opts.bootstrap_ci_samples = ui.BootstrapCiSamplesField.Value'));
             testCase.verifyTrue(contains(body, 'branch_filter_opts.q_skip_Ainv'));
             testCase.verifyTrue(contains(body, 'branch_filter_opts.min_R2'));
             testCase.verifyTrue(contains(body, 'branch_filter_opts.max_gamma_ratio'));
@@ -46,6 +48,8 @@ classdef QeBrowserCuratedWorkflowTest < matlab.unittest.TestCase
             testCase.verifyTrue(contains(body, 'peak_valid'));
             testCase.verifyTrue(contains(body, 'qF=%.2f'));
             testCase.verifyTrue(contains(body, 'local_fit_peak_energy'));
+            testCase.verifyTrue(contains(body, ...
+                '''bootstrap_ci_samples'', ui.BootstrapCiSamplesField.Value'));
         end
 
         function testAcceptedSingleSpectrumFitsUseApexEnergy(testCase)
@@ -106,6 +110,8 @@ classdef QeBrowserCuratedWorkflowTest < matlab.unittest.TestCase
             testCase.verifyTrue(contains(src, 'Branch3MinField'));
             testCase.verifyTrue(contains(src, '''Fano'''));
             testCase.verifyTrue(contains(src, '''fano'''));
+            testCase.verifyTrue(contains(src, 'CI Samples:'));
+            testCase.verifyTrue(contains(src, 'BootstrapCiSamplesField'));
             testCase.verifyFalse(contains(src, 'Auto Fit 蠅(q)'));
             testCase.verifyFalse(contains(src, 'Fit Dispersion'));
         end

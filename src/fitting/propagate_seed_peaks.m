@@ -24,7 +24,7 @@ function results = propagate_seed_peaks(intensity, energy_axis, channel_axis, op
 %       E_min           - Fitting window lower bound [meV] (default: 50)
 %       E_max           - Fitting window upper bound [meV] (default: Inf)
 %       smooth_width    - Smoothing for peak detection fallback (default: 25)
-%       bootstrap_ci_samples - Bootstrap samples for apex energy CI (default: 25 for Fano)
+%       bootstrap_ci_samples - Bootstrap samples for apex energy CI (default: 0)
 %       verbose         - Print progress (default: true)
 %
 %   Output:
@@ -61,7 +61,7 @@ end
 n_channels = numel(channel_axis);
 n_seeds = numel(options.seed_guesses);
 if isnan(options.bootstrap_ci_samples)
-    options.bootstrap_ci_samples = local_default_bootstrap_ci_samples(options.peak_model);
+    options.bootstrap_ci_samples = local_default_bootstrap_ci_samples();
 elseif ~isfinite(options.bootstrap_ci_samples) || options.bootstrap_ci_samples < 0 || ...
         options.bootstrap_ci_samples ~= floor(options.bootstrap_ci_samples)
     error('propagate_seed_peaks:InvalidBootstrapSamples', ...
@@ -292,12 +292,9 @@ function [peak_energy, peak_ci] = local_branch_peak_energy(result)
 end
 
 
-function n_samples = local_default_bootstrap_ci_samples(peak_model)
-    if strcmpi(peak_model, 'fano')
-        n_samples = 25;
-    else
-        n_samples = 0;
-    end
+function n_samples = local_default_bootstrap_ci_samples()
+    % Bootstrap is opt-in because each sample triggers another nonlinear fit.
+    n_samples = 0;
 end
 
 

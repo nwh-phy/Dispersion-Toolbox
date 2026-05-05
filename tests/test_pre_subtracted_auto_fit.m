@@ -121,6 +121,19 @@ verifyRowsHaveFiniteEnergyErrorBars(testCase, results.all_peaks);
 end
 
 
+function testQeAutoFitDefaultsToFastFanoPreview(testCase)
+[qe, qe_raw, opts] = makeFanoAutoFitCase();
+opts = rmfield(opts, 'bootstrap_ci_samples');
+
+results = qe_auto_fit(qe, qe_raw, opts);
+populated = results.fit_details(~cellfun(@isempty, results.fit_details));
+
+verifyFalse(testCase, isempty(populated));
+verifyTrue(testCase, all(cellfun(@(r) strcmp(r.apex_ci_method, 'fallback'), populated)));
+verifyRowsHaveFiniteEnergyErrorBars(testCase, results.all_peaks);
+end
+
+
 function testPropagateSeedPeaksPropagatesPreSubtractedSeedMode(testCase)
 [qe, ~, opts, centers_meV] = makeAutoFitCase();
 seed_idx = 2;

@@ -476,6 +476,7 @@ end
         snap.autoFitSmoothWidth = ui.SmoothField.Value;
         snap.maxPeaks = ui.MaxPeaksField.Value;
         snap.peakModel = char(ui.PeakModelDropdown.Value);
+        snap.bootstrapCiSamples = ui.BootstrapCiSamplesField.Value;
         snap.maxShift = ui.MaxShiftField.Value;
         snap.guessText = char(string(ui.GuessField.Value));
         snap.branch1Min = ui.Branch1MinField.Value;
@@ -553,6 +554,9 @@ end
         end
         if isfield(snap, 'peakModel') && any(strcmp(snap.peakModel, ui.PeakModelDropdown.ItemsData))
             ui.PeakModelDropdown.Value = snap.peakModel;
+        end
+        if isfield(snap, 'bootstrapCiSamples')
+            ui.BootstrapCiSamplesField.Value = snap.bootstrapCiSamples;
         end
         if isfield(snap, 'maxShift')
             ui.MaxShiftField.Value = snap.maxShift;
@@ -1207,7 +1211,8 @@ end
                 'max_peaks', ui.MaxPeaksField.Value, ...
                 'initial_guesses', guesses, ...
                 'peak_model', ui.PeakModelDropdown.Value, ...
-                'pre_subtracted', ui.BgSubCheckbox.Value);
+                'pre_subtracted', ui.BgSubCheckbox.Value, ...
+                'bootstrap_ci_samples', ui.BootstrapCiSamplesField.Value);
         catch ME
             ui.FitInfoLabel.Text = sprintf("Fit failed: %s", ME.message);
             return
@@ -1474,6 +1479,7 @@ end
         auto_opts.smooth_width = ui.SmoothField.Value;
         auto_opts.max_peaks = ui.MaxPeaksField.Value;
         auto_opts.peak_model = ui.PeakModelDropdown.Value;
+        auto_opts.bootstrap_ci_samples = ui.BootstrapCiSamplesField.Value;
         % qe above is produced with the same background-subtraction checkbox,
         % so Auto Fit must not fit another power-law background when it is on.
         auto_opts.pre_subtracted = ui.BgSubCheckbox.Value;
