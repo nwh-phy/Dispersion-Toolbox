@@ -1,4 +1,4 @@
-%% run_bosman_pipeline.m — Full Do et al. (2025) pipeline on Bi data
+%% run_bosman_pipeline.m — Full Do et al. (2025) pipeline on BiSb data
 %  Phase 1: Preprocess (denoise + ZLP norm + quasi-elastic BG removal)
 %  Phase 2: Drude-Lorentz fitting → extract ω_p(q), Γ(q), A(q)
 %  Phase 3: Self-consistent I_kin / ε_inter decoupling
@@ -17,11 +17,11 @@ output_dir = fullfile(project_dir, 'output', 'bosman_pipeline');
 if ~exist(output_dir, 'dir'), mkdir(output_dir); end
 
 %% Select dataset — use the 10w defocus (better signal)
-data_path = fullfile(project_dir, '20260120 Bi', '590 PL2 10w 0.004 10sx300');
+data_path = fullfile(project_dir, '20260120 BiSb', '590 PL2 10w 0.004 10sx300');
 dq_Ainv = 0.005;
 
 fprintf('\n══════════════════════════════════════════════\n');
-fprintf('  Bosman/Do et al. Pipeline — Bi thin film\n');
+fprintf('  Bosman/Do et al. Pipeline — BiSb thin film\n');
 fprintf('  Data: %s\n', data_path);
 fprintf('══════════════════════════════════════════════\n\n');
 
@@ -37,25 +37,11 @@ fprintf('  Loaded: %d energy × %d q channels\n', size(qe.intensity));
 fprintf('  Energy range: [%.0f, %.0f] meV\n', qe.energy_meV(1), qe.energy_meV(end));
 fprintf('  q range: [%.4f, %.4f] Å⁻¹\n', qe.q_Ainv(1), qe.q_Ainv(end));
 
-% 1.2 Configure preprocessing (Bosman standard)
-pp = struct();
-pp.do_despike    = false;
-pp.do_normalize  = true;
-pp.norm_method   = 'ZLP Peak';   % beam current correction (preserves A(q))
-pp.norm_min      = -50;          % fixed ZLP window
-pp.norm_max      = 50;
-pp.do_denoise    = true;
-pp.denoise_method = 'Wiener2D';  % fast and safe
-pp.denoise_sigma = 0;            % auto-estimate
-pp.do_bg_sub     = true;
-pp.bg_method     = 'Power';      % power-law ZLP tail model
-pp.bg_win_lo     = [50, 300];    % primary fit window (pre-plasmon)
-pp.bg_win_hi     = [];           % single window (no dual)
-pp.bg_iterative  = false;
-pp.do_deconv     = false;        % skip deconv for now
+% 1.2 Configure preprocessing (validated BiSb low-q background contract)
+pp = qe_preprocess_preset('bisb_lowq_stable_v1');
 
 % 1.3 Run preprocessing
-fprintf('  Running: ZLP norm → Wiener2D → BG removal...\n');
+fprintf('  Running: ZLP norm → Wiener2D → optimized BG removal...\n');
 [qe_pp, bg_diag] = qe_preprocess(qe, pp);
 fprintf('  Done. BG diagnostics: %d channels\n', numel(bg_diag));
 
@@ -139,26 +125,28 @@ end
 
 fprintf('  Fitted %d peaks from %d channels\n', size(all_peaks, 1), n_q);
 
-% Branch separation (energy threshold — no toolbox needed)
-if size(all_peaks, 1) >= 6
-    % Simple separation: plasmon (< 1500 meV) vs interband (> 1500 meV)
-    E_threshold = 1500;  % meV
-    mask_lo = all_peaks(:,2) < E_threshold;
-    mask_hi = all_peaks(:,2) >= E_threshold;
+% Low-energy branch selection for physics extraction
+branch_opts = thesis_config().branch;
+low_branch_selection = qe_select_low_energy_branch(all_peaks, branch_opts);
+branches = {low_branch_selection.physics_branch};
 
-    branches = {};
-    if any(mask_lo), branches{end+1} = all_peaks(mask_lo, :); end
-    if any(mask_hi), branches{end+1} = all_peaks(mask_hi, :); end
-
-    fprintf('  Branch separation: %d branches (threshold = %d meV)\n', numel(branches), E_threshold);
-    for b = 1:numel(branches)
-        fprintf('    B%d: %d peaks, <E>=%.0f meV, <Γ>=%.0f meV\n', ...
-            b, size(branches{b}, 1), mean(branches{b}(:,2)), mean(branches{b}(:,3)));
-    end
+if low_branch_selection.quality.selected_side < 0
+    selected_side_label = 'negative q';
+elseif low_branch_selection.quality.selected_side > 0
+    selected_side_label = 'positive q';
 else
-    branches = {all_peaks};
-    fprintf('  Too few peaks for branch separation\n');
+    selected_side_label = 'both q sides';
 end
+
+fprintf('  Low-energy branch selected: %d/%d candidates kept for physics\n', ...
+    size(low_branch_selection.physics_branch, 1), low_branch_selection.summary.candidate_n);
+fprintf('    side=%s, symmetry_average=%d, fit R2=%.4f\n', ...
+    selected_side_label, low_branch_selection.symmetry_average, ...
+    low_branch_selection.quality.selected_fit_R2);
+fprintf('    symmetry overlap=%d, median dE=%.1f meV, rejected=%d\n', ...
+    low_branch_selection.quality.symmetry_overlap_n, ...
+    low_branch_selection.quality.symmetry_median_abs_delta_meV, ...
+    low_branch_selection.summary.rejected_n);
 
 %% ═══════════════════════════════════════════════════════════════
 %  PHASE 3: Self-consistent physics decoupling
@@ -167,7 +155,9 @@ fprintf('\n── PHASE 3: Physics extraction (Do et al. 2025) ──\n');
 
 phys = qe_physics_extract(branches, struct('branch_index', 1, ...
     'q_min_fit', 0.01, 'q_max_linear', 0.08, ...
-    'epsilon_s', 1, 'symmetry_average', true));
+    'epsilon_s', 1, ...
+    'symmetry_average', low_branch_selection.symmetry_average));
+phys.low_branch_selection = low_branch_selection;
 
 fprintf('  Quasi-2D A = %.4g meV²·Å\n', phys.Drude_weight);
 fprintf('  Keldysh ρ₀ = %.1f Å\n', phys.rho0);
@@ -195,7 +185,7 @@ for b = 1:numel(branches)
 end
 xlabel('q (Å^{-1})', 'FontSize', 13);
 ylabel('\omega_p (meV)', 'FontSize', 13);
-title('Plasmon Dispersion — Bi thin film', 'FontSize', 14);
+title('Plasmon Dispersion — BiSb thin film', 'FontSize', 14);
 legend('Location', 'best');
 grid on; box on;
 set(gca, 'FontSize', 12, 'LineWidth', 1);
@@ -268,12 +258,19 @@ hold off;
 exportgraphics(fig3, fullfile(output_dir, 'fig3_screening.png'), 'Resolution', 300);
 fprintf('  Saved: fig3_screening.png\n');
 
-% ─── Figure 4: Loss function map (side by side) ───
+% ─── Figure 4: Display q-E map (pre-BG, no I_kin correction) ───
+map_pp = pp;
+map_pp.do_bg_sub = false;
+map_pp.do_deconv = false;
+qe_map = qe_preprocess(qe, map_pp);
+
 map_opts = struct();
-map_opts.mode = 'experimental';
+map_opts.mode = 'display';
 map_opts.E_range = E_range;
 map_opts.q_range = q_range;
-fig4 = qe_loss_map(qe_pp, phys, map_opts);
+map_opts.log_scale = false;
+map_opts.overlay_dispersion = false;
+fig4 = qe_loss_map(qe_map, phys, map_opts);
 
 exportgraphics(fig4, fullfile(output_dir, 'fig4_loss_map.png'), 'Resolution', 300);
 fprintf('  Saved: fig4_loss_map.png\n');
@@ -297,7 +294,7 @@ xlabel('q (Å^{-1})'); ylabel('\Gamma (meV)');
 title('Damping Rate'); grid on;
 set(gca, 'FontSize', 11, 'LineWidth', 1);
 
-sgtitle('Plasmon Lifetime Analysis — Bi', 'FontSize', 14);
+sgtitle('Plasmon Lifetime Analysis — BiSb', 'FontSize', 14);
 exportgraphics(fig6, fullfile(output_dir, 'fig6_quality_factor.png'), 'Resolution', 300);
 fprintf('  Saved: fig6_quality_factor.png\n');
 

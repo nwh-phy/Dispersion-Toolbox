@@ -1,6 +1,8 @@
 # q-EELS Plasmon Dispersion Toolbox
 
-用于 **动量分辨低损 EELS (q-EELS)** 数据处理与色散分析的 MATLAB 工具包。从原始数据出发，通过 GUI 完成去噪、背景扣除、峰拟合和色散提取。
+用于 **动量分辨低损 EELS (q-EELS)** 数据处理与色散分析的 MATLAB 工具包。从原始数据出发，通过 GUI 完成去噪、可选背景扣除、峰拟合和色散提取。
+
+> **当前 BiSb 主线（2026-05-05）**：主色散结论优先使用不扣背景的 q-E 数据提取峰位。背景扣除保留为可选的稳健性检查和诊断工具，不作为证明 quasi-2D plasmon dispersion 的必要前提。
 
 ---
 
@@ -58,18 +60,18 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 
 ### Step 3：预处理
 
-按需开启以下选项（顺序：归一化 → 去噪 → 背景扣除 → 反卷积）：
+按需开启以下选项（顺序：归一化 → 去噪 → 可选背景扣除 → 反卷积）：
 
 | 控件 | 作用 | 建议 |
 |---|---|---|
 | **Normalize** + `ZLP Peak` | 用 ZLP 峰高归一化，校正束流差异 | 一般选 ZLP Peak |
 | **Denoise** + `Wiener2D` | 2D 自适应去噪 | 大多数情况足够 |
-| **QE BG** + `Auto` | 自动选择最佳模型扣除 ZLP 尾巴 | 推荐先用 Auto |
+| **QE BG** + `Auto` | 自动选择最佳模型扣除 ZLP 尾巴 | BiSb 主线默认关闭，仅作稳健性检查 |
 | **BG W1** | 背景拟合窗口（meV） | 应在真实峰之前 |
 | **Dual** + **BG W2** | 双窗口锚定（峰前后各取一段） | 有明确的高能侧无峰区时使用 |
 | **Deconv** | Lucy-Richardson 反卷积 | 可选，注意不要过度 |
 
-> **关键**：背景窗口不要覆盖真实的 loss 峰！先在不同 q 通道检查扣除效果。
+> **关键**：BiSb 主线先不扣背景提取峰位；如果为了稳健性检查而开启背景扣除，背景窗口不要覆盖真实的 loss 峰。
 
 ### Step 4：拟合色散
 
@@ -136,13 +138,12 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 
 1. 确认数据加载正确，检查能量轴和 q 轴
 2. 在不同 q 通道浏览原始谱，了解数据质量
-3. 开启 Normalize (ZLP Peak) + Denoise (Wiener2D)
-4. 开启 QE BG (Auto)，检查几个代表性 q 通道的背景扣除效果
-5. 调整背景窗口，避免过扣除（切换到 `background-subtracted` trace 查看）
-6. 先做单谱拟合（**Fit Spectrum**），确认峰型合理
-7. 再做全局自动拟合（**Auto Fit ω(q)**）
-8. 逐 q 检查 branch assignment；对少数明显错误点，用 **Correct Auto** + target branch 下拉框做局部矫正，必要时用 **Undo Corr** 回退误操作
-9. 保存 **Save Pts**（curated branches + correction log）和操作历史，确保可复现、可审计
+3. 开启 Normalize (ZLP Peak) + Denoise (Wiener2D)，保持 **QE BG** 关闭
+4. 先做单谱拟合（**Fit Spectrum**），确认不扣背景时峰位仍清楚
+5. 再做全局自动拟合（**Auto Fit ω(q)**）
+6. 逐 q 检查 branch assignment；对少数明显错误点，用 **Correct Auto** + target branch 下拉框做局部矫正，必要时用 **Undo Corr** 回退误操作
+7. 保存 **Save Pts**（curated branches + correction log）和操作历史，确保可复现、可审计
+8. 可选：开启 QE BG 作为稳健性检查，确认主 branch 峰位没有被背景模型显著改变
 
 ---
 
@@ -197,7 +198,7 @@ opts = struct();
 opts.do_normalize = true;  opts.norm_method = 'ZLP Peak';
 opts.norm_min = -50;       opts.norm_max = 50;
 opts.do_denoise = true;    opts.denoise_method = 'Wiener2D';  opts.denoise_sigma = 0;
-opts.do_bg_sub = true;     opts.bg_method = 'Auto';
+opts.do_bg_sub = false;    opts.bg_method = 'Auto';  % BG is optional robustness check
 opts.bg_win_lo = [50, 300]; opts.bg_win_hi = [];
 opts.do_deconv = false;
 [qe_pp, bg_diag] = qe_preprocess(qe, opts);

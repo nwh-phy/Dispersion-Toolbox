@@ -1,7 +1,7 @@
 function results = compare_bg_dual_window_all()
 %COMPARE_BG_DUAL_WINDOW_ALL Compare background models across three Bi datasets.
 % Evaluates single-window and Nion-inspired dual-window settings within
-% |q| <= 0.15 A^-1 across all available eq3D datasets under 20260120 Bi.
+% |q| <= 0.15 A^-1 across all available eq3D datasets under 20260120 BiSb.
 %
 % Usage:
 %   results = compare_bg_dual_window_all();
@@ -12,9 +12,9 @@ project_root = fileparts(fileparts(mfilename('fullpath')));
 run(fullfile(project_root, 'startup.m'));
 
 datasets = {
-    struct('name', '590_PL2_10w', 'path', fullfile(project_root, '20260120 Bi', '590 PL2 10w 0.004 10sx300', 'eq3D.mat')), ...
-    struct('name', 'n0_pl2_10w', 'path', fullfile(project_root, '20260120 Bi', 'n0 pl2 10w 0.004 10s x300', 'eq3D.mat')), ...
-    struct('name', 'no_pl2_20w_2film', 'path', fullfile(project_root, '20260120 Bi', 'no pl2 20w 0.004 10sx300 2film', 'eq3D.mat')) ...
+    struct('name', '590_PL2_10w', 'path', fullfile(project_root, '20260120 BiSb', '590 PL2 10w 0.004 10sx300', 'eq3D.mat')), ...
+    struct('name', 'n0_pl2_10w', 'path', fullfile(project_root, '20260120 BiSb', 'n0 pl2 10w 0.004 10s x300', 'eq3D.mat')), ...
+    struct('name', 'no_pl2_20w_2film', 'path', fullfile(project_root, '20260120 BiSb', 'no pl2 20w 0.004 10sx300 2film', 'eq3D.mat')) ...
 };
 
 configs = {

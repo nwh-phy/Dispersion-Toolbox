@@ -12,7 +12,7 @@ project_root = fileparts(fileparts(mfilename('fullpath')));
 run(fullfile(project_root, 'startup.m'));
 
 data_path = fullfile(project_root, ...
-    '20260120 Bi', '590 PL2 10w 0.004 10sx300', 'eq3D.mat');
+    '20260120 BiSb', '590 PL2 10w 0.004 10sx300', 'eq3D.mat');
 dataset = load_qe_dataset(data_path);
 qe = dataset.qe;
 

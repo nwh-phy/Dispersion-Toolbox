@@ -8,7 +8,7 @@ project_root = fileparts(fileparts(mfilename('fullpath')));
 run(fullfile(project_root, 'startup.m'));
 testCase.TestData.project_root = project_root;
 testCase.TestData.dataset_path = fullfile(project_root, ...
-    '20260120 Bi', '590 PL2 10w 0.004 10sx300', 'eq3D.mat');
+    '20260120 BiSb', '590 PL2 10w 0.004 10sx300', 'eq3D.mat');
 end
 
 
@@ -96,7 +96,7 @@ end
 
 
 function [qe_focus, opts] = load20wLowQDataset(testCase)
-dataset_path = fullfile(testCase.TestData.project_root, '20260120 Bi', ...
+dataset_path = fullfile(testCase.TestData.project_root, '20260120 BiSb', ...
     'no pl2 20w 0.004 10sx300 2film', 'eq3D.mat');
 assumeTrue(testCase, exist(dataset_path, 'file') == 2, ...
     sprintf('Representative dataset missing: %s', dataset_path));

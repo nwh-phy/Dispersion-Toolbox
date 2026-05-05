@@ -252,8 +252,39 @@ eq3d_path = fullfile(fdir, 'eq3D_processed.mat');
 a3 = aligned; %#ok<NASGU>
 e = energy_meV(:).'; %#ok<NASGU>
 q = q_channel; %#ok<NASGU>
-save(eq3d_path, 'a3', 'e', 'q', '-v7.3');
+import_provenance = local_build_import_provenance( ...
+    file_path, source_kind, options, [q_lo, q_hi], size(aligned)); %#ok<NASGU>
+save(eq3d_path, 'a3', 'e', 'q', 'import_provenance', '-v7.3');
 fprintf('  Saved processed data to: %s\n', eq3d_path);
+end
+
+
+%% ====================================================================
+function import_provenance = local_build_import_provenance( ...
+        file_path, source_kind, options, q_crop_resolved, output_size)
+source_info = dir(file_path);
+if isempty(source_info)
+    source_bytes = NaN;
+    source_datenum = NaN;
+else
+    source_bytes = source_info.bytes;
+    source_datenum = source_info.datenum;
+end
+
+import_provenance = struct();
+import_provenance.version = 1;
+import_provenance.created_at = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+import_provenance.source_path = char(file_path);
+import_provenance.source_kind = char(source_kind);
+import_provenance.source_bytes = source_bytes;
+import_provenance.source_datenum = source_datenum;
+import_provenance.q_crop_requested = double(options.q_crop);
+import_provenance.q_crop_resolved = double(q_crop_resolved);
+import_provenance.align_sigma = double(options.align_sigma);
+import_provenance.align_target = double(options.align_target);
+import_provenance.max_iter = double(options.max_iter);
+import_provenance.dq_Ainv = double(options.dq_Ainv);
+import_provenance.output_size = double(output_size);
 end
 
 

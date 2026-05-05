@@ -31,6 +31,7 @@ end
 
 %% Load peak model definition
 pk_model = peak_models(options.peak_model);
+n_peak_params = pk_model.n_params;
 
 %% Prepare data
 E = double(energy_meV(:));
@@ -135,14 +136,14 @@ pks = pks(si);
 widths = widths(si);
 
 %% Build model parameters
-% pre_subtracted mode: [C, Ep1, G1, A1, ..., EpN, GN, AN]  (1 + 3*N params)
-% simultaneous mode:   [B0, alpha, Ep1, G1, A1, ..., EpN, GN, AN]  (2 + 3*N params)
+% pre_subtracted mode: [C, peak1 params..., peakN params...]
+% simultaneous mode:   [B0, alpha, peak1 params..., peakN params...]
 if options.pre_subtracted
     n_bg_params = 1;  % single constant offset
 else
     n_bg_params = 2;  % B0, alpha
 end
-n_params = n_bg_params + 3 * n_peaks;
+n_params = n_bg_params + n_peak_params * n_peaks;
 p0 = zeros(n_params, 1);
 lb = zeros(n_params, 1);
 ub = zeros(n_params, 1);
@@ -158,27 +159,22 @@ end
 
 % Peaks — use model-specific guesses and bounds
 for i = 1:n_peaks
-    base = n_bg_params + 3*(i-1);
+    base = n_bg_params + n_peak_params*(i-1);
+    idx = base + (1:n_peak_params);
 
     % Get initial guess from model
     [~, nearest_idx] = min(abs(E_w - locs(i)));
     pk_detrended = max(S_detrended(nearest_idx), pks(i));
     p_guess = pk_model.guess_fn(locs(i), widths(i), pk_detrended);
-    p0(base+1) = p_guess(1);
-    p0(base+2) = p_guess(2);
-    p0(base+3) = p_guess(3);
+    p0(idx) = p_guess(:);
 
     % Get bounds from model
     bnd = pk_model.bounds_fn(locs(i), widths(i), options.E_min, options.E_max);
-    lb(base+1) = bnd.lb(1);
-    lb(base+2) = bnd.lb(2);
-    lb(base+3) = bnd.lb(3);
-    ub(base+1) = bnd.ub(1);
-    ub(base+2) = bnd.ub(2);
-    ub(base+3) = bnd.ub(3);
+    lb(idx) = bnd.lb(:);
+    ub(idx) = bnd.ub(:);
 end
 
-model = @(p, E_in) local_composite_model(p, E_in, n_peaks, pk_model.model_fn, n_bg_params);
+model = @(p, E_in) local_composite_model(p, E_in, n_peaks, pk_model, n_bg_params, n_peak_params);
 
 %% Fit
 has_jacobian = false;
@@ -230,28 +226,40 @@ end
 omega_p_vals = zeros(n_peaks, 1);
 gamma_vals = zeros(n_peaks, 1);
 amp_vals = zeros(n_peaks, 1);
+peak_param_vals = zeros(n_peaks, n_peak_params);
+peak_param_ci_lo = NaN(n_peaks, n_peak_params);
+peak_param_ci_hi = NaN(n_peaks, n_peak_params);
 omega_p_ci = NaN(n_peaks, 2);  % [lower, upper]
 gamma_ci = NaN(n_peaks, 2);
 amplitude_ci = NaN(n_peaks, 2);
 
 for i = 1:n_peaks
-    base = n_bg_params + 3*(i-1);
-    omega_p_vals(i) = abs(p_fit(base+1));
-    gamma_vals(i) = abs(p_fit(base+2));
-    amp_vals(i) = abs(p_fit(base+3));
+    base = n_bg_params + n_peak_params*(i-1);
+    idx = base + (1:n_peak_params);
+    params = p_fit(idx);
+    params(1:min(3, n_peak_params)) = abs(params(1:min(3, n_peak_params)));
+    peak_param_vals(i, :) = params(:).';
+    omega_p_vals(i) = peak_param_vals(i, 1);
+    gamma_vals(i) = peak_param_vals(i, 2);
+    amp_vals(i) = peak_param_vals(i, 3);
 
     % Extract CI for each peak parameter
-    ci_E0 = param_ci_all(base+1);
-    ci_Gm = param_ci_all(base+2);
-    ci_Am = param_ci_all(base+3);
-    omega_p_ci(i, :) = [omega_p_vals(i) - ci_E0, omega_p_vals(i) + ci_E0];
-    gamma_ci(i, :)   = [gamma_vals(i) - ci_Gm, gamma_vals(i) + ci_Gm];
-    amplitude_ci(i,:) = [amp_vals(i) - ci_Am, amp_vals(i) + ci_Am];
+    for j = 1:n_peak_params
+        ci = param_ci_all(idx(j));
+        peak_param_ci_lo(i, j) = peak_param_vals(i, j) - ci;
+        peak_param_ci_hi(i, j) = peak_param_vals(i, j) + ci;
+    end
+    omega_p_ci(i, :) = [peak_param_ci_lo(i, 1), peak_param_ci_hi(i, 1)];
+    gamma_ci(i, :)   = [peak_param_ci_lo(i, 2), peak_param_ci_hi(i, 2)];
+    amplitude_ci(i,:) = [peak_param_ci_lo(i, 3), peak_param_ci_hi(i, 3)];
 end
 
 [omega_p_vals, si] = sort(omega_p_vals);
 gamma_vals = gamma_vals(si);
 amp_vals = amp_vals(si);
+peak_param_vals = peak_param_vals(si, :);
+peak_param_ci_lo = peak_param_ci_lo(si, :);
+peak_param_ci_hi = peak_param_ci_hi(si, :);
 omega_p_ci = omega_p_ci(si, :);
 gamma_ci = gamma_ci(si, :);
 amplitude_ci = amplitude_ci(si, :);
@@ -263,6 +271,9 @@ if any(keep)
     omega_p_vals = omega_p_vals(keep);
     gamma_vals = gamma_vals(keep);
     amp_vals = amp_vals(keep);
+    peak_param_vals = peak_param_vals(keep, :);
+    peak_param_ci_lo = peak_param_ci_lo(keep, :);
+    peak_param_ci_hi = peak_param_ci_hi(keep, :);
     omega_p_ci = omega_p_ci(keep, :);
     gamma_ci = gamma_ci(keep, :);
     amplitude_ci = amplitude_ci(keep, :);
@@ -290,17 +301,22 @@ end
 curve_total = bg_curve;
 peak_curves = cell(n_peaks, 1);
 peak_heights = zeros(n_peaks, 1);
+apex_energy_vals = NaN(n_peaks, 1);
+apex_offset_vals = NaN(n_peaks, 1);
 
 for i = 1:n_peaks
-    Ep = omega_p_vals(i);
-    Gm = gamma_vals(i);
-    Am = amp_vals(i);
-    single = pk_model.model_fn(Ep, Gm, Am, E_fine);
+    single = local_eval_peak(pk_model, peak_param_vals(i, :), E_fine);
     single = single * S_scale;
     peak_curves{i} = single;
-    peak_heights(i) = max(single);
+    [peak_heights(i), apex_idx] = max(single);
+    apex_energy_vals(i) = E_fine(apex_idx);
+    apex_offset_vals(i) = apex_energy_vals(i) - omega_p_vals(i);
     curve_total = curve_total + single;
 end
+
+gamma_ratio_vals = gamma_vals ./ max(omega_p_vals, eps);
+[peak_valid_vals, peak_quality_notes] = local_peak_quality( ...
+    omega_p_vals, gamma_ratio_vals, apex_offset_vals);
 
 %% Build result
 result = struct();
@@ -327,6 +343,27 @@ result.curve_fit = curve_total;
 result.bg_curve = bg_curve;
 result.peak_curves = peak_curves;
 result.peak_heights = peak_heights;
+result.apex_energy_meV = apex_energy_vals;
+result.apex_offset_meV = apex_offset_vals;
+result.gamma_ratio = gamma_ratio_vals;
+result.peak_valid = peak_valid_vals;
+result.peak_quality_notes = peak_quality_notes;
+peak_param_result_vals = peak_param_vals;
+peak_param_result_ci_lo = peak_param_ci_lo;
+peak_param_result_ci_hi = peak_param_ci_hi;
+if n_peak_params >= 3
+    peak_param_result_vals(:, 3) = peak_param_result_vals(:, 3) * S_scale;
+    peak_param_result_ci_lo(:, 3) = peak_param_result_ci_lo(:, 3) * S_scale;
+    peak_param_result_ci_hi(:, 3) = peak_param_result_ci_hi(:, 3) * S_scale;
+end
+result.peak_param_names = pk_model.param_names;
+result.peak_param_values = peak_param_result_vals;
+result.peak_param_ci_lower = peak_param_result_ci_lo;
+result.peak_param_ci_upper = peak_param_result_ci_hi;
+if strcmpi(options.peak_model, 'fano') && n_peak_params >= 4
+    result.fano_q = peak_param_vals(:, 4);
+    result.fano_q_ci = [peak_param_ci_lo(:, 4), peak_param_ci_hi(:, 4)];
+end
 result.energy_data = E_w;
 result.spectrum_data = S_w;
 result.residuals = (S_n - S_pred) * S_scale;
@@ -335,7 +372,7 @@ result.peak_model_name = pk_model.name;
 end
 
 
-function S = local_composite_model(p, E, n_peaks, peak_fn, n_bg_params)
+function S = local_composite_model(p, E, n_peaks, pk_model, n_bg_params, n_peak_params)
     % Composite model: background + sum of peaks
     if n_bg_params == 1
         % Pre-subtracted mode: S(E) = C + sum { peaks }
@@ -348,12 +385,17 @@ function S = local_composite_model(p, E, n_peaks, peak_fn, n_bg_params)
     end
 
     for i = 1:n_peaks
-        base = n_bg_params + 3*(i-1);
-        E0 = abs(p(base+1));
-        width = abs(p(base+2));
-        A = abs(p(base+3));
-        S = S + peak_fn(E0, width, A, E);
+        base = n_bg_params + n_peak_params*(i-1);
+        params = p(base + (1:n_peak_params));
+        params(1:min(3, n_peak_params)) = abs(params(1:min(3, n_peak_params)));
+        S = S + local_eval_peak(pk_model, params, E);
     end
+end
+
+
+function S = local_eval_peak(pk_model, params, E)
+    args = num2cell(params(:).');
+    S = pk_model.model_fn(args{:}, E);
 end
 
 
@@ -380,5 +422,35 @@ function C = local_robust_constant_baseline(S, edge_idx)
         C = 0;
     else
         C = median(baseline_vals);
+    end
+end
+
+
+function [is_valid, notes] = local_peak_quality(omega_p, gamma_ratio, apex_offset)
+    omega_p = omega_p(:);
+    gamma_ratio = gamma_ratio(:);
+    apex_offset = apex_offset(:);
+
+    n = numel(omega_p);
+    is_valid = true(n, 1);
+    notes = repmat({''}, n, 1);
+    max_offset = max(150 * ones(n, 1), 0.25 * max(omega_p, eps));
+
+    for i = 1:n
+        reasons = {};
+        if ~isfinite(gamma_ratio(i)) || gamma_ratio(i) > 2.0
+            is_valid(i) = false;
+            reasons{end+1} = sprintf('Gamma/E0=%.2g', gamma_ratio(i)); %#ok<AGROW>
+        end
+        if ~isfinite(apex_offset(i)) || abs(apex_offset(i)) > max_offset(i)
+            is_valid(i) = false;
+            reasons{end+1} = sprintf('apex offset=%.0f meV', apex_offset(i)); %#ok<AGROW>
+        end
+
+        if isempty(reasons)
+            notes{i} = 'ok';
+        else
+            notes{i} = strjoin(reasons, '; ');
+        end
     end
 end

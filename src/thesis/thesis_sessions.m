@@ -7,7 +7,7 @@ if nargin < 1 || isempty(cfg)
     cfg = thesis_config();
 end
 root_dir = cfg.project_root;
-base_dir = fullfile(root_dir, '20260120 Bi');
+base_dir = fullfile(root_dir, '20260120 BiSb');
 
 sessions = repmat(struct( ...
     'name', '', ...

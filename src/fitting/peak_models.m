@@ -21,7 +21,7 @@ function model = peak_models(name)
 
 arguments
     name (1,:) char {mustBeMember(name, ...
-        {'lorentz', 'gaussian', 'voigt', 'damped_ho'})} = 'lorentz'
+        {'lorentz', 'gaussian', 'voigt', 'damped_ho', 'fano'})} = 'lorentz'
 end
 
 switch name
@@ -33,6 +33,8 @@ switch name
         model = voigt_model();
     case 'damped_ho'
         model = damped_ho_model();
+    case 'fano'
+        model = fano_model();
 end
 
 end
@@ -57,7 +59,7 @@ function m = lorentz_model()
 end
 
 function b = lorentz_bounds(E0_est, width_est, E_min, E_max)
-    b.lb = [max(100, E0_est - max(width_est*2, 400)), 10, 0];
+    b.lb = [max([100, E_min, E0_est - max(width_est*2, 400)]), 10, 0];
     b.ub = [min(E_max, E0_est + max(width_est*2, 400)), 5000, Inf];
 end
 
@@ -124,6 +126,33 @@ function b = voigt_bounds(E0_est, width_est, E_min, E_max)
 end
 
 
+function m = fano_model()
+    m.name = 'Fano';
+    m.n_params = 4;
+    m.param_names = {'E0 (meV)', 'Gamma (meV)', 'A', 'qF'};
+
+    m.model_fn = @fano_peak;
+
+    m.guess_fn = @(E0_est, width_est, amp_est) ...
+        [E0_est, max(width_est * 0.6, 20), amp_est, 3.0];
+
+    m.bounds_fn = @fano_bounds;
+end
+
+function S = fano_peak(E0, Gamma, A, qF, E)
+    Gamma = max(abs(Gamma), eps);
+    qF = min(max(qF, -20), 20);
+    epsilon = (E - E0) ./ max(Gamma / 2, eps);
+    S = A .* (qF + epsilon).^2 ./ ((1 + qF.^2) .* (1 + epsilon.^2));
+    S(~isfinite(S)) = 0;
+end
+
+function b = fano_bounds(E0_est, width_est, E_min, E_max)
+    b.lb = [max(E_min, E0_est - max(width_est*2, 250)), 5, 0, -20];
+    b.ub = [min(E_max, E0_est + max(width_est*2, 250)), 2500, Inf, 20];
+end
+
+
 %% ═══════════════════════════════════════════════════════════════
 %  Damped Harmonic Oscillator (Bose-weighted):
 %    S(E) = A * n(E,T) * Gamma * E0 / ((E^2 - E0^2)^2 + E^2*Gamma^2)
@@ -159,6 +188,6 @@ function S = dho_peak(E0, Gamma, A, E)
 end
 
 function b = dho_bounds(E0_est, width_est, E_min, E_max)
-    b.lb = [max(5, E0_est - max(width_est*2, 100)), 1, 0];
+    b.lb = [max([5, E_min, E0_est - max(width_est*2, 100)]), 1, 0];
     b.ub = [min(E_max, E0_est + max(width_est*2, 100)), 1000, Inf];
 end

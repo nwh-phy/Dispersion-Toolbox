@@ -53,7 +53,10 @@ end
 if ~isfield(opts, 'E_range'), opts.E_range = [-Inf, Inf]; end
 if ~isfield(opts, 'q_range'), opts.q_range = [-Inf, Inf]; end
 if ~isfield(opts, 'cmap'),    opts.cmap = turbo; end
-if ~isfield(opts, 'log_scale'), opts.log_scale = true; end
+if ~isfield(opts, 'log_scale')
+    opts.log_scale = ~strcmpi(opts.mode, 'display');
+end
+if ~isfield(opts, 'overlay_dispersion'), opts.overlay_dispersion = true; end
 
 %% Extract data
 energy_meV = double(qe_processed.energy_meV(:));
@@ -70,6 +73,10 @@ map         = intensity(E_mask, q_mask);
 
 %% Build I_kin(q) correction vector
 switch lower(opts.mode)
+    case 'display'
+        I_kin_q = ones(size(q_disp));
+        mode_label = 'q-E map - no I_{kin} correction';
+
     case 'simple'
         % I_kin ≈ C · |q|⁻³
         % We don't know C, so normalize s.t. I_kin(q_ref) = 1
@@ -119,18 +126,30 @@ switch lower(opts.mode)
         mode_label = sprintf('I_{kin}-corrected map — experimental correction (ρ₀=%.0fÅ)', phys.rho0);
 
     otherwise
-        error('qe_loss_map:badMode', 'Mode must be ''simple'' or ''experimental''.');
+        error('qe_loss_map:badMode', ...
+            'Mode must be ''display'', ''simple'', or ''experimental''.');
 end
 
 %% Divide map by I_kin(q) column-wise
 %   S_corr(ω,q) = S(ω,q) / I_kin(q)
-loss_map = map ./ I_kin_q(:)';
+if strcmpi(opts.mode, 'display')
+    loss_map = map;
+else
+    loss_map = map ./ I_kin_q(:)';
+end
 
 % Clip negatives
-loss_map = max(loss_map, 0);
+if ~strcmpi(opts.mode, 'display')
+    loss_map = max(loss_map, 0);
+end
 
 %% Create figure
-fig = figure('Name', 'I_kin-Corrected Map', ...
+if strcmpi(opts.mode, 'display')
+    fig_name = 'q-E Map';
+else
+    fig_name = 'I_kin-Corrected Map';
+end
+fig = figure('Name', fig_name, ...
     'NumberTitle', 'off', 'Color', 'w', ...
     'Position', [100, 100, 900, 700]);
 
@@ -140,8 +159,13 @@ if opts.log_scale
     raw_clabel = 'log_{10}(raw EELS intensity)';
 else
     display_map = loss_map;
-    clabel = 'S / I_{kin} (a.u.)';
-    raw_clabel = 'Raw EELS intensity (a.u.)';
+    if strcmpi(opts.mode, 'display')
+        clabel = 'q-E intensity (a.u.)';
+        raw_clabel = 'q-E intensity (a.u.)';
+    else
+        clabel = 'S / I_{kin} (a.u.)';
+        raw_clabel = 'Raw EELS intensity (a.u.)';
+    end
 end
 
 % Auto-scale: use [5th, 95th] percentile
@@ -155,6 +179,29 @@ if ~isempty(vals)
     end
 else
     clim_lo = 0; clim_hi = 1;
+end
+
+if strcmpi(opts.mode, 'display')
+    ax1 = axes(fig);
+    imagesc(ax1, q_disp, energy_disp, display_map);
+    axis(ax1, 'xy');
+    colormap(ax1, opts.cmap);
+    clim(ax1, [clim_lo, clim_hi]);
+    cb = colorbar(ax1);
+    cb.Label.String = clabel;
+    xlabel(ax1, 'q (A^{-1})');
+    ylabel(ax1, 'Energy (meV)');
+    title(ax1, mode_label, 'Interpreter', 'tex', 'FontSize', 14);
+
+    if opts.overlay_dispersion && ~isempty(phys) ...
+            && isfield(phys, 'q') && isfield(phys, 'omega_p')
+        hold(ax1, 'on');
+        plot(ax1, phys.q, phys.omega_p, 'w.', 'MarkerSize', 8);
+        plot(ax1, -phys.q, phys.omega_p, 'w.', 'MarkerSize', 8);
+        hold(ax1, 'off');
+    end
+
+    return
 end
 
 %% Plot
@@ -195,7 +242,8 @@ ylabel(ax2, 'Energy (meV)');
 title(ax2, 'Raw EELS probability d^2P/d\Omega dE');
 
 % Overlay dispersion if available from phys
-if ~isempty(phys) && isfield(phys, 'q') && isfield(phys, 'omega_p')
+if opts.overlay_dispersion && ~isempty(phys) ...
+        && isfield(phys, 'q') && isfield(phys, 'omega_p')
     hold(ax1, 'on');
     plot(ax1, phys.q, phys.omega_p, 'w.', 'MarkerSize', 8);
     plot(ax1, -phys.q, phys.omega_p, 'w.', 'MarkerSize', 8);

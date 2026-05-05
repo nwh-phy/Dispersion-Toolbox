@@ -20,7 +20,7 @@ arguments
     options.q_crop (1,2) double = [NaN NaN]
 end
 
-[source_path, file_type] = local_resolve_source(string(path));
+[source_path, file_type] = local_resolve_source(string(path), options.q_crop);
 
 if strcmp(file_type, 'npy') || strcmp(file_type, 'mat_raw')
     % Check for cached processed result first
@@ -29,10 +29,13 @@ if strcmp(file_type, 'npy') || strcmp(file_type, 'mat_raw')
     if exist(cache_path, 'file') == 2
         cache_info = dir(cache_path);
         raw_info = dir(char(source_path));
-        if cache_info.datenum >= raw_info.datenum
+        if cache_info.datenum >= raw_info.datenum && ...
+                local_cache_matches_raw_options(cache_path, source_path, options.q_crop)
             fprintf('  Using cached eq3D_processed.mat (newer than raw)\n');
             dataset = load_qe_dataset(cache_path, dqOverride);
             return
+        elseif cache_info.datenum >= raw_info.datenum
+            fprintf('  Cache eq3D_processed.mat does not match raw import options; rebuilding.\n');
         end
     end
     % No cache or stale — process raw data
@@ -74,7 +77,7 @@ dataset.qe = make_qe_struct( ...
 end
 
 
-function [source_path, file_type] = local_resolve_source(path)
+function [source_path, file_type] = local_resolve_source(path, q_crop)
 %LOCAL_RESOLVE_SOURCE  Find eq3D.mat or .npy in the given path.
 %   Returns the resolved path and type ('mat' or 'npy').
 candidate = char(path);
@@ -83,34 +86,12 @@ candidate = char(path);
 if exist(candidate, "file") == 2
     [fdir, fname, ext] = fileparts(candidate);
     if strcmpi(ext, ".mat")
-        % Fast path: if a processed cache exists alongside, skip classification
-        cache_path = fullfile(fdir, 'eq3D_processed.mat');
-        if exist(cache_path, 'file') == 2 && ~strcmp(fname, 'eq3D_processed')
-            cache_info = dir(cache_path);
-            raw_info = dir(candidate);
-            if cache_info.datenum >= raw_info.datenum
-                source_path = string(cache_path);
-                file_type = 'mat_eq3d';
-                return
-            end
-        end
         % Detect: eq3D (2D) vs raw 4D .mat
         mat_type = local_classify_mat(candidate);
         source_path = string(candidate);
         file_type = mat_type;  % 'mat_eq3d' or 'mat_raw'
         return
     elseif strcmpi(ext, ".npy")
-        % Fast path: check for cache
-        cache_path = fullfile(fdir, 'eq3D_processed.mat');
-        if exist(cache_path, 'file') == 2
-            npy_info = dir(candidate);
-            cache_info = dir(cache_path);
-            if cache_info.datenum >= npy_info.datenum
-                source_path = string(cache_path);
-                file_type = 'mat_eq3d';
-                return
-            end
-        end
         source_path = string(candidate);
         file_type = 'npy';
         return
@@ -121,7 +102,8 @@ end
 if isfolder(candidate)
     % Cached result from raw import (highest priority)
     processed_path = fullfile(candidate, "eq3D_processed.mat");
-    if exist(processed_path, "file") == 2
+    explicit_q_crop = all(isfinite(q_crop));
+    if exist(processed_path, "file") == 2 && ~explicit_q_crop
         source_path = string(processed_path);
         file_type = 'mat_eq3d';
         fprintf('  Found cached processed data: eq3D_processed.mat\n');
@@ -152,6 +134,64 @@ end
 
 error("load_qe_dataset:PathNotFound", ...
     "Cannot resolve %s as a data file.", candidate);
+end
+
+
+function tf = local_cache_matches_raw_options(cache_path, source_path, q_crop)
+tf = false;
+
+try
+    cached = load(char(cache_path), 'import_provenance');
+catch
+    return
+end
+
+if ~isfield(cached, 'import_provenance')
+    % Legacy caches have no way to prove q-crop compatibility. Keep them for
+    % auto-crop loads, but rebuild when the caller asks for an explicit crop.
+    tf = ~all(isfinite(q_crop));
+    return
+end
+
+prov = cached.import_provenance;
+source_info = dir(char(source_path));
+if isempty(source_info)
+    return
+end
+if isfield(prov, 'source_bytes') && double(prov.source_bytes) ~= double(source_info.bytes)
+    return
+end
+if isfield(prov, 'source_datenum') && double(source_info.datenum) > double(prov.source_datenum) + eps
+    return
+end
+
+tf = local_q_crop_matches(prov, q_crop);
+end
+
+
+function tf = local_q_crop_matches(prov, q_crop)
+explicit_q_crop = all(isfinite(q_crop));
+
+if explicit_q_crop
+    requested = round(double(q_crop));
+    if isfield(prov, 'q_crop_resolved') && isequal(round(double(prov.q_crop_resolved)), requested)
+        tf = true;
+        return
+    end
+    if isfield(prov, 'q_crop_requested') && isequal(round(double(prov.q_crop_requested)), requested)
+        tf = true;
+        return
+    end
+    tf = false;
+    return
+end
+
+if isfield(prov, 'q_crop_requested')
+    cached_request = double(prov.q_crop_requested);
+    tf = ~all(isfinite(cached_request));
+else
+    tf = false;
+end
 end
 
 

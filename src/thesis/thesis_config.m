@@ -21,24 +21,8 @@ cfg.analysis = struct( ...
     'E_range_meV', [300 3836], ...
     'q_skip_Ainv', 0.005);
 
-cfg.preprocess = struct();
-cfg.preprocess.do_despike = false;
-cfg.preprocess.do_normalize = true;
-cfg.preprocess.norm_method = 'ZLP Peak';
-cfg.preprocess.norm_min = -50;
-cfg.preprocess.norm_max = 50;
-cfg.preprocess.do_denoise = true;
-cfg.preprocess.denoise_method = 'Wiener2D';
-cfg.preprocess.denoise_sigma = 0;
-cfg.preprocess.sg_order = 3;
-cfg.preprocess.sg_framelen = 11;
-cfg.preprocess.do_bg_sub = true;
-cfg.preprocess.bg_method = 'Power';
-cfg.preprocess.bg_win_lo = [50 300];
-cfg.preprocess.bg_win_hi = [];
-cfg.preprocess.bg_iterative = false;
-cfg.preprocess.do_deconv = false;
-cfg.preprocess.deconv_iter = 5;
+cfg.preprocess_preset = 'thesis_baseline_v1';
+cfg.preprocess = qe_preprocess_preset(cfg.preprocess_preset);
 
 cfg.fit = struct();
 cfg.fit.E_min = cfg.analysis.E_range_meV(1);

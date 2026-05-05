@@ -30,6 +30,52 @@ verifyLessThan(testCase, abs(result.omega_p(1) - center_meV), 40);
 end
 
 
+function testFitLossFunctionReportsPeakApexAndQuality(testCase)
+[energy_meV, spectrum] = makeOverdampedLorentzSpectrum();
+
+result = fit_loss_function(energy_meV, spectrum, ...
+    'E_min', 80, 'E_max', 2500, ...
+    'max_peaks', 1, ...
+    'min_prominence', 0.01, ...
+    'smooth_width', 9, ...
+    'initial_guesses', 650, ...
+    'peak_model', 'lorentz', ...
+    'pre_subtracted', true);
+
+verifyTrue(testCase, isfield(result, 'apex_energy_meV'));
+verifyTrue(testCase, isfield(result, 'apex_offset_meV'));
+verifyTrue(testCase, isfield(result, 'gamma_ratio'));
+verifyTrue(testCase, isfield(result, 'peak_valid'));
+verifyGreaterThan(testCase, result.gamma_ratio(1), 2.0);
+verifyGreaterThan(testCase, abs(result.apex_offset_meV(1)), 100);
+verifyFalse(testCase, result.peak_valid(1));
+end
+
+
+function testFitLossFunctionSupportsFanoAsymmetricPeak(testCase)
+[energy_meV, spectrum, center_meV, gamma_meV, fano_q] = makeFanoSpectrum();
+
+result = fit_loss_function(energy_meV, spectrum, ...
+    'E_min', 200, 'E_max', 1500, ...
+    'max_peaks', 1, ...
+    'min_prominence', 0.02, ...
+    'smooth_width', 7, ...
+    'initial_guesses', center_meV, ...
+    'peak_model', 'fano', ...
+    'pre_subtracted', true);
+
+expected_apex = center_meV + gamma_meV / (2 * fano_q);
+
+verifyEqual(testCase, result.peak_model_name, 'Fano');
+verifyTrue(testCase, isfield(result, 'fano_q'));
+verifyTrue(testCase, isfield(result, 'peak_param_names'));
+verifyLessThan(testCase, abs(result.omega_p(1) - center_meV), 50);
+verifyLessThan(testCase, abs(result.apex_energy_meV(1) - expected_apex), 70);
+verifyLessThan(testCase, abs(result.fano_q(1) - fano_q), 1.5);
+verifyTrue(testCase, result.peak_valid(1));
+end
+
+
 function testFitLossFunctionRawModeStillUsesPowerLawBackground(testCase)
 [energy_meV, spectrum] = makeRawPowerLawSpectrum();
 
@@ -155,4 +201,29 @@ end
 
 function y = gaussianPeak(x, center, sigma, amplitude)
 y = amplitude .* exp(-0.5 .* ((x - center) ./ sigma) .^ 2);
+end
+
+
+function [energy_meV, spectrum] = makeOverdampedLorentzSpectrum()
+energy_meV = linspace(80, 2500, 400)';
+center_meV = 650;
+gamma_meV = 2200;
+amplitude = 1.5e8;
+baseline = 0.020;
+spectrum = baseline + amplitude .* energy_meV .* gamma_meV ./ ...
+    ((energy_meV.^2 - center_meV^2).^2 + energy_meV.^2 .* gamma_meV^2);
+end
+
+
+function [energy_meV, spectrum, center_meV, gamma_meV, fano_q] = makeFanoSpectrum()
+energy_meV = linspace(80, 2500, 500)';
+center_meV = 700;
+gamma_meV = 180;
+fano_q = 2.7;
+amplitude = 0.24;
+baseline = 0.018;
+epsilon = (energy_meV - center_meV) ./ max(gamma_meV / 2, eps);
+fano_peak = amplitude .* (fano_q + epsilon).^2 ./ ...
+    ((1 + fano_q^2) .* (1 + epsilon.^2));
+spectrum = baseline + fano_peak;
 end

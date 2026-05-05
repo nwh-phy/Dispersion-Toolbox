@@ -72,6 +72,11 @@ p0 = p0(:)';
 
 %% Fit
 model_fn = dm.model_fn;
+if strcmp(options.model, 'quasi2d_plasmon')
+    eps_bg_fit = (1 + options.epsilon_s) / 2;
+    model_fn = @(p, q_in) sqrt(abs(p(1)) .* abs(q_in) ./ ...
+        (eps_bg_fit + abs(p(2)) .* abs(q_in)));
+end
 weighted_model = @(p, q_in) sqrt(w) .* model_fn(p, q_in);
 weighted_data = sqrt(w) .* E;
 

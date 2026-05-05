@@ -67,6 +67,7 @@ end
         state_out.selectionMarker = gobjects(1);
         % Preprocessing cache (avoid redundant SVD/FFT on every click)
         state_out.ppCache = struct('hash', '', 'qe', [], 'qe_pre', [], 'bg_diag', []);
+        state_out.singlePreviewCache = struct('hash', '', 'qe_pre', []);
     end
 
 
@@ -205,6 +206,7 @@ end
                 state.comparisonQE = [];
                 state.autoFitResults = [];   % clear stale fits (Issue #1)
                 state.ppCache = struct('hash', '', 'qe', [], 'qe_pre', [], 'bg_diag', []);
+                state.singlePreviewCache = struct('hash', '', 'qe_pre', []);
                 state.eq3dQE = dataset.qe;
                 state.physicalQE = dataset.qe;
                 state.activeStage = "eq3d";
@@ -241,6 +243,7 @@ end
             state.comparisonQE = [];
             state.autoFitResults = [];   % clear stale fit results (Issue #1)
             state.ppCache = struct('hash', '', 'qe', [], 'qe_pre', [], 'bg_diag', []);
+            state.singlePreviewCache = struct('hash', '', 'qe_pre', []);
 
             state.eq3dQE = dataset.qe;
             state.physicalQE = dataset.qe;
@@ -475,7 +478,14 @@ end
         snap.peakModel = char(ui.PeakModelDropdown.Value);
         snap.maxShift = ui.MaxShiftField.Value;
         snap.guessText = char(string(ui.GuessField.Value));
+        snap.branch1Min = ui.Branch1MinField.Value;
+        snap.branch1Max = ui.Branch1MaxField.Value;
+        snap.branch2Min = ui.Branch2MinField.Value;
+        snap.branch2Max = ui.Branch2MaxField.Value;
+        snap.branch3Min = ui.Branch3MinField.Value;
+        snap.branch3Max = ui.Branch3MaxField.Value;
         snap.dispModel = char(ui.DispModelDropdown.Value);
+        snap.fitBranchTarget = char(string(ui.FitBranchDropdown.Value));
         snap.correctionBranchTarget = char(string(ui.CorrectionBranchDropdown.Value));
         snap.exportRatio = char(ui.ExportRatioDropdown.Value);
         snap.selectedQIndex = state.selectedQIndex;
@@ -550,8 +560,23 @@ end
         if isfield(snap, 'guessText')
             ui.GuessField.Value = string(snap.guessText);
         end
+        if isfield(snap, 'branch1Min')
+            ui.Branch1MinField.Value = snap.branch1Min;
+            ui.Branch1MaxField.Value = snap.branch1Max;
+            ui.Branch2MinField.Value = snap.branch2Min;
+            ui.Branch2MaxField.Value = snap.branch2Max;
+            ui.Branch3MinField.Value = snap.branch3Min;
+            ui.Branch3MaxField.Value = snap.branch3Max;
+        end
         if isfield(snap, 'dispModel') && any(strcmp(snap.dispModel, ui.DispModelDropdown.ItemsData))
             ui.DispModelDropdown.Value = snap.dispModel;
+        end
+        if isfield(snap, 'fitBranchTarget')
+            local_sync_correction_controls();
+            target = char(string(snap.fitBranchTarget));
+            if any(strcmp(target, ui.FitBranchDropdown.Items))
+                ui.FitBranchDropdown.Value = target;
+            end
         end
         if isfield(snap, 'exportRatio') && any(strcmp(snap.exportRatio, ui.ExportRatioDropdown.Items))
             ui.ExportRatioDropdown.Value = snap.exportRatio;
@@ -565,7 +590,7 @@ end
             state.selectedQIndex = snap.selectedQIndex;
         end
 
-        ui.ViewModeDropdown.Value = snap.viewMode;
+        ui.ViewModeDropdown.Value = local_normalize_view_mode_value(snap.viewMode);
         if isfield(snap, 'correctionBranchTarget')
             local_sync_correction_controls();
             target = char(string(snap.correctionBranchTarget));
@@ -924,7 +949,7 @@ end
         ui.PickPtsButton.BackgroundColor = [0.85 1 0.85];
         ui.PickGuessesButton.Text = "Pick Guesses";
         ui.PickGuessesButton.BackgroundColor = [0.96 0.96 0.96];
-        ui.CorrectAutoButton.Text = "Correct Auto";
+        ui.CorrectAutoButton.Text = "Correct Peak";
         ui.CorrectAutoButton.BackgroundColor = [0.96 0.96 0.96];
     end
 
@@ -1188,11 +1213,16 @@ end
             return
         end
 
-        % Filter out peaks below E_min
-        keep = result.omega_p >= E_min;
-        if ~any(keep)
+        % Filter out peaks below E_min for display, and keep only reliable
+        % peaks for acceptance into curated branches.
+        display_keep = result.omega_p >= E_min;
+        if ~any(display_keep)
             ui.FitInfoLabel.Text = "No valid peaks found above E_min";
             return
+        end
+        keep = display_keep;
+        if isfield(result, 'peak_valid')
+            keep = keep & result.peak_valid(:);
         end
 
         % Store pending fit
@@ -1202,6 +1232,7 @@ end
         state.pendingFit.q_index = q_index;
         state.pendingFit.result = result;
         state.pendingFit.keep = keep;
+        state.pendingFit.display_keep = display_keep;
 
         % Overlay fit on spectrum axes
         ax = ui.SingleAxes;
@@ -1231,8 +1262,15 @@ end
 
         info_parts = {};
         for p = 1:result.n_peaks
-            if ~keep(p); continue; end
+            if ~display_keep(p); continue; end
             col = peak_colors(mod(p-1, size(peak_colors,1))+1, :);
+            is_valid_peak = true;
+            if isfield(result, 'peak_valid') && numel(result.peak_valid) >= p
+                is_valid_peak = logical(result.peak_valid(p));
+            end
+            if ~is_valid_peak
+                col = [0.95 0.55 0.05];
+            end
 
             % Plot peak component + background so it's visible
             peak_on_bg = result.peak_curves{p} + bg_vals;
@@ -1246,13 +1284,39 @@ end
                 'MarkerSize', 10, 'MarkerFaceColor', col, ...
                 'MarkerEdgeColor', 'k', 'Tag', 'lorentz_fit');
 
+            marker_label = sprintf('E0 %.0f', result.omega_p(p));
+            if isfield(result, 'apex_energy_meV') && numel(result.apex_energy_meV) >= p
+                marker_label = sprintf('E0 %.0f | apex %.0f', ...
+                    result.omega_p(p), result.apex_energy_meV(p));
+            end
+            if ~is_valid_peak
+                marker_label = sprintf('%s | low confidence', marker_label);
+            end
             text(ax, result.omega_p(p), marker_y * 1.08, ...
-                sprintf('%.0f meV', result.omega_p(p)), ...
+                marker_label, ...
                 'FontSize', 9, 'FontWeight', 'bold', 'Color', col, ...
                 'HorizontalAlignment', 'center', 'Tag', 'lorentz_fit');
 
-            info_parts{end+1} = sprintf('ω_p=%.0f Γ=%.0f', ...
-                result.omega_p(p), result.gamma(p)); %#ok<AGROW>
+            if isfield(result, 'gamma_ratio') && numel(result.gamma_ratio) >= p ...
+                    && isfield(result, 'apex_energy_meV') && numel(result.apex_energy_meV) >= p
+                quality_text = 'ok';
+                if ~is_valid_peak
+                    quality_text = 'low-confidence';
+                end
+                if isfield(result, 'fano_q') && numel(result.fano_q) >= p
+                    info_parts{end+1} = sprintf('E0=%.0f apex=%.0f qF=%.2f Gamma/E0=%.2f %s', ...
+                        result.omega_p(p), result.apex_energy_meV(p), ...
+                        result.fano_q(p), result.gamma_ratio(p), quality_text); %#ok<AGROW>
+                else
+                    info_parts{end+1} = sprintf('E0=%.0f apex=%.0f Gamma/E0=%.2f %s', ...
+                        result.omega_p(p), result.apex_energy_meV(p), ...
+                        result.gamma_ratio(p), quality_text); %#ok<AGROW>
+                end
+            else
+                info_parts{end+1} = sprintf('E0=%.0f Gamma=%.0f', ...
+                    result.omega_p(p), result.gamma(p)); %#ok<AGROW>
+            end
+            continue
         end
         hold(ax, 'off');
 
@@ -1261,7 +1325,7 @@ end
             abs_q, strjoin(info_parts, ', '), result.R_squared);
 
         % Enable Accept button
-        ui.AcceptFitButton.Enable = "on";
+        ui.AcceptFitButton.Enable = local_on_off(any(keep));
     end
 
 
@@ -1377,6 +1441,14 @@ end
             guesses = [];
         end
 
+        try
+            branch_specs = local_branch_specs_from_ui();
+        catch ME
+            ui.InfoLabel.Text = ME.message;
+            ui.InfoLabel.Visible = "on";
+            return
+        end
+
         % Build auto-fit options from UI
         auto_opts = struct();
         auto_opts.E_min = max(ui.EnergyMinField.Value, 50);
@@ -1413,12 +1485,21 @@ end
 
         % Store results
         peaks = results.all_peaks;
-        branches = results.branches;
+        branch_filter_opts = struct();
+        branch_filter_opts.q_skip_Ainv = 0.005;
+        branch_filter_opts.min_R2 = 0.3;
+        branch_filter_opts.max_gamma_ratio = 2.0;
+        branch_filter_opts.score_column = 12;
+        branch_assignment = qe_assign_peak_branches_by_windows(peaks, branch_specs, branch_filter_opts);
+        branches = branch_assignment.branches;
         n_branches = numel(branches);
 
         autoResults = struct();
         autoResults.all_peaks = peaks;
+        autoResults.raw_branches = results.branches;
         autoResults.branches = branches;
+        autoResults.branch_assignment = branch_assignment;
+        autoResults.branch_specs = branch_assignment.specs;
         autoResults.fit_details = results.fit_details;
         autoResults.n_success = results.n_success;
         state.autoFitResults = autoResults;
@@ -1434,40 +1515,39 @@ end
         local_clear_axes(ax);
         hold(ax, 'on');
 
-        disp_model_name = ui.DispModelDropdown.Value;
+        plotted = false;
         for b = 1:n_branches
             br = branches{b};
             col = qe_plot_helpers.branch_color(b);
-            branch_label = sprintf('Branch %d (%.0f-%.0f meV, %d pts)', ...
-                b, min(br(:,2)), max(br(:,2)), size(br,1));
-
-            qe_plot_helpers.plot_branch_scatter(ax, br, col, branch_label);
-
-            if size(br, 1) >= 5
-                try
-                    disp_result = fit_dispersion_generic(br(:,1), br(:,2), ...
-                        'model', disp_model_name);
-                    qe_plot_helpers.plot_fit_curve(ax, disp_result, col, b);
-                    state.fitResults{b} = disp_result;
-                catch
-                end
+            spec = branch_assignment.specs(b);
+            win = spec.energy_window_meV;
+            branch_label = sprintf('%s [%.0f-%.0f meV] (%d pts)', ...
+                char(string(spec.name)), win(1), win(2), size(br,1));
+            if isempty(br)
+                continue
             end
+            qe_plot_helpers.plot_branch_scatter(ax, br, col, branch_label);
+            plotted = true;
         end
 
         hold(ax, 'off');
-        legend(ax, 'Location', 'best', 'FontSize', 7);
-        xlabel(ax, 'q (1/Å)');
+        if plotted
+            legend(ax, 'Location', 'best', 'FontSize', 7);
+        end
+        xlabel(ax, 'q (1/A)');
         ylabel(ax, 'Energy (meV)');
-        title(ax, sprintf('Auto-Fit: %d branches, %d peaks from %d ch', ...
-            n_branches, size(peaks,1), results.n_success));
+        title(ax, sprintf('Auto candidates: %d branches, %d assigned / %d peaks', ...
+            n_branches, size(state.manual_points, 1), size(peaks,1)));
         grid(ax, 'on');
 
         ui.PtsLabel.Text = sprintf('%d pts', size(state.manual_points, 1));
-        ui.InfoLabel.Text = sprintf('Auto-fit: %d peaks, %d branches', ...
-            size(peaks,1), n_branches);
+        ui.InfoLabel.Text = sprintf('Auto-fit candidates ready: %d assigned / %d peaks. Correct peaks, then Fit Curated.', ...
+            size(state.manual_points, 1), size(peaks,1));
         ui.InfoLabel.Visible = "on";
-        local_log_operation(sprintf('Auto fit: %d branches / %d peaks', ...
-            n_branches, size(peaks,1)));
+        ui.DispInfoLabel.Text = "Candidates only. Use Correct Peak or Fit Curated.";
+        local_log_operation(sprintf('Auto fit candidates: %d branches / %d assigned / %d peaks', ...
+            n_branches, size(state.manual_points,1), size(peaks,1)));
+        local_update_heatmap_branch_overlays();
 
         function local_auto_fit_progress(~, message)
             ui.InfoLabel.Text = char(message);
@@ -1596,7 +1676,7 @@ end
         % Toggle hybrid correction mode: click the corrected peak energy in
         % the single-spectrum panel to replace/add a point in auto branches.
         if isempty(state.manual_branches)
-            ui.InfoLabel.Text = "Run Auto Fit first, then use Correct Auto.";
+            ui.InfoLabel.Text = "Run Auto Fit first, then use Correct Peak.";
             ui.InfoLabel.Visible = "on";
             return
         end
@@ -1611,13 +1691,13 @@ end
             ui.PickGuessesButton.BackgroundColor = [0.96 0.96 0.96];
             ui.CorrectAutoButton.Text = "Click peak...";
             ui.CorrectAutoButton.BackgroundColor = [1.0 0.92 0.55];
-            ui.InfoLabel.Text = sprintf("Correct Auto [%s]: click the corrected peak in the single-spectrum panel.", ...
+            ui.InfoLabel.Text = sprintf("Correct Peak [%s]: click the corrected peak in the single-spectrum panel.", ...
                 char(string(ui.CorrectionBranchDropdown.Value)));
             ui.InfoLabel.Visible = "on";
         else
-            ui.CorrectAutoButton.Text = "Correct Auto";
+            ui.CorrectAutoButton.Text = "Correct Peak";
             ui.CorrectAutoButton.BackgroundColor = [0.96 0.96 0.96];
-            ui.InfoLabel.Text = "Correct Auto cancelled.";
+            ui.InfoLabel.Text = "Correct Peak cancelled.";
             ui.InfoLabel.Visible = "on";
         end
     end
@@ -1663,8 +1743,14 @@ end
         branch_colors = qe_plot_helpers.branch_colors();
         state.fitResults = {};
         n_branches = numel(state.manual_branches);
+        fit_indices = qe_selected_branch_indices(n_branches, ui.FitBranchDropdown.Value);
+        if isempty(fit_indices)
+            hold(ax, 'off');
+            ui.DispInfoLabel.Text = "No selected branch to fit.";
+            return
+        end
 
-        for b = 1:n_branches
+        for b = fit_indices
             br = state.manual_branches{b};
             if isempty(br), continue; end
             col = branch_colors(mod(b-1, size(branch_colors,1))+1, :);
@@ -1689,14 +1775,18 @@ end
         grid(ax, 'on');
         xlabel(ax, 'q (1/Å)');
         ylabel(ax, 'Energy (meV)');
-        title(ax, sprintf('Dispersion [%s] | %d branches', disp_model_name, n_branches));
+        title(ax, sprintf('Dispersion [%s] | %s', ...
+            disp_model_name, char(string(ui.FitBranchDropdown.Value))));
         legend(ax, 'Location', 'best', 'FontSize', 7);
 
         % Summarize in info label
         n_fitted = sum(~cellfun('isempty', state.fitResults));
-        ui.DispInfoLabel.Text = sprintf('Fitted %d/%d branches with %s', ...
-            n_fitted, n_branches, disp_model_name);
-        local_log_operation(sprintf('Fit dispersion: %s, %d branches', disp_model_name, n_fitted));
+        ui.DispInfoLabel.Text = sprintf('Fitted %d selected branch(es) with %s', ...
+            n_fitted, disp_model_name);
+        local_log_operation(sprintf('Fit dispersion: %s, target=%s, %d branch(es)', ...
+            disp_model_name, char(string(ui.FitBranchDropdown.Value)), n_fitted));
+        local_update_heatmap_branch_overlays();
+        local_update_selected_q_views();
     end
 
     function local_on_export_dispersion(~, ~)
@@ -1764,7 +1854,7 @@ end
             state.autoCorrectionArmed = false;
             ui.PickPtsButton.Text = "Pick Peaks";
             ui.PickPtsButton.BackgroundColor = [0.96 0.96 0.96];
-            ui.CorrectAutoButton.Text = "Correct Auto";
+            ui.CorrectAutoButton.Text = "Correct Peak";
             ui.CorrectAutoButton.BackgroundColor = [0.96 0.96 0.96];
             ui.GuessField.Value = "";
             delete(findobj(ui.SingleAxes, 'Tag', 'guess_marker'));
@@ -1878,7 +1968,7 @@ end
         %
         % IMPORTANT: Always exports from physicalQE (the true q-E map),
         % regardless of the current view mode. This avoids exporting
-        % the normalized/comparison view as if it were raw physical data.
+        % the comparison view as if it were raw physical data.
         if isempty(state.physicalQE)
             ui.InfoLabel.Text = "Load data first";
             ui.InfoLabel.Visible = "on";
@@ -1940,7 +2030,7 @@ end
             end
 
             % Unprocessed physical data (always from physicalQE, never from
-            % the active view — prevents Normalized view data from being
+            % the active view — prevents Comparison view data from being
             % mislabeled as raw physical data)
             export.intensity_unprocessed = double(qe_physical.intensity);
 
@@ -2108,7 +2198,7 @@ end
             local_clear_axes(ui.DispersionAxes);
             local_clear_axes(ui.WaterfallAxes);
             title(ui.QEAxes, "Physical q-E Map");
-            title(ui.ComparisonAxes, "Normalized Off-axis Component");
+            title(ui.ComparisonAxes, "Comparison Off-axis Component");
             title(ui.SingleAxes, "Spectrum");
             title(ui.DispersionAxes, "Dispersion");
             title(ui.WaterfallAxes, "Stacked Spectra");
@@ -2190,7 +2280,8 @@ end
             "Color", [0.95 0.95 0.98], ...
             "LineWidth", 1.2, ...
             "Label", sprintf("q=%.4f", selected_q), ...
-            "LabelHorizontalAlignment", "left");
+            "LabelHorizontalAlignment", "left", ...
+            "Tag", "selected_q_marker");
         local_plot_dispersion_overlay(ax, qe);
         hold(ax, "off");
     end
@@ -2201,14 +2292,14 @@ end
         local_clear_axes(ax);
 
         if isempty(state.comparisonQE)
-            title(ax, "Normalized Off-axis Component | press Build Views");
+            title(ax, "Comparison Off-axis Component | press Build Views");
             xlabel(ax, "q (1/A)");
             ylabel(ax, "Energy relative to ZLP (meV)");
             grid(ax, "on");
             return
         end
 
-        local_plot_qe_map(ax, state.comparisonQE, "Normalized Off-axis Component", "normalized");
+        local_plot_qe_map(ax, state.comparisonQE, "Comparison Off-axis Component", "normalized");
     end
 
 
@@ -2397,6 +2488,8 @@ end
 
 
 
+        local_plot_single_branch_fit_overlay(ax, qe, q_index, energy_axis, display_values);
+
         hold(ax, "off");
 
         grid(ax, "on");
@@ -2423,6 +2516,128 @@ end
                 || (~isempty(bg_diag_qi) && pp_opts.do_bg_sub)
             legend(ax, "Location", "best");
         end
+    end
+
+
+    function local_plot_single_branch_fit_overlay(ax, qe, q_index, energy_axis, trace_values)
+        if isempty(state.fitResults) || isempty(state.manual_branches)
+            return
+        end
+        if isempty(qe) || q_index < 1 || q_index > numel(qe.q_Ainv)
+            return
+        end
+
+        q_value = double(qe.q_Ainv(q_index));
+        branch_colors = qe_plot_helpers.branch_colors();
+        q_tol = local_branch_correction_q_tolerance();
+        y_anchor = local_single_overlay_y_anchor(trace_values);
+
+        for b = 1:numel(state.fitResults)
+            if b > numel(state.manual_branches)
+                continue
+            end
+            fit_result = state.fitResults{b};
+            if isempty(fit_result)
+                continue
+            end
+
+            col = branch_colors(mod(b-1, size(branch_colors, 1))+1, :);
+            fit_energy = local_eval_branch_fit_at_q(fit_result, q_value);
+            branch_energy = local_branch_energy_at_q(state.manual_branches{b}, q_value, q_tol);
+
+            if isfinite(fit_energy) && fit_energy >= energy_axis(1) && fit_energy <= energy_axis(end)
+                xline(ax, fit_energy, '--', ...
+                    'Color', col, ...
+                    'LineWidth', 1.6, ...
+                    'Label', sprintf('B%d fit %.0f', b, fit_energy), ...
+                    'LabelVerticalAlignment', 'bottom', ...
+                    'LabelHorizontalAlignment', 'left', ...
+                    'Tag', 'branch_fit_single_overlay');
+            end
+
+            if isfinite(branch_energy) && branch_energy >= energy_axis(1) && branch_energy <= energy_axis(end)
+                plot(ax, branch_energy, y_anchor, 'o', ...
+                    'MarkerSize', 7, ...
+                    'MarkerFaceColor', 'w', ...
+                    'MarkerEdgeColor', col, ...
+                    'LineWidth', 1.4, ...
+                    'DisplayName', sprintf('B%d point %.0f', b, branch_energy), ...
+                    'Tag', 'branch_fit_single_overlay');
+            end
+        end
+    end
+
+
+    function energy_meV = local_eval_branch_fit_at_q(fit_result, q_value)
+        energy_meV = NaN;
+        if isempty(fit_result) || ~isfield(fit_result, 'q_fit') || ~isfield(fit_result, 'E_fit')
+            return
+        end
+
+        q_fit = double(fit_result.q_fit(:));
+        e_fit = double(fit_result.E_fit(:));
+        valid = isfinite(q_fit) & isfinite(e_fit);
+        q_fit = q_fit(valid);
+        e_fit = e_fit(valid);
+        if numel(q_fit) < 2
+            return
+        end
+
+        if all(q_fit >= 0) && q_value < 0
+            query_q = abs(q_value);
+        elseif all(q_fit <= 0) && q_value > 0
+            query_q = -abs(q_value);
+        else
+            query_q = q_value;
+        end
+
+        [q_fit, order] = sort(q_fit);
+        e_fit = e_fit(order);
+        [q_unique, ia] = unique(q_fit, 'stable');
+        e_unique = e_fit(ia);
+        if query_q < min(q_unique) || query_q > max(q_unique)
+            return
+        end
+        energy_meV = interp1(q_unique, e_unique, query_q, 'linear', NaN);
+    end
+
+
+    function energy_meV = local_branch_energy_at_q(branch_points, q_value, q_tol)
+        energy_meV = NaN;
+        if isempty(branch_points) || size(branch_points, 2) < 2
+            return
+        end
+        [q_delta, idx] = min(abs(double(branch_points(:,1)) - q_value));
+        if isempty(idx) || ~isfinite(q_delta) || q_delta > q_tol
+            return
+        end
+        energy_meV = double(branch_points(idx, 2));
+    end
+
+
+    function y_anchor = local_single_overlay_y_anchor(values)
+        finite_values = double(values(:));
+        finite_values = finite_values(isfinite(finite_values));
+        if isempty(finite_values)
+            y_anchor = 1;
+            return
+        end
+
+        if strcmpi(local_trace_y_scale(), "log")
+            finite_values = finite_values(finite_values > 0);
+            if isempty(finite_values)
+                y_anchor = 1;
+                return
+            end
+            y_min = min(finite_values);
+            y_max = max(finite_values);
+            y_anchor = exp(log(y_min) + 0.88 * (log(y_max) - log(y_min)));
+            return
+        end
+
+        y_min = min(finite_values);
+        y_max = max(finite_values);
+        y_anchor = y_min + 0.88 * (y_max - y_min);
     end
 
 
@@ -2493,6 +2708,21 @@ end
     end
 
 
+    function local_update_heatmap_branch_overlays()
+        axes_to_update = [ui.QEAxes, ui.ComparisonAxes];
+        for ax_idx = 1:numel(axes_to_update)
+            ax = axes_to_update(ax_idx);
+            if isempty(ax) || ~isgraphics(ax)
+                continue
+            end
+            delete(findobj(ax, "Tag", "branch_fit_overlay"));
+            hold(ax, "on");
+            local_plot_dispersion_overlay(ax, []);
+            hold(ax, "off");
+        end
+    end
+
+
     function local_plot_dispersion_overlay(ax, qe)
         % --- Manual points overlay ---
         if ~isempty(state.manual_branches)
@@ -2503,7 +2733,8 @@ end
                 bc = branch_colors{min(bi, numel(branch_colors))};
                 scatter(ax, bpts(:,1), bpts(:,2), 36, 'filled', ...
                     'MarkerFaceColor', bc, 'MarkerEdgeColor', [1 1 1], ...
-                    'LineWidth', 0.8, 'HandleVisibility', 'off');
+                    'LineWidth', 0.8, 'HandleVisibility', 'off', ...
+                    'Tag', 'branch_fit_overlay');
             end
             local_plot_correction_markers(ax);
         elseif ~isempty(state.manual_points)
@@ -2511,7 +2742,8 @@ end
             mc = [0.1 0.8 0.2];
             scatter(ax, pts(:,1), pts(:,2), 36, 'filled', ...
                 'MarkerFaceColor', [1 1 1], 'MarkerEdgeColor', mc, ...
-                'LineWidth', 1.2, 'HandleVisibility', 'off');
+                'LineWidth', 1.2, 'HandleVisibility', 'off', ...
+                'Tag', 'branch_fit_overlay');
         end
 
     end
@@ -2618,10 +2850,56 @@ end
 
         current_point = ax.CurrentPoint;
         q_value = current_point(1, 1);
-        energy_value = current_point(1, 2);
         [~, state.selectedQIndex] = min(abs(state.physicalQE.q_Ainv - q_value));
 
-        local_update_all_views();
+        local_update_selected_q_views();
+    end
+
+
+    function local_update_selected_q_views()
+        qe = local_get_active_qe();
+        if isempty(qe)
+            return
+        end
+        local_plot_single_spectrum(qe);
+        local_update_q_selection_markers();
+        drawnow limitrate;
+    end
+
+
+    function local_update_q_selection_markers()
+        if isempty(state.physicalQE)
+            return
+        end
+        selected_q = state.physicalQE.q_Ainv(state.selectedQIndex);
+        axes_to_update = [ui.QEAxes, ui.ComparisonAxes];
+        for ax_idx = 1:numel(axes_to_update)
+            ax = axes_to_update(ax_idx);
+            if isempty(ax) || ~isgraphics(ax)
+                continue
+            end
+
+            markers = findobj(ax, "Tag", "selected_q_marker");
+            if isempty(markers)
+                hold(ax, "on");
+                xline(ax, selected_q, "-", ...
+                    "Color", [0.95 0.95 0.98], ...
+                    "LineWidth", 1.2, ...
+                    "Label", sprintf("q=%.4f", selected_q), ...
+                    "LabelHorizontalAlignment", "left", ...
+                    "Tag", "selected_q_marker");
+                hold(ax, "off");
+                continue
+            end
+
+            for marker_idx = 1:numel(markers)
+                try
+                    markers(marker_idx).Value = selected_q;
+                    markers(marker_idx).Label = sprintf("q=%.4f", selected_q);
+                catch
+                end
+            end
+        end
     end
 
 
@@ -2655,7 +2933,7 @@ end
                 local_append_branch_correction(correction);
                 local_sync_manual_points_from_branches();
 
-                ui.CorrectAutoButton.Text = "Correct Auto";
+                ui.CorrectAutoButton.Text = "Correct Peak";
                 ui.CorrectAutoButton.BackgroundColor = [0.96 0.96 0.96];
                 state.autoCorrectionArmed = false;
                 if isnan(correction.old_energy_meV)
@@ -2765,6 +3043,25 @@ end
         end
     end
 
+    function specs = local_branch_specs_from_ui()
+        windows = [
+            ui.Branch1MinField.Value, ui.Branch1MaxField.Value
+            ui.Branch2MinField.Value, ui.Branch2MaxField.Value
+            ui.Branch3MinField.Value, ui.Branch3MaxField.Value
+            ];
+        specs = repmat(struct('name', '', 'energy_window_meV', [0 0], 'enabled', true), 3, 1);
+        for b = 1:3
+            win = sort(double(windows(b, :)));
+            if any(~isfinite(win)) || win(1) == win(2)
+                error('interactive_qe_browser:invalidBranchWindow', ...
+                    'Branch %d energy window must have two finite, different meV values.', b);
+            end
+            specs(b).name = sprintf('Branch %d', b);
+            specs(b).energy_window_meV = win;
+            specs(b).enabled = true;
+        end
+    end
+
 
     function local_sync_correction_controls()
         if ~isfield(ui, 'CorrectionBranchDropdown') || isempty(ui.CorrectionBranchDropdown)
@@ -2798,6 +3095,19 @@ end
         ui.CorrectionBranchDropdown.Enable = local_on_off(n_branches > 0);
         ui.CorrectAutoButton.Enable = local_on_off(n_branches > 0);
         ui.UndoCorrectionButton.Enable = local_on_off(~isempty(state.branchCorrectionLog));
+
+        if isfield(ui, 'FitBranchDropdown') && ~isempty(ui.FitBranchDropdown)
+            fit_items = [{'All'}, arrayfun(@(b) sprintf('Branch %d', b), ...
+                1:n_branches, 'UniformOutput', false)];
+            old_fit_value = char(string(ui.FitBranchDropdown.Value));
+            ui.FitBranchDropdown.Items = fit_items;
+            if any(strcmp(old_fit_value, fit_items))
+                ui.FitBranchDropdown.Value = old_fit_value;
+            else
+                ui.FitBranchDropdown.Value = 'All';
+            end
+            ui.FitBranchDropdown.Enable = local_on_off(n_branches > 0);
+        end
     end
 
 
@@ -2837,7 +3147,8 @@ end
                 'MarkerFaceColor', [1.0 0.95 0.2], ...
                 'MarkerEdgeColor', [0.05 0.05 0.05], ...
                 'LineWidth', 0.9, ...
-                'HandleVisibility', 'off');
+                'HandleVisibility', 'off', ...
+                'Tag', 'branch_fit_overlay');
         catch
         end
     end
@@ -2947,11 +3258,11 @@ end
 
     function local_update_info_label()
         if isempty(state.dataset)
-            ui.InfoLabel.Text = "Top-left shows the original Physical q-E map. Top-right shows the normalized off-axis component reconstructed from manual symmetric off-axis reference bands.";
+            ui.InfoLabel.Text = "Top-left shows the original Physical q-E map. Top-right shows the comparison off-axis component reconstructed from manual symmetric off-axis reference bands.";
             return
         end
 
-        if strcmpi(ui.ViewModeDropdown.Value, "Normalized")
+        if local_is_comparison_view_selected()
             if isempty(state.comparisonQE)
                 ui.InfoLabel.Text = "Off-axis component not built yet. Press Build Views to reconstruct the center from manual symmetric off-axis reference bands.";
                 return
@@ -3015,8 +3326,8 @@ end
 
 
     function qe = local_get_active_qe()
-        switch lower(char(ui.ViewModeDropdown.Value))
-            case "normalized"
+        switch lower(char(local_normalize_view_mode_value(ui.ViewModeDropdown.Value)))
+            case {"comparison", "normalized"}
                 if ~isempty(state.comparisonQE)
                     qe = state.comparisonQE;
                 else
@@ -3029,6 +3340,21 @@ end
                     qe = state.eq3dQE;
                 end
         end
+    end
+
+
+    function value = local_normalize_view_mode_value(value_in)
+        value = char(string(value_in));
+        if strcmpi(value, "Normalized")
+            value = 'Comparison';
+        elseif ~any(strcmp(value, {'Physical', 'Comparison'}))
+            value = 'Physical';
+        end
+    end
+
+
+    function tf = local_is_comparison_view_selected()
+        tf = strcmpi(local_normalize_view_mode_value(ui.ViewModeDropdown.Value), 'Comparison');
     end
 
 
@@ -3211,7 +3537,7 @@ end
         if isempty(qe)
             view_name = char(ui.ViewModeDropdown.Value);
         elseif strcmpi(qe.view_kind, "comparison")
-            view_name = "Normalized";
+            view_name = "Comparison";
         else
             view_name = "Physical";
         end
@@ -3335,7 +3661,7 @@ end
             case "curvature"
                 y_label = "Curvature signal";
             otherwise
-                if strcmpi(local_current_view_name(), "Normalized")
+                if strcmpi(local_current_view_name(), "Comparison")
                     y_label = "Off-axis component intensity";
                 else
                     y_label = "Physical intensity";
@@ -3704,7 +4030,16 @@ end
         pre_opts = pp_opts;
         pre_opts.do_bg_sub = false;
         pre_opts.do_deconv = false;
-        qe_pre_qi = qe_preprocess(qe_raw, pre_opts);
+        pre_hash = local_opts_hash(pre_opts, qe_raw);
+        if isfield(state, "singlePreviewCache") ...
+                && strcmp(state.singlePreviewCache.hash, pre_hash) ...
+                && ~isempty(state.singlePreviewCache.qe_pre)
+            qe_pre_qi = state.singlePreviewCache.qe_pre;
+        else
+            qe_pre_qi = qe_preprocess(qe_raw, pre_opts);
+            state.singlePreviewCache.hash = pre_hash;
+            state.singlePreviewCache.qe_pre = qe_pre_qi;
+        end
 
         % 2. BG subtraction on single q only
         if pp_opts.do_bg_sub
