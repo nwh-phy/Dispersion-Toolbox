@@ -24,11 +24,14 @@ function results = propagate_seed_peaks(intensity, energy_axis, channel_axis, op
 %       E_min           - Fitting window lower bound [meV] (default: 50)
 %       E_max           - Fitting window upper bound [meV] (default: Inf)
 %       smooth_width    - Smoothing for peak detection fallback (default: 25)
+%       bootstrap_ci_samples - Bootstrap samples for apex energy CI (default: 25 for Fano)
 %       verbose         - Print progress (default: true)
 %
 %   Output:
 %     results struct with fields:
-%       peaks       - [N × 5] array: [channel_val, E0, width, R², amplitude]
+%       peaks       - [N × 13] array: [channel_val, E, width, R², amplitude,
+%                     E_ci_lo, E_ci_hi, width_ci_lo, width_ci_hi,
+%                     amp_ci_lo, amp_ci_hi, raw_height, branch_id]
 %       fit_details - cell array of per-channel fit results
 %       seed_idx    - index of the seed channel used
 %       n_success   - number of successfully fitted channels
@@ -51,11 +54,19 @@ arguments
     options.E_min         (1,1) double = 50
     options.E_max         (1,1) double = Inf
     options.smooth_width  (1,1) double {mustBePositive} = 25
+    options.bootstrap_ci_samples (1,1) double = NaN
     options.verbose       (1,1) logical = true
 end
 
 n_channels = numel(channel_axis);
 n_seeds = numel(options.seed_guesses);
+if isnan(options.bootstrap_ci_samples)
+    options.bootstrap_ci_samples = local_default_bootstrap_ci_samples(options.peak_model);
+elseif ~isfinite(options.bootstrap_ci_samples) || options.bootstrap_ci_samples < 0 || ...
+        options.bootstrap_ci_samples ~= floor(options.bootstrap_ci_samples)
+    error('propagate_seed_peaks:InvalidBootstrapSamples', ...
+        'bootstrap_ci_samples must be a nonnegative integer.');
+end
 
 % Auto-detect seed index if not provided: pick the channel closest to
 % the median |q| (or median x), avoiding the extremes and Γ-point
@@ -82,6 +93,7 @@ seed_result = fit_loss_function(energy_axis, seed_spectrum, ...
     'peak_model', options.peak_model, ...
     'pre_subtracted', options.pre_subtracted, ...
     'smooth_width', options.smooth_width, ...
+    'bootstrap_ci_samples', options.bootstrap_ci_samples, ...
     'max_peaks', n_seeds + 1);  % allow +1 for discovery
 
 if seed_result.R_squared < options.min_R2
@@ -92,6 +104,7 @@ end
 
 % Reference amplitudes for stopping criterion
 seed_amps = seed_result.amplitude;
+[seed_peak_energy, seed_peak_ci] = local_branch_peak_energy(seed_result);
 
 if options.verbose
     fprintf('  Seed fit: %d peaks, R²=%.4f\n', seed_result.n_peaks, seed_result.R_squared);
@@ -102,16 +115,21 @@ if options.verbose
 end
 
 %% Initialize storage
-all_peaks = [];  % [channel_val, omega_p, gamma, R², amplitude]
+all_peaks = [];  % [channel_val, E, gamma, R², amplitude, CIs..., raw_h, branch_id]
 fit_details = cell(n_channels, 1);
 
 % Store seed results
 fit_details{seed_idx} = seed_result;
 for p = 1:seed_result.n_peaks
-    % [channel_val, omega_p, gamma, R², amplitude, branch_id]
+    % [channel_val, E, gamma, R², amplitude, E_ci_lo, E_ci_hi, G_ci_lo,
+    %  G_ci_hi, A_ci_lo, A_ci_hi, raw_h, branch_id]
     all_peaks(end+1, :) = [channel_axis(seed_idx), ...
-        seed_result.omega_p(p), seed_result.gamma(p), ...
-        seed_result.R_squared, seed_result.amplitude(p), p]; %#ok<AGROW>
+        seed_peak_energy(p), seed_result.gamma(p), ...
+        seed_result.R_squared, seed_result.amplitude(p), ...
+        seed_peak_ci(p, 1), seed_peak_ci(p, 2), ...
+        seed_result.gamma_ci(p, 1), seed_result.gamma_ci(p, 2), ...
+        seed_result.amplitude_ci(p, 1), seed_result.amplitude_ci(p, 2), ...
+        NaN, p]; %#ok<AGROW>
 end
 
 %% Propagate in requested directions
@@ -128,10 +146,8 @@ n_success = 1;  % seed counts
 for d = 1:numel(directions)
     dir_name = directions{d};
     if strcmp(dir_name, 'positive')
-        step = 1;
         range = (seed_idx + 1):n_channels;
     else
-        step = -1;
         range = (seed_idx - 1):-1:1;
     end
 
@@ -168,9 +184,11 @@ for d = 1:numel(directions)
                 'peak_model', options.peak_model, ...
                 'pre_subtracted', options.pre_subtracted, ...
                 'smooth_width', options.smooth_width, ...
+                'bootstrap_ci_samples', options.bootstrap_ci_samples, ...
                 'max_peaks', numel(guesses) + 1);
 
             fit_details{idx} = result;
+            [result_peak_energy, result_peak_ci] = local_branch_peak_energy(result);
 
             % Quality check
             if result.R_squared < options.min_R2
@@ -203,8 +221,12 @@ for d = 1:numel(directions)
 
                         % Store the peak: include branch_id = gi
                         all_peaks(end+1, :) = [channel_axis(idx), ...
-                            result.omega_p(best_p), result.gamma(best_p), ...
-                            result.R_squared, result.amplitude(best_p), gi]; %#ok<AGROW>
+                            result_peak_energy(best_p), result.gamma(best_p), ...
+                            result.R_squared, result.amplitude(best_p), ...
+                            result_peak_ci(best_p, 1), result_peak_ci(best_p, 2), ...
+                            result.gamma_ci(best_p, 1), result.gamma_ci(best_p, 2), ...
+                            result.amplitude_ci(best_p, 1), result.amplitude_ci(best_p, 2), ...
+                            NaN, gi]; %#ok<AGROW>
                     else
                         % Shift too large: keep old guess but mark as suspect
                         new_guesses(gi) = old_pos;
@@ -250,4 +272,59 @@ results.peak_model = options.peak_model;
 results.channel_axis = channel_axis;
 results.energy_axis = energy_axis;
 
+end
+
+
+function [peak_energy, peak_ci] = local_branch_peak_energy(result)
+    peak_energy = result.omega_p(:);
+    peak_ci = local_result_ci(result, 'omega_p_ci', numel(peak_energy));
+    if isfield(result, 'apex_energy_meV')
+        apex = result.apex_energy_meV(:);
+        use_apex = isfinite(apex);
+        peak_energy(use_apex) = apex(use_apex);
+        if isfield(result, 'apex_energy_ci')
+            apex_ci = result.apex_energy_ci;
+            valid_ci_rows = use_apex & (1:numel(peak_energy))' <= size(apex_ci, 1);
+            peak_ci(valid_ci_rows, :) = apex_ci(valid_ci_rows, :);
+        end
+    end
+    peak_ci = local_fill_energy_ci(peak_energy, peak_ci);
+end
+
+
+function n_samples = local_default_bootstrap_ci_samples(peak_model)
+    if strcmpi(peak_model, 'fano')
+        n_samples = 25;
+    else
+        n_samples = 0;
+    end
+end
+
+
+function ci = local_result_ci(result, field_name, n_rows)
+    ci = NaN(n_rows, 2);
+    if isfield(result, field_name)
+        field_ci = result.(field_name);
+        n = min(n_rows, size(field_ci, 1));
+        if size(field_ci, 2) >= 2
+            ci(1:n, :) = field_ci(1:n, 1:2);
+        end
+    end
+end
+
+
+function ci = local_fill_energy_ci(energy, ci)
+    for i = 1:numel(energy)
+        center = energy(i);
+        if ~isfinite(center)
+            continue
+        end
+        half_width = max(1, 0.001 * abs(center));
+        if ~all(isfinite(ci(i, :))) || ci(i, 1) >= center || ci(i, 2) <= center
+            ci(i, :) = [center - half_width, center + half_width];
+        else
+            ci(i, 1) = min(ci(i, 1), center - half_width);
+            ci(i, 2) = max(ci(i, 2), center + half_width);
+        end
+    end
 end

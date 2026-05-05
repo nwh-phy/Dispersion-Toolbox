@@ -27,11 +27,23 @@ arguments
     options.initial_guesses (:,1) double = []
     options.peak_model     (1,:) char = 'lorentz'
     options.pre_subtracted (1,1) logical = false
+    options.bootstrap_ci_samples (1,1) double = NaN
 end
 
 %% Load peak model definition
 pk_model = peak_models(options.peak_model);
 n_peak_params = pk_model.n_params;
+if isnan(options.bootstrap_ci_samples)
+    if strcmpi(options.peak_model, 'fano')
+        options.bootstrap_ci_samples = 25;
+    else
+        options.bootstrap_ci_samples = 0;
+    end
+elseif ~isfinite(options.bootstrap_ci_samples) || options.bootstrap_ci_samples < 0 || ...
+        options.bootstrap_ci_samples ~= floor(options.bootstrap_ci_samples)
+    error('fit_loss_function:InvalidBootstrapSamples', ...
+        'bootstrap_ci_samples must be a nonnegative integer.');
+end
 
 %% Prepare data
 E = double(energy_meV(:));
@@ -179,6 +191,7 @@ model = @(p, E_in) local_composite_model(p, E_in, n_peaks, pk_model, n_bg_params
 %% Fit
 has_jacobian = false;
 J_fit = [];
+fit_opts = [];
 try
     fit_opts = optimoptions('lsqcurvefit', ...
         'Display', 'off', ...
@@ -317,6 +330,10 @@ end
 gamma_ratio_vals = gamma_vals ./ max(omega_p_vals, eps);
 [peak_valid_vals, peak_quality_notes] = local_peak_quality( ...
     omega_p_vals, gamma_ratio_vals, apex_offset_vals);
+[apex_energy_ci, apex_ci_method] = local_apex_energy_ci( ...
+    options.bootstrap_ci_samples, has_jacobian, fit_opts, model, p_fit, lb, ub, ...
+    E_w, S_n, n_bg_params, n_peak_params, pk_model, peak_param_vals, ...
+    omega_p_vals, omega_p_ci, apex_energy_vals, E_fine);
 
 %% Build result
 result = struct();
@@ -344,6 +361,8 @@ result.bg_curve = bg_curve;
 result.peak_curves = peak_curves;
 result.peak_heights = peak_heights;
 result.apex_energy_meV = apex_energy_vals;
+result.apex_energy_ci = apex_energy_ci;
+result.apex_ci_method = apex_ci_method;
 result.apex_offset_meV = apex_offset_vals;
 result.gamma_ratio = gamma_ratio_vals;
 result.peak_valid = peak_valid_vals;
@@ -422,6 +441,218 @@ function C = local_robust_constant_baseline(S, edge_idx)
         C = 0;
     else
         C = median(baseline_vals);
+    end
+end
+
+
+function [apex_ci, method] = local_apex_energy_ci( ...
+    n_samples, has_jacobian, fit_opts, model, p_fit, lb, ub, E_w, S_n, ...
+    n_bg_params, n_peak_params, pk_model, peak_param_vals, omega_p_vals, ...
+    omega_p_ci, apex_energy_vals, E_fine)
+
+    n_targets = numel(apex_energy_vals);
+    apex_ci = NaN(n_targets, 2);
+    boot_valid = false(n_targets, 1);
+    method = 'fallback';
+
+    if n_samples > 0 && has_jacobian && ~isempty(fit_opts) && n_targets > 0
+        [boot_ci, boot_valid] = local_bootstrap_apex_ci( ...
+            n_samples, fit_opts, model, p_fit, lb, ub, E_w, S_n, ...
+            n_bg_params, n_peak_params, pk_model, peak_param_vals, E_fine);
+        apex_ci(boot_valid, :) = boot_ci(boot_valid, :);
+        if any(boot_valid)
+            method = 'bootstrap';
+        end
+    end
+
+    apex_ci = local_fill_apex_ci(apex_ci, apex_energy_vals, omega_p_vals, omega_p_ci, E_fine);
+    if any(boot_valid) && any(~boot_valid)
+        method = 'bootstrap+fallback';
+    end
+end
+
+
+function [boot_ci, valid] = local_bootstrap_apex_ci( ...
+    n_samples, fit_opts, model, p_fit, lb, ub, E_w, S_n, ...
+    n_bg_params, n_peak_params, pk_model, target_peak_params, E_fine)
+
+    n_targets = size(target_peak_params, 1);
+    boot_ci = NaN(n_targets, 2);
+    valid = false(n_targets, 1);
+    if n_targets == 0
+        return
+    end
+
+    base_pred = model(p_fit, E_w);
+    residual_pool = S_n - base_pred;
+    residual_pool = residual_pool(isfinite(residual_pool));
+    if isempty(residual_pool)
+        return
+    end
+
+    try
+        boot_opts = optimoptions(fit_opts, ...
+            'Display', 'off', ...
+            'MaxIterations', 200, ...
+            'MaxFunctionEvaluations', 2000);
+    catch
+        boot_opts = fit_opts;
+    end
+
+    stream = RandStream('mt19937ar', 'Seed', 5489);
+    boot_apex = NaN(n_samples, n_targets);
+    n_boot_peaks = max(0, floor((numel(p_fit) - n_bg_params) / n_peak_params));
+
+    for s = 1:n_samples
+        sample_idx = randi(stream, numel(residual_pool), numel(E_w), 1);
+        boot_y = base_pred + residual_pool(sample_idx);
+        try
+            p_boot = lsqcurvefit(model, p_fit, E_w, boot_y, lb, ub, boot_opts);
+        catch
+            continue
+        end
+
+        boot_params = local_extract_peak_params(p_boot, n_bg_params, n_peak_params, n_boot_peaks);
+        boot_apex(s, :) = local_match_bootstrap_apex( ...
+            boot_params, target_peak_params, pk_model, E_fine);
+    end
+
+    min_valid = max(5, ceil(0.25 * n_samples));
+    for i = 1:n_targets
+        vals = boot_apex(:, i);
+        vals = vals(isfinite(vals));
+        if numel(vals) < min_valid
+            continue
+        end
+
+        boot_ci(i, :) = [local_percentile(vals, 2.5), local_percentile(vals, 97.5)];
+        valid(i) = all(isfinite(boot_ci(i, :)));
+    end
+end
+
+
+function peak_params = local_extract_peak_params(p, n_bg_params, n_peak_params, n_peaks)
+    peak_params = NaN(n_peaks, n_peak_params);
+    for i = 1:n_peaks
+        base = n_bg_params + n_peak_params * (i - 1);
+        params = p(base + (1:n_peak_params));
+        params(1:min(3, n_peak_params)) = abs(params(1:min(3, n_peak_params)));
+        peak_params(i, :) = params(:).';
+    end
+end
+
+
+function matched_apex = local_match_bootstrap_apex(boot_params, target_peak_params, pk_model, E_fine)
+    n_targets = size(target_peak_params, 1);
+    matched_apex = NaN(1, n_targets);
+    if isempty(boot_params)
+        return
+    end
+
+    available = true(size(boot_params, 1), 1);
+    for i = 1:n_targets
+        distances = abs(boot_params(:, 1) - target_peak_params(i, 1));
+        distances(~available) = Inf;
+        [best_dist, best_idx] = min(distances);
+        if ~isfinite(best_dist)
+            continue
+        end
+
+        matched_apex(i) = local_param_apex_energy(pk_model, boot_params(best_idx, :), E_fine);
+        available(best_idx) = false;
+    end
+end
+
+
+function apex = local_param_apex_energy(pk_model, params, E_fine)
+    apex = NaN;
+    try
+        single = local_eval_peak(pk_model, params, E_fine);
+        [~, apex_idx] = max(single);
+        apex = E_fine(apex_idx);
+    catch
+    end
+
+    if ~isfinite(apex) && ~isempty(params)
+        apex = params(1);
+    end
+end
+
+
+function apex_ci = local_fill_apex_ci(apex_ci, apex_energy_vals, omega_p_vals, omega_p_ci, E_fine)
+    min_half_width = local_min_energy_half_width(E_fine);
+    for i = 1:numel(apex_energy_vals)
+        center = apex_energy_vals(i);
+        if ~isfinite(center) && i <= numel(omega_p_vals)
+            center = omega_p_vals(i);
+        end
+        if ~isfinite(center)
+            continue
+        end
+
+        lo = apex_ci(i, 1);
+        hi = apex_ci(i, 2);
+        if ~isfinite(lo) || ~isfinite(hi) || lo >= center || hi <= center
+            half_width = local_fallback_half_width(i, omega_p_vals, omega_p_ci, min_half_width);
+            apex_ci(i, :) = [center - half_width, center + half_width];
+            continue
+        end
+
+        lo = min(lo, center - min_half_width);
+        hi = max(hi, center + min_half_width);
+        apex_ci(i, :) = [lo, hi];
+    end
+end
+
+
+function half_width = local_fallback_half_width(i, omega_p_vals, omega_p_ci, min_half_width)
+    half_width = NaN;
+    if i <= size(omega_p_ci, 1) && i <= numel(omega_p_vals)
+        bounds = omega_p_ci(i, :);
+        if all(isfinite(bounds)) && isfinite(omega_p_vals(i))
+            half_width = max(abs(bounds - omega_p_vals(i)));
+        end
+    end
+    if ~isfinite(half_width) || half_width <= 0
+        half_width = min_half_width;
+    end
+    half_width = max(half_width, min_half_width);
+end
+
+
+function half_width = local_min_energy_half_width(E_fine)
+    E_fine = E_fine(isfinite(E_fine));
+    if numel(E_fine) >= 2
+        step = median(diff(sort(E_fine)));
+    else
+        step = NaN;
+    end
+    if ~isfinite(step) || step <= 0
+        step = 2;
+    end
+    half_width = max(step / 2, 1);
+end
+
+
+function value = local_percentile(vals, pct)
+    vals = sort(vals(:));
+    n = numel(vals);
+    if n == 0
+        value = NaN;
+        return
+    end
+    if n == 1
+        value = vals(1);
+        return
+    end
+
+    pos = 1 + (n - 1) * pct / 100;
+    lo = floor(pos);
+    hi = ceil(pos);
+    if lo == hi
+        value = vals(lo);
+    else
+        value = vals(lo) + (pos - lo) * (vals(hi) - vals(lo));
     end
 end
 

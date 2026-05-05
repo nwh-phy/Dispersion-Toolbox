@@ -30,22 +30,33 @@ classdef qe_plot_helpers
 
 
         function plot_branch_scatter(ax, br, col, label)
-            %PLOT_BRANCH_SCATTER  Plot branch points with optional CI error bars.
+            %PLOT_BRANCH_SCATTER  Plot branch points with CI/fallback error bars.
             %
             %   Plots q vs E (columns 1 and 2 of br). If columns 6-7 contain
-            %   valid CI bounds, error bars are drawn. Otherwise, filled scatter.
-            if size(br, 2) >= 7 && ~all(isnan(br(:,6)))
-                E_err = (br(:,7) - br(:,6)) / 2;
-                E_err(isnan(E_err)) = 0;
-                errorbar(ax, br(:,1), br(:,2), E_err, ...
-                    'o', 'Color', col, 'MarkerFaceColor', col, ...
-                    'MarkerSize', 4, 'LineWidth', 0.8, 'CapSize', 3, ...
-                    'DisplayName', label);
-            else
-                scatter(ax, br(:,1), br(:,2), 30, col, 'filled', ...
-                    'MarkerFaceAlpha', 0.7, ...
-                    'DisplayName', label);
+            %   valid CI bounds, they are used. Otherwise a conservative
+            %   one-meV-scale floor is drawn so every point shows uncertainty.
+            if isempty(br)
+                return
             end
+
+            E_err = qe_plot_helpers.energy_error_half_width(br);
+            errorbar(ax, br(:,1), br(:,2), E_err, ...
+                'o', 'Color', col, 'MarkerFaceColor', col, ...
+                'MarkerSize', 4, 'LineWidth', 0.8, 'CapSize', 3, ...
+                'DisplayName', label);
+        end
+
+
+        function E_err = energy_error_half_width(br)
+            E = br(:,2);
+            E_err = max(1, 0.001 * abs(E));
+            if size(br, 2) < 7
+                return
+            end
+
+            ci_err = (br(:,7) - br(:,6)) / 2;
+            valid = isfinite(ci_err) & ci_err > 0 & br(:,6) < E & br(:,7) > E;
+            E_err(valid) = max(E_err(valid), ci_err(valid));
         end
 
 

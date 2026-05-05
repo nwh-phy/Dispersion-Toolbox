@@ -62,15 +62,20 @@ result = fit_loss_function(energy_meV, spectrum, ...
     'smooth_width', 7, ...
     'initial_guesses', center_meV, ...
     'peak_model', 'fano', ...
-    'pre_subtracted', true);
+    'pre_subtracted', true, ...
+    'bootstrap_ci_samples', 8);
 
 expected_apex = center_meV + gamma_meV / (2 * fano_q);
 
 verifyEqual(testCase, result.peak_model_name, 'Fano');
 verifyTrue(testCase, isfield(result, 'fano_q'));
 verifyTrue(testCase, isfield(result, 'peak_param_names'));
+verifyTrue(testCase, isfield(result, 'apex_energy_ci'));
+verifyTrue(testCase, contains(result.apex_ci_method, 'bootstrap'));
 verifyLessThan(testCase, abs(result.omega_p(1) - center_meV), 50);
 verifyLessThan(testCase, abs(result.apex_energy_meV(1) - expected_apex), 70);
+verifyLessThan(testCase, result.apex_energy_ci(1, 1), result.apex_energy_meV(1));
+verifyGreaterThan(testCase, result.apex_energy_ci(1, 2), result.apex_energy_meV(1));
 verifyLessThan(testCase, abs(result.fano_q(1) - fano_q), 1.5);
 verifyTrue(testCase, result.peak_valid(1));
 end
@@ -104,6 +109,18 @@ verifyPreSubtractedFitDetails(testCase, results.fit_details, 2);
 end
 
 
+function testQeAutoFitUsesApexForFanoBranchEnergy(testCase)
+[qe, qe_raw, opts] = makeFanoAutoFitCase();
+opts.guesses = [];
+
+results = qe_auto_fit(qe, qe_raw, opts);
+
+verifyFalse(testCase, results.used_seed);
+verifyFanoRowsUseApex(testCase, results.all_peaks, results.fit_details, qe.q_Ainv);
+verifyRowsHaveFiniteEnergyErrorBars(testCase, results.all_peaks);
+end
+
+
 function testPropagateSeedPeaksPropagatesPreSubtractedSeedMode(testCase)
 [qe, ~, opts, centers_meV] = makeAutoFitCase();
 seed_idx = 2;
@@ -121,6 +138,56 @@ results = propagate_seed_peaks(qe.intensity, qe.energy_meV, qe.q_Ainv, ...
     'verbose', false);
 
 verifyPreSubtractedFitDetails(testCase, results.fit_details, 2);
+end
+
+
+function testPropagateSeedPeaksUsesApexForFanoBranchEnergy(testCase)
+[qe, ~, opts, center_meV] = makeFanoAutoFitCase();
+seed_idx = 2;
+
+results = propagate_seed_peaks(qe.intensity, qe.energy_meV, qe.q_Ainv, ...
+    'seed_guesses', center_meV(seed_idx), ...
+    'seed_idx', seed_idx, ...
+    'direction', 'both', ...
+    'max_shift', 120, ...
+    'min_R2', 0, ...
+    'peak_model', 'fano', ...
+    'pre_subtracted', true, ...
+    'E_min', opts.E_min, 'E_max', opts.E_max, ...
+    'smooth_width', opts.smooth_width, ...
+    'bootstrap_ci_samples', opts.bootstrap_ci_samples, ...
+    'verbose', false);
+
+verifyFanoRowsUseApex(testCase, results.peaks, results.fit_details, qe.q_Ainv);
+verifyRowsHaveFiniteEnergyErrorBars(testCase, results.peaks);
+end
+
+
+function verifyFanoRowsUseApex(testCase, peak_rows, fit_details, q_axis)
+for qi = 1:numel(q_axis)
+    detail = fit_details{qi};
+    if isempty(detail)
+        continue
+    end
+
+    row = peak_rows(abs(peak_rows(:,1) - q_axis(qi)) < 1e-12, :);
+    verifyNotEmpty(testCase, row);
+    verifyLessThan(testCase, abs(row(1,2) - detail.apex_energy_meV(1)), 5);
+    verifyGreaterThan(testCase, abs(row(1,2) - detail.omega_p(1)), 10);
+end
+end
+
+
+function verifyRowsHaveFiniteEnergyErrorBars(testCase, peak_rows)
+verifyGreaterThanOrEqual(testCase, size(peak_rows, 2), 7);
+energy = peak_rows(:, 2);
+lo = peak_rows(:, 6);
+hi = peak_rows(:, 7);
+verifyTrue(testCase, all(isfinite(lo)));
+verifyTrue(testCase, all(isfinite(hi)));
+verifyTrue(testCase, all(lo < energy));
+verifyTrue(testCase, all(hi > energy));
+verifyTrue(testCase, all((hi - lo) > 0));
 end
 
 
@@ -176,6 +243,50 @@ opts.R2_threshold = 0;
 opts.verbose = false;
 opts.progress_fn = [];
 opts.pre_subtracted = true;
+end
+
+
+function [qe, qe_raw, opts, centers_meV] = makeFanoAutoFitCase()
+energy_meV = linspace(200, 1500, 500)';
+q_axis = [0.020; 0.030; 0.040];
+centers_meV = [700; 730; 760];
+gamma_meV = 180;
+fano_q = 2.7;
+baseline = 0.018;
+
+intensity = zeros(numel(energy_meV), numel(q_axis));
+for qi = 1:numel(q_axis)
+    amplitude = 0.24 + 0.01 * qi;
+    epsilon = (energy_meV - centers_meV(qi)) ./ max(gamma_meV / 2, eps);
+    intensity(:, qi) = baseline + amplitude .* (fano_q + epsilon).^2 ./ ...
+        ((1 + fano_q^2) .* (1 + epsilon.^2));
+end
+
+qe = struct();
+qe.intensity = intensity;
+qe.energy_meV = energy_meV;
+qe.q_Ainv = q_axis;
+qe_raw = qe;
+
+opts = struct();
+opts.E_min = 200;
+opts.E_max = 1500;
+opts.q_start = min(q_axis);
+opts.q_end = max(q_axis);
+opts.prominence = 0.02;
+opts.smooth_width = 7;
+opts.max_peaks = 1;
+opts.peak_model = 'fano';
+opts.guesses = [];
+opts.seed_idx = 2;
+opts.max_shift = 120;
+opts.energy_mask = true(size(energy_meV));
+opts.energy_axis = energy_meV;
+opts.R2_threshold = 0;
+opts.verbose = false;
+opts.progress_fn = [];
+opts.pre_subtracted = true;
+opts.bootstrap_ci_samples = 8;
 end
 
 

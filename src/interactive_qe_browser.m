@@ -1215,7 +1215,8 @@ end
 
         % Filter out peaks below E_min for display, and keep only reliable
         % peaks for acceptance into curated branches.
-        display_keep = result.omega_p >= E_min;
+        peak_energy = local_fit_peak_energy(result);
+        display_keep = peak_energy >= E_min;
         if ~any(display_keep)
             ui.FitInfoLabel.Text = "No valid peaks found above E_min";
             return
@@ -1278,9 +1279,9 @@ end
                 'Color', col, 'LineWidth', 1.5, 'Tag', 'lorentz_fit');
 
             % Peak marker at peak position on total fit
-            [~, pk_idx] = min(abs(result.energy_fit - result.omega_p(p)));
+            [~, pk_idx] = min(abs(result.energy_fit - peak_energy(p)));
             marker_y = result.curve_fit(pk_idx);
-            plot(ax, result.omega_p(p), marker_y, 'v', ...
+            plot(ax, peak_energy(p), marker_y, 'v', ...
                 'MarkerSize', 10, 'MarkerFaceColor', col, ...
                 'MarkerEdgeColor', 'k', 'Tag', 'lorentz_fit');
 
@@ -1292,7 +1293,7 @@ end
             if ~is_valid_peak
                 marker_label = sprintf('%s | low confidence', marker_label);
             end
-            text(ax, result.omega_p(p), marker_y * 1.08, ...
+            text(ax, peak_energy(p), marker_y * 1.08, ...
                 marker_label, ...
                 'FontSize', 9, 'FontWeight', 'bold', 'Color', col, ...
                 'HorizontalAlignment', 'center', 'Tag', 'lorentz_fit');
@@ -1329,6 +1330,16 @@ end
     end
 
 
+    function peak_energy = local_fit_peak_energy(result)
+        peak_energy = result.omega_p(:);
+        if isfield(result, 'apex_energy_meV')
+            apex = result.apex_energy_meV(:);
+            use_apex = isfinite(apex);
+            peak_energy(use_apex) = apex(use_apex);
+        end
+    end
+
+
     function local_on_accept_fit(~, ~)
         % Accept the pending fit and add peaks to dispersion
         if isempty(state.pendingFit)
@@ -1337,6 +1348,7 @@ end
 
         pf = state.pendingFit;
         result = pf.result;
+        peak_energy = local_fit_peak_energy(result);
         keep = pf.keep;
         abs_q = pf.abs_q;
         if isfield(pf, 'q_Ainv')
@@ -1353,7 +1365,7 @@ end
             for p = 1:result.n_peaks
                 if ~keep(p); continue; end
                 [state.manual_branches, correction] = qe_apply_branch_correction( ...
-                    state.manual_branches, q_value, result.omega_p(p), ...
+                    state.manual_branches, q_value, peak_energy(p), ...
                     'Branch', branch_spec, ...
                     'QTolerance', local_branch_correction_q_tolerance());
                 local_append_branch_correction(correction);
@@ -1373,7 +1385,7 @@ end
         % Add accepted peaks to unbranched manual_points when no auto branches exist.
         for p = 1:result.n_peaks
             if ~keep(p); continue; end
-            new_pt = [q_value, result.omega_p(p)];
+            new_pt = [q_value, peak_energy(p)];
             if isempty(state.manual_points)
                 state.manual_points = new_pt;
             else
@@ -1386,7 +1398,7 @@ end
         hold(ax, 'on');
         for p = 1:result.n_peaks
             if ~keep(p); continue; end
-            scatter(ax, q_value, result.omega_p(p), 40, ...
+            scatter(ax, q_value, peak_energy(p), 40, ...
                 [0.1 0.5 0.9], 'filled', ...
                 'HandleVisibility', 'off');
         end
