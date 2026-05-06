@@ -1,6 +1,6 @@
 classdef QeBrowserCuratedWorkflowTest < matlab.unittest.TestCase
     methods (TestClassSetup)
-        function addProjectPath(testCase)
+        function addProjectPath(~)
             projectRoot = fileparts(fileparts(mfilename('fullpath')));
             run(fullfile(projectRoot, 'startup.m'));
         end
@@ -29,6 +29,7 @@ classdef QeBrowserCuratedWorkflowTest < matlab.unittest.TestCase
 
             testCase.verifyTrue(contains(body, ...
                 'auto_opts.bootstrap_ci_samples = ui.BootstrapCiSamplesField.Value'));
+            testCase.verifyTrue(contains(body, 'auto_opts.branch_specs = branch_specs'));
             testCase.verifyTrue(contains(body, 'branch_filter_opts.q_skip_Ainv'));
             testCase.verifyTrue(contains(body, 'branch_filter_opts.min_R2'));
             testCase.verifyTrue(contains(body, 'branch_filter_opts.max_gamma_ratio'));

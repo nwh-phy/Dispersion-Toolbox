@@ -1480,6 +1480,7 @@ end
         auto_opts.max_peaks = ui.MaxPeaksField.Value;
         auto_opts.peak_model = ui.PeakModelDropdown.Value;
         auto_opts.bootstrap_ci_samples = ui.BootstrapCiSamplesField.Value;
+        auto_opts.branch_specs = branch_specs;
         % qe above is produced with the same background-subtraction checkbox,
         % so Auto Fit must not fit another power-law background when it is on.
         auto_opts.pre_subtracted = ui.BgSubCheckbox.Value;

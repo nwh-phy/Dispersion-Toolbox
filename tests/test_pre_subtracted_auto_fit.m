@@ -134,6 +134,20 @@ verifyRowsHaveFiniteEnergyErrorBars(testCase, results.all_peaks);
 end
 
 
+function testQeAutoFitWindowSeedsWeakMiddleBranch(testCase)
+[qe, qe_raw, opts] = makeWeakMiddleBranchAutoFitCase();
+
+results = qe_auto_fit(qe, qe_raw, opts);
+assignment = qe_assign_peak_branches_by_windows(results.all_peaks, opts.branch_specs, ...
+    struct('min_R2', 0, 'max_gamma_ratio', Inf));
+
+verifyTrue(testCase, results.used_seed);
+verifyGreaterThanOrEqual(testCase, size(assignment.branches{2}, 1), 3);
+verifyTrue(testCase, all(assignment.branches{2}(:,2) >= 1850));
+verifyTrue(testCase, all(assignment.branches{2}(:,2) <= 2300));
+end
+
+
 function testPropagateSeedPeaksPropagatesPreSubtractedSeedMode(testCase)
 [qe, ~, opts, centers_meV] = makeAutoFitCase();
 seed_idx = 2;
@@ -300,6 +314,55 @@ opts.verbose = false;
 opts.progress_fn = [];
 opts.pre_subtracted = true;
 opts.bootstrap_ci_samples = 8;
+end
+
+
+function [qe, qe_raw, opts] = makeWeakMiddleBranchAutoFitCase()
+energy_meV = linspace(500, 3600, 620)';
+q_axis = [0.02; 0.04; 0.06; 0.08];
+baseline = 0.015;
+
+intensity = zeros(numel(energy_meV), numel(q_axis));
+for qi = 1:numel(q_axis)
+    q = q_axis(qi);
+    low_center = 1000 + 180 * q;
+    mid_center = 2050 + 80 * q;
+    high_center = 3200 - 120 * q;
+    intensity(:, qi) = baseline ...
+        + gaussianPeak(energy_meV, low_center, 70, 0.42) ...
+        + gaussianPeak(energy_meV, mid_center, 90, 0.08) ...
+        + gaussianPeak(energy_meV, high_center, 85, 0.36);
+end
+
+qe = struct();
+qe.intensity = intensity;
+qe.energy_meV = energy_meV;
+qe.q_Ainv = q_axis;
+qe_raw = qe;
+
+opts = struct();
+opts.E_min = 500;
+opts.E_max = 3600;
+opts.q_start = min(q_axis);
+opts.q_end = max(q_axis);
+opts.prominence = 0.25;
+opts.smooth_width = 9;
+opts.max_peaks = 2;
+opts.peak_model = 'gaussian';
+opts.guesses = [];
+opts.seed_idx = 2;
+opts.max_shift = 120;
+opts.energy_mask = true(size(energy_meV));
+opts.energy_axis = energy_meV;
+opts.R2_threshold = 0;
+opts.verbose = false;
+opts.progress_fn = [];
+opts.pre_subtracted = true;
+opts.branch_specs = [
+    struct('name', 'Low', 'energy_window_meV', [800 1300], 'enabled', true)
+    struct('name', 'Weak Mid', 'energy_window_meV', [1850 2300], 'enabled', true)
+    struct('name', 'High', 'energy_window_meV', [3000 3400], 'enabled', true)
+    ];
 end
 
 

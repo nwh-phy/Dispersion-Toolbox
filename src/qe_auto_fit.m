@@ -60,7 +60,7 @@ n_q = numel(q_axis);
 q_start = opts.q_start;
 q_end = opts.q_end;
 
-% ═══════════ DUAL MODE: Seed vs Blind ═══════════
+% Choose the candidate extraction strategy.
 if ~isempty(opts.guesses)
     % ── SEED MODE: propagate from seed q-channel ──
     report_progress(opts, 0.1, sprintf("Seed propagation (%d guesses)...", numel(opts.guesses)));
@@ -90,6 +90,14 @@ if ~isempty(opts.guesses)
     all_peaks = prop.peaks;
     fit_details = prop.fit_details;
     n_success = prop.n_success;
+    used_seed = true;
+
+elseif local_has_branch_specs(opts)
+    report_progress(opts, 0.05, "Window-seeded branch propagation...");
+
+    intensity = double(qe.intensity(mask, :));
+    [all_peaks, fit_details, n_success] = local_fit_window_seeded_branches( ...
+        intensity, energy_axis, q_axis(:), opts);
     used_seed = true;
 
 else
@@ -241,6 +249,144 @@ end
 
 
 %% ═══════════ Local helpers ═══════════
+
+function tf = local_has_branch_specs(opts)
+    tf = isfield(opts, 'branch_specs') && ~isempty(opts.branch_specs);
+end
+
+
+function [all_peaks, fit_details, n_success] = local_fit_window_seeded_branches( ...
+    intensity, energy_axis, q_axis, opts)
+
+    specs = local_enabled_branch_specs(opts.branch_specs);
+    fit_details = cell(numel(q_axis), 1);
+    fitted_channels = false(numel(q_axis), 1);
+    all_peaks = [];
+
+    for b = 1:numel(specs)
+        win = local_clamped_window(specs(b).energy_window_meV, opts.E_min, opts.E_max);
+        if isempty(win)
+            continue
+        end
+
+        [seed_idx, seed_guess] = local_window_seed_guess( ...
+            intensity, energy_axis, q_axis, opts.q_start, opts.q_end, win, opts.smooth_width);
+        if ~isfinite(seed_idx) || ~isfinite(seed_guess)
+            continue
+        end
+
+        try
+            prop = propagate_seed_peaks(intensity, energy_axis, q_axis(:), ...
+                'seed_guesses', seed_guess, ...
+                'seed_idx', seed_idx, ...
+                'direction', 'both', ...
+                'max_shift', opts.max_shift, ...
+                'min_R2', opts.R2_threshold, ...
+                'peak_model', opts.peak_model, ...
+                'pre_subtracted', opts.pre_subtracted, ...
+                'E_min', win(1), 'E_max', win(2), ...
+                'smooth_width', opts.smooth_width, ...
+                'bootstrap_ci_samples', opts.bootstrap_ci_samples, ...
+                'verbose', false);
+        catch
+            continue
+        end
+
+        rows = prop.peaks;
+        if isempty(rows)
+            continue
+        end
+        rows = rows(rows(:,2) >= win(1) & rows(:,2) <= win(2), :);
+        if isempty(rows)
+            continue
+        end
+        rows(:, 13) = b;
+        all_peaks = [all_peaks; rows]; %#ok<AGROW>
+
+        has_detail = ~cellfun(@isempty, prop.fit_details);
+        fitted_channels = fitted_channels | has_detail;
+        for k = find(has_detail(:)).'
+            if isempty(fit_details{k})
+                fit_details{k} = prop.fit_details{k};
+            end
+        end
+    end
+
+    n_success = sum(fitted_channels);
+end
+
+
+function specs = local_enabled_branch_specs(specs)
+    if isempty(specs)
+        specs = struct([]);
+        return
+    end
+
+    keep = false(numel(specs), 1);
+    for i = 1:numel(specs)
+        if isfield(specs(i), 'enabled') && ~specs(i).enabled
+            continue
+        end
+        keep(i) = isfield(specs(i), 'energy_window_meV') && ...
+            numel(specs(i).energy_window_meV) == 2 && ...
+            all(isfinite(double(specs(i).energy_window_meV)));
+    end
+    specs = specs(keep);
+end
+
+
+function win = local_clamped_window(win, E_min, E_max)
+    win = sort(double(win(:)).');
+    win(1) = max(win(1), E_min);
+    win(2) = min(win(2), E_max);
+    if numel(win) ~= 2 || win(1) >= win(2)
+        win = [];
+    end
+end
+
+
+function [seed_idx, seed_guess] = local_window_seed_guess( ...
+    intensity, energy_axis, q_axis, q_start, q_end, win, smooth_width)
+
+    seed_idx = NaN;
+    seed_guess = NaN;
+    q_mask = q_axis >= q_start & q_axis <= q_end;
+    e_mask = energy_axis >= win(1) & energy_axis <= win(2);
+    q_indices = find(q_mask(:));
+    E_win = energy_axis(e_mask);
+    if isempty(q_indices) || numel(E_win) < 3
+        return
+    end
+
+    best_score = -Inf;
+    smooth_width = max(1, min(round(smooth_width), numel(E_win)));
+    for k = q_indices(:).'
+        y = double(intensity(e_mask, k));
+        if all(~isfinite(y)) || all(y == 0)
+            continue
+        end
+        y = smoothdata(y, 'gaussian', smooth_width);
+        baseline = local_median_finite(y);
+        [peak_value, pk_idx] = max(y);
+        score = peak_value - baseline;
+        if isfinite(score) && score > best_score
+            best_score = score;
+            seed_idx = k;
+            seed_guess = E_win(pk_idx);
+        end
+    end
+end
+
+
+function value = local_median_finite(x)
+    x = x(isfinite(x));
+    if isempty(x)
+        value = NaN;
+    else
+        value = median(x);
+    end
+end
+
 
 function [peak_energy, peak_ci] = local_branch_peak_energy(result)
     peak_energy = result.omega_p(:);
