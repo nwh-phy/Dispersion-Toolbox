@@ -20,6 +20,19 @@ classdef QeHeatmapBranchOverlayWorkflowTest < matlab.unittest.TestCase
             testCase.verifyTrue(contains(src, 'function local_update_heatmap_branch_overlays'));
             testCase.verifyTrue(contains(body, 'branch_fit_overlay'));
         end
+
+        function testHeatmapOverlayUsesBranchErrorbars(testCase)
+            projectRoot = fileparts(fileparts(mfilename('fullpath')));
+            src = fileread(fullfile(projectRoot, 'src', 'interactive_qe_browser.m'));
+
+            body = extractLocalFunctionBody(src, ...
+                'local_plot_dispersion_overlay', 'local_plot_dispersion_result');
+
+            testCase.verifyTrue(contains(body, 'qe_plot_helpers.plot_branch_scatter'));
+            testCase.verifyTrue(contains(body, 'overlay_handles'));
+            testCase.verifyTrue(contains(body, '''Tag'', ''branch_fit_overlay'''));
+            testCase.verifyFalse(contains(body, 'scatter(ax, bpts(:,1), bpts(:,2)'));
+        end
     end
 end
 

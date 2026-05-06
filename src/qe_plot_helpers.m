@@ -29,18 +29,19 @@ classdef qe_plot_helpers
         end
 
 
-        function plot_branch_scatter(ax, br, col, label)
+        function h = plot_branch_scatter(ax, br, col, label)
             %PLOT_BRANCH_SCATTER  Plot branch points with CI/fallback error bars.
             %
             %   Plots q vs E (columns 1 and 2 of br). If columns 6-7 contain
             %   valid CI bounds, they are used. Otherwise a conservative
             %   one-meV-scale floor is drawn so every point shows uncertainty.
+            h = gobjects(0);
             if isempty(br)
                 return
             end
 
             E_err = qe_plot_helpers.energy_error_half_width(br);
-            errorbar(ax, br(:,1), br(:,2), E_err, ...
+            h = errorbar(ax, br(:,1), br(:,2), E_err, ...
                 'o', 'Color', col, 'MarkerFaceColor', col, ...
                 'MarkerSize', 4, 'LineWidth', 0.8, 'CapSize', 3, ...
                 'DisplayName', label);
