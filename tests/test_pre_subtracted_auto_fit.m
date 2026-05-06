@@ -148,6 +148,30 @@ verifyTrue(testCase, all(assignment.branches{2}(:,2) <= 2300));
 end
 
 
+function testQeAutoFitAppliesWindowSeedOnlyToMiddleBranch(testCase)
+[qe, qe_raw, opts] = makeWeakMiddleBranchAutoFitCase();
+
+progress_messages = strings(0, 1);
+opts.progress_fn = @(~, message) recordProgress(message);
+
+results = qe_auto_fit(qe, qe_raw, opts);
+assignment = qe_assign_peak_branches_by_windows(results.all_peaks, opts.branch_specs, ...
+    struct('min_R2', 0, 'max_gamma_ratio', Inf));
+
+verifyGreaterThanOrEqual(testCase, size(assignment.branches{1}, 1), 4);
+verifyGreaterThanOrEqual(testCase, size(assignment.branches{2}, 1), 3);
+verifyGreaterThanOrEqual(testCase, size(assignment.branches{3}, 1), 4);
+verifyTrue(testCase, any(contains(progress_messages, "New logic B2")));
+verifyFalse(testCase, any(contains(progress_messages, "New logic B1")));
+verifyFalse(testCase, any(contains(progress_messages, "New logic B3")));
+verifyTrue(testCase, any(contains(progress_messages, "Old logic B1/B3")));
+
+    function recordProgress(message)
+        progress_messages(end+1, 1) = string(message);
+    end
+end
+
+
 function testQeAutoFitWindowSeedsRespectSelectedQRange(testCase)
 [qe, qe_raw, opts] = makeWeakMiddleBranchAutoFitCase();
 opts.q_start = 0.04;
@@ -162,7 +186,7 @@ verifyTrue(testCase, results.used_seed);
 verifyNotEmpty(testCase, results.all_peaks);
 verifyTrue(testCase, all(results.all_peaks(:,1) >= opts.q_start - 1e-12));
 verifyTrue(testCase, all(results.all_peaks(:,1) <= opts.q_end + 1e-12));
-verifyTrue(testCase, any(contains(progress_messages, "Window seed B")));
+verifyTrue(testCase, any(contains(progress_messages, "New logic B2")));
 
     function recordProgress(message)
         progress_messages(end+1, 1) = string(message);

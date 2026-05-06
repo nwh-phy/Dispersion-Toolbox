@@ -49,6 +49,7 @@ if ~isfield(opts, 'R2_threshold'), opts.R2_threshold = 0.3; end
 if ~isfield(opts, 'verbose'), opts.verbose = false; end
 if ~isfield(opts, 'progress_fn'), opts.progress_fn = []; end
 if ~isfield(opts, 'pre_subtracted'), opts.pre_subtracted = false; end
+if ~isfield(opts, 'window_seed_branch_indices'), opts.window_seed_branch_indices = 2; end
 if ~isfield(opts, 'bootstrap_ci_samples')
     opts.bootstrap_ci_samples = local_default_bootstrap_ci_samples();
 end
@@ -93,11 +94,12 @@ if ~isempty(opts.guesses)
     used_seed = true;
 
 elseif local_has_branch_specs(opts)
-    report_progress(opts, 0.05, "Window-seeded branch propagation...");
+    report_progress(opts, 0.05, "Hybrid branch extraction...");
 
     intensity = double(qe.intensity(mask, :));
-    [all_peaks, fit_details, n_success] = local_fit_window_seeded_branches( ...
-        intensity, energy_axis, q_axis(:), opts);
+    raw_intensity = double(qe_raw.intensity(mask, :));
+    [all_peaks, fit_details, n_success] = local_fit_hybrid_branch_specs( ...
+        intensity, raw_intensity, energy_axis, q_axis(:), opts);
     used_seed = true;
 
 else
@@ -255,6 +257,168 @@ function tf = local_has_branch_specs(opts)
 end
 
 
+function [all_peaks, fit_details, n_success] = local_fit_hybrid_branch_specs( ...
+    intensity, raw_intensity, energy_axis, q_axis, opts)
+
+    specs = local_enabled_branch_specs(opts.branch_specs);
+    [seed_specs, blind_specs] = local_split_branch_specs_for_hybrid(specs, opts);
+
+    all_peaks = [];
+    fit_details = cell(numel(q_axis), 1);
+    fitted_channels = false(numel(q_axis), 1);
+
+    if ~isempty(blind_specs)
+        [blind_peaks, blind_details] = local_fit_blind_window_branches( ...
+            intensity, raw_intensity, energy_axis, q_axis, opts, blind_specs);
+        all_peaks = [all_peaks; blind_peaks];
+        [fit_details, fitted_channels] = local_merge_fit_details( ...
+            fit_details, fitted_channels, blind_details, false);
+    end
+
+    if ~isempty(seed_specs)
+        seed_opts = opts;
+        seed_opts.branch_specs = seed_specs;
+        [seed_peaks, seed_details] = local_fit_window_seeded_branches( ...
+            intensity, energy_axis, q_axis, seed_opts);
+        all_peaks = [all_peaks; seed_peaks];
+        [fit_details, fitted_channels] = local_merge_fit_details( ...
+            fit_details, fitted_channels, seed_details, false);
+    end
+
+    n_success = sum(fitted_channels);
+end
+
+
+function [seed_specs, blind_specs] = local_split_branch_specs_for_hybrid(specs, opts)
+    if isempty(specs)
+        seed_specs = struct([]);
+        blind_specs = struct([]);
+        return
+    end
+
+    seed_branch_ids = local_window_seed_branch_indices(opts);
+    branch_ids = zeros(numel(specs), 1);
+    for i = 1:numel(specs)
+        branch_ids(i) = local_branch_spec_id(specs(i), i);
+    end
+
+    use_seed = ismember(branch_ids, seed_branch_ids);
+    seed_specs = specs(use_seed);
+    blind_specs = specs(~use_seed);
+end
+
+
+function branch_ids = local_window_seed_branch_indices(opts)
+    branch_ids = opts.window_seed_branch_indices;
+    branch_ids = double(branch_ids(:));
+    branch_ids = branch_ids(isfinite(branch_ids) & branch_ids >= 1 & ...
+        branch_ids == floor(branch_ids));
+    branch_ids = unique(branch_ids(:));
+end
+
+
+function [all_peaks, fit_details] = local_fit_blind_window_branches( ...
+    intensity, raw_intensity, energy_axis, q_axis, opts, specs)
+
+    n_q = numel(q_axis);
+    fit_details = cell(n_q, 1);
+    all_peaks = [];
+    q_bounds = sort([opts.q_start, opts.q_end]);
+    branch_label = local_branch_spec_label(specs);
+
+    report_progress(opts, 0.05, sprintf("Old logic %s blind fit...", branch_label));
+
+    for k = 1:n_q
+        q_val = q_axis(k);
+        if q_val < q_bounds(1) || q_val > q_bounds(2)
+            continue
+        end
+
+        spectrum = double(intensity(:, k));
+        if all(spectrum == 0) || all(isnan(spectrum))
+            continue
+        end
+
+        try
+            result = fit_loss_function(energy_axis, spectrum, ...
+                'E_min', opts.E_min, 'E_max', opts.E_max, ...
+                'min_prominence', opts.prominence, ...
+                'smooth_width', opts.smooth_width, ...
+                'max_peaks', opts.max_peaks, ...
+                'initial_guesses', [], ...
+                'peak_model', opts.peak_model, ...
+                'pre_subtracted', opts.pre_subtracted, ...
+                'bootstrap_ci_samples', opts.bootstrap_ci_samples);
+        catch
+            continue
+        end
+
+        fit_details{k} = result;
+        [peak_energy, peak_energy_ci] = local_branch_peak_energy(result);
+        raw_spectrum = double(raw_intensity(:, k));
+
+        for p = 1:result.n_peaks
+            branch_id = local_branch_id_for_energy(peak_energy(p), specs);
+            if branch_id == 0 || peak_energy(p) < opts.E_min
+                continue
+            end
+
+            raw_peak_height = measure_peak_height( ...
+                energy_axis, raw_spectrum, peak_energy(p), result.gamma(p));
+            all_peaks(end+1, :) = [ ...
+                q_val, ...
+                peak_energy(p), ...
+                result.gamma(p), ...
+                result.R_squared, ...
+                result.amplitude(p), ...
+                peak_energy_ci(p, 1), peak_energy_ci(p, 2), ...
+                result.gamma_ci(p, 1), result.gamma_ci(p, 2), ...
+                result.amplitude_ci(p, 1), result.amplitude_ci(p, 2), ...
+                raw_peak_height, ...
+                branch_id]; %#ok<AGROW>
+        end
+
+        if mod(k, 10) == 0
+            report_progress(opts, 0.05 + 0.30 * k / max(n_q, 1), ...
+                sprintf("Old logic %s... %d%%", branch_label, round(k/n_q*100)));
+        end
+    end
+end
+
+
+function branch_id = local_branch_id_for_energy(energy, specs)
+    branch_id = 0;
+    best_score = Inf;
+    for i = 1:numel(specs)
+        win = specs(i).energy_window_meV;
+        if energy < win(1) || energy > win(2)
+            continue
+        end
+
+        center = mean(win);
+        half_width = max(diff(win) / 2, eps);
+        score = abs(energy - center) / half_width;
+        if score < best_score
+            branch_id = local_branch_spec_id(specs(i), i);
+            best_score = score;
+        end
+    end
+end
+
+
+function [fit_details, fitted_channels] = local_merge_fit_details( ...
+    fit_details, fitted_channels, new_details, overwrite)
+
+    has_detail = ~cellfun(@isempty, new_details);
+    for k = find(has_detail(:)).'
+        fitted_channels(k) = true;
+        if overwrite || isempty(fit_details{k})
+            fit_details{k} = new_details{k};
+        end
+    end
+end
+
+
 function [all_peaks, fit_details, n_success] = local_fit_window_seeded_branches( ...
     intensity, energy_axis, q_axis, opts)
 
@@ -267,7 +431,7 @@ function [all_peaks, fit_details, n_success] = local_fit_window_seeded_branches(
     q_indices = find(q_mask(:));
     if isempty(q_indices)
         n_success = 0;
-        report_progress(opts, 0.10, "Window seed: no q channels in selected range");
+        report_progress(opts, 0.10, "New logic window seed: no q channels in selected range");
         return
     end
 
@@ -280,17 +444,18 @@ function [all_peaks, fit_details, n_success] = local_fit_window_seeded_branches(
         if isempty(win)
             continue
         end
+        branch_id = local_branch_spec_id(specs(b), b);
 
         report_progress(opts, 0.05 + 0.85 * (b - 1) / n_specs, ...
-            sprintf("Window seed B%d/%d [%.0f-%.0f meV]...", ...
-            b, numel(specs), win(1), win(2)));
+            sprintf("New logic B%d window seed [%.0f-%.0f meV]...", ...
+            branch_id, win(1), win(2)));
 
         [seed_idx, seed_guess] = local_window_seed_guess( ...
             fit_intensity, energy_axis, fit_q_axis, ...
             fit_q_axis(1), fit_q_axis(end), win, opts.smooth_width);
         if ~isfinite(seed_idx) || ~isfinite(seed_guess)
             report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
-                sprintf("Window seed B%d/%d: no seed found", b, numel(specs)));
+                sprintf("New logic B%d: no seed found", branch_id));
             continue
         end
 
@@ -309,23 +474,23 @@ function [all_peaks, fit_details, n_success] = local_fit_window_seeded_branches(
                 'verbose', false);
         catch
             report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
-                sprintf("Window seed B%d/%d: fit failed", b, numel(specs)));
+                sprintf("New logic B%d: fit failed", branch_id));
             continue
         end
 
         rows = prop.peaks;
         if isempty(rows)
             report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
-                sprintf("Window seed B%d/%d: no peaks", b, numel(specs)));
+                sprintf("New logic B%d: no peaks", branch_id));
             continue
         end
         rows = rows(rows(:,2) >= win(1) & rows(:,2) <= win(2), :);
         if isempty(rows)
             report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
-                sprintf("Window seed B%d/%d: no in-window peaks", b, numel(specs)));
+                sprintf("New logic B%d: no in-window peaks", branch_id));
             continue
         end
-        rows(:, 13) = b;
+        rows(:, 13) = branch_id;
         all_peaks = [all_peaks; rows]; %#ok<AGROW>
 
         has_detail = ~cellfun(@isempty, prop.fit_details);
@@ -338,8 +503,7 @@ function [all_peaks, fit_details, n_success] = local_fit_window_seeded_branches(
         end
 
         report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
-            sprintf("Window seed B%d/%d: %d points", ...
-            b, numel(specs), size(rows, 1)));
+            sprintf("New logic B%d: %d points", branch_id, size(rows, 1)));
     end
 
     n_success = sum(fitted_channels);
@@ -354,6 +518,9 @@ function specs = local_enabled_branch_specs(specs)
 
     keep = false(numel(specs), 1);
     for i = 1:numel(specs)
+        if ~isfield(specs, 'branch_index') || isempty(specs(i).branch_index)
+            specs(i).branch_index = i;
+        end
         if isfield(specs(i), 'enabled') && ~specs(i).enabled
             continue
         end
@@ -362,6 +529,24 @@ function specs = local_enabled_branch_specs(specs)
             all(isfinite(double(specs(i).energy_window_meV)));
     end
     specs = specs(keep);
+end
+
+
+function branch_id = local_branch_spec_id(spec, fallback_id)
+    if isfield(spec, 'branch_index') && isfinite(double(spec.branch_index))
+        branch_id = double(spec.branch_index);
+    else
+        branch_id = fallback_id;
+    end
+end
+
+
+function label = local_branch_spec_label(specs)
+    ids = zeros(numel(specs), 1);
+    for i = 1:numel(specs)
+        ids(i) = local_branch_spec_id(specs(i), i);
+    end
+    label = strjoin(cellstr(compose('B%d', ids)), '/');
 end
 
 
