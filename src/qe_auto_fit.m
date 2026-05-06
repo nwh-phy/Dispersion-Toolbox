@@ -262,6 +262,18 @@ function [all_peaks, fit_details, n_success] = local_fit_window_seeded_branches(
     fit_details = cell(numel(q_axis), 1);
     fitted_channels = false(numel(q_axis), 1);
     all_peaks = [];
+    q_bounds = sort([opts.q_start, opts.q_end]);
+    q_mask = q_axis >= q_bounds(1) & q_axis <= q_bounds(2);
+    q_indices = find(q_mask(:));
+    if isempty(q_indices)
+        n_success = 0;
+        report_progress(opts, 0.10, "Window seed: no q channels in selected range");
+        return
+    end
+
+    fit_intensity = intensity(:, q_indices);
+    fit_q_axis = q_axis(q_indices);
+    n_specs = max(numel(specs), 1);
 
     for b = 1:numel(specs)
         win = local_clamped_window(specs(b).energy_window_meV, opts.E_min, opts.E_max);
@@ -269,14 +281,21 @@ function [all_peaks, fit_details, n_success] = local_fit_window_seeded_branches(
             continue
         end
 
+        report_progress(opts, 0.05 + 0.85 * (b - 1) / n_specs, ...
+            sprintf("Window seed B%d/%d [%.0f-%.0f meV]...", ...
+            b, numel(specs), win(1), win(2)));
+
         [seed_idx, seed_guess] = local_window_seed_guess( ...
-            intensity, energy_axis, q_axis, opts.q_start, opts.q_end, win, opts.smooth_width);
+            fit_intensity, energy_axis, fit_q_axis, ...
+            fit_q_axis(1), fit_q_axis(end), win, opts.smooth_width);
         if ~isfinite(seed_idx) || ~isfinite(seed_guess)
+            report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
+                sprintf("Window seed B%d/%d: no seed found", b, numel(specs)));
             continue
         end
 
         try
-            prop = propagate_seed_peaks(intensity, energy_axis, q_axis(:), ...
+            prop = propagate_seed_peaks(fit_intensity, energy_axis, fit_q_axis(:), ...
                 'seed_guesses', seed_guess, ...
                 'seed_idx', seed_idx, ...
                 'direction', 'both', ...
@@ -289,27 +308,38 @@ function [all_peaks, fit_details, n_success] = local_fit_window_seeded_branches(
                 'bootstrap_ci_samples', opts.bootstrap_ci_samples, ...
                 'verbose', false);
         catch
+            report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
+                sprintf("Window seed B%d/%d: fit failed", b, numel(specs)));
             continue
         end
 
         rows = prop.peaks;
         if isempty(rows)
+            report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
+                sprintf("Window seed B%d/%d: no peaks", b, numel(specs)));
             continue
         end
         rows = rows(rows(:,2) >= win(1) & rows(:,2) <= win(2), :);
         if isempty(rows)
+            report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
+                sprintf("Window seed B%d/%d: no in-window peaks", b, numel(specs)));
             continue
         end
         rows(:, 13) = b;
         all_peaks = [all_peaks; rows]; %#ok<AGROW>
 
         has_detail = ~cellfun(@isempty, prop.fit_details);
-        fitted_channels = fitted_channels | has_detail;
-        for k = find(has_detail(:)).'
-            if isempty(fit_details{k})
-                fit_details{k} = prop.fit_details{k};
+        for local_k = find(has_detail(:)).'
+            full_k = q_indices(local_k);
+            fitted_channels(full_k) = true;
+            if isempty(fit_details{full_k})
+                fit_details{full_k} = prop.fit_details{local_k};
             end
         end
+
+        report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
+            sprintf("Window seed B%d/%d: %d points", ...
+            b, numel(specs), size(rows, 1)));
     end
 
     n_success = sum(fitted_channels);

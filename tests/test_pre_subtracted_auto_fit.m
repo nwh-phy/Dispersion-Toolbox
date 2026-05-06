@@ -148,6 +148,28 @@ verifyTrue(testCase, all(assignment.branches{2}(:,2) <= 2300));
 end
 
 
+function testQeAutoFitWindowSeedsRespectSelectedQRange(testCase)
+[qe, qe_raw, opts] = makeWeakMiddleBranchAutoFitCase();
+opts.q_start = 0.04;
+opts.q_end = 0.06;
+
+progress_messages = strings(0, 1);
+opts.progress_fn = @(~, message) recordProgress(message);
+
+results = qe_auto_fit(qe, qe_raw, opts);
+
+verifyTrue(testCase, results.used_seed);
+verifyNotEmpty(testCase, results.all_peaks);
+verifyTrue(testCase, all(results.all_peaks(:,1) >= opts.q_start - 1e-12));
+verifyTrue(testCase, all(results.all_peaks(:,1) <= opts.q_end + 1e-12));
+verifyTrue(testCase, any(contains(progress_messages, "Window seed B")));
+
+    function recordProgress(message)
+        progress_messages(end+1, 1) = string(message);
+    end
+end
+
+
 function testPropagateSeedPeaksPropagatesPreSubtractedSeedMode(testCase)
 [qe, ~, opts, centers_meV] = makeAutoFitCase();
 seed_idx = 2;
