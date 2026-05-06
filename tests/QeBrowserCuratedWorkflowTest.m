@@ -116,6 +116,40 @@ classdef QeBrowserCuratedWorkflowTest < matlab.unittest.TestCase
             testCase.verifyFalse(contains(src, 'Auto Fit 蠅(q)'));
             testCase.verifyFalse(contains(src, 'Fit Dispersion'));
         end
+
+        function testMainUiExposesFlexiblePanelExportControls(testCase)
+            projectRoot = fileparts(fileparts(mfilename('fullpath')));
+            src = fileread(fullfile(projectRoot, 'src', 'ui', 'qe_browser_ui.m'));
+
+            testCase.verifyTrue(contains(src, 'Export Panels'));
+            testCase.verifyTrue(contains(src, 'ExportModeDropdown'));
+            testCase.verifyTrue(contains(src, '''Quick PNG'''));
+            testCase.verifyTrue(contains(src, '''PPT PNG'''));
+            testCase.verifyTrue(contains(src, '''Publication'''));
+            testCase.verifyTrue(contains(src, 'ui_handles.ExportButton = export_btn'));
+            testCase.verifyTrue(contains(src, 'export_btn.Text = "Export Panels"'));
+            testCase.verifyTrue(contains(src, 'export_ratio.Layout.Row = 10'));
+            testCase.verifyTrue(contains(src, 'export_mode.Layout.Row = 10'));
+        end
+
+        function testPanelExportSupportsMultiSelectAndPresets(testCase)
+            projectRoot = fileparts(fileparts(mfilename('fullpath')));
+            src = fileread(fullfile(projectRoot, 'src', 'interactive_qe_browser.m'));
+
+            body = extractLocalFunctionBody(src, ...
+                'local_on_export', 'local_update_all_views');
+
+            testCase.verifyTrue(contains(body, '''SelectionMode'', ''multiple'''));
+            testCase.verifyTrue(contains(body, 'local_export_mode_settings'));
+            testCase.verifyTrue(contains(body, 'ui.ExportModeDropdown.Value'));
+            testCase.verifyTrue(contains(body, 'settings.resolution'));
+            testCase.verifyTrue(contains(body, 'settings.write_pdf'));
+            testCase.verifyTrue(contains(src, 'function settings = local_export_mode_settings'));
+            testCase.verifyTrue(contains(src, 'case ''Quick PNG'''));
+            testCase.verifyTrue(contains(src, 'settings.resolution = 150'));
+            testCase.verifyTrue(contains(src, 'case ''Publication'''));
+            testCase.verifyTrue(contains(src, 'settings.write_pdf = true'));
+        end
     end
 end
 

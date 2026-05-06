@@ -488,6 +488,7 @@ end
         snap.dispModel = char(ui.DispModelDropdown.Value);
         snap.fitBranchTarget = char(string(ui.FitBranchDropdown.Value));
         snap.correctionBranchTarget = char(string(ui.CorrectionBranchDropdown.Value));
+        snap.exportMode = char(ui.ExportModeDropdown.Value);
         snap.exportRatio = char(ui.ExportRatioDropdown.Value);
         snap.selectedQIndex = state.selectedQIndex;
         snap.selectedQ_Ainv = NaN;
@@ -584,6 +585,9 @@ end
         end
         if isfield(snap, 'exportRatio') && any(strcmp(snap.exportRatio, ui.ExportRatioDropdown.Items))
             ui.ExportRatioDropdown.Value = snap.exportRatio;
+        end
+        if isfield(snap, 'exportMode') && any(strcmp(snap.exportMode, ui.ExportModeDropdown.Items))
+            ui.ExportModeDropdown.Value = snap.exportMode;
         end
         if isfield(snap, 'selectedQ_Ainv') && isfinite(snap.selectedQ_Ainv)
             qe_snap = local_get_reference_qe();
@@ -2105,12 +2109,12 @@ end
         % Panel selection via listdlg (uiconfirm only supports up to 4 options)
         options = ['All panels', panel_labels];
         [idx, ok] = listdlg('ListString', options, ...
-            'SelectionMode', 'single', ...
+            'SelectionMode', 'multiple', ...
             'ListSize', [220 140], ...
             'Name', 'Export', ...
             'PromptString', 'Select panels to export:');
         if ~ok, return; end
-        if idx == 1
+        if any(idx == 1)
             sel = 1:4;
         else
             sel = idx - 1;
@@ -2139,6 +2143,7 @@ end
         else
             target_ratio = 4 / 3;
         end
+        settings = local_export_mode_settings(ui.ExportModeDropdown.Value);
 
         ts = char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
 
@@ -2171,17 +2176,23 @@ end
                 catch
                 end
 
-                % --- Export PNG at 300 DPI ---
-                png_path = fullfile(out_dir, sprintf('%s_%s_%s.png', ts, fname, ratio_file));
-                exportgraphics(tmp_fig, png_path, 'Resolution', 300, 'BackgroundColor', 'white');
+                % --- Export PNG ---
+                png_path = fullfile(out_dir, sprintf('%s_%s_%s_%s.png', ...
+                    ts, fname, ratio_file, settings.file_tag));
+                exportgraphics(tmp_fig, png_path, ...
+                    'Resolution', settings.resolution, 'BackgroundColor', 'white');
 
                 exported{end+1} = fname; %#ok<AGROW>
 
-                % --- Also export vector PDF ---
-                try
-                    pdf_path = fullfile(out_dir, sprintf('%s_%s_%s.pdf', ts, fname, ratio_file));
-                    exportgraphics(tmp_fig, pdf_path, 'ContentType', 'vector', 'BackgroundColor', 'white');
-                catch
+                % --- Also export vector PDF for publication mode ---
+                if settings.write_pdf
+                    try
+                        pdf_path = fullfile(out_dir, sprintf('%s_%s_%s_%s.pdf', ...
+                            ts, fname, ratio_file, settings.file_tag));
+                        exportgraphics(tmp_fig, pdf_path, ...
+                            'ContentType', 'vector', 'BackgroundColor', 'white');
+                    catch
+                    end
                 end
 
                 % --- Clean up temp figure ---
@@ -2193,14 +2204,42 @@ end
         end
 
         if ~isempty(exported)
-            msg = sprintf('Exported %d panels (%s) to %s', numel(exported), ratio_str, out_dir);
+            msg = sprintf('Exported %d panels (%s, %s) to %s', ...
+                numel(exported), settings.label, ratio_str, out_dir);
         else
             msg = 'Export failed — check MATLAB console for details';
         end
         ui.InfoLabel.Text = msg;
         ui.InfoLabel.Visible = "on";
-        local_log_operation(sprintf('Export %d panels (%s): %s', numel(exported), ratio_str, strjoin(exported, ', ')));
+        local_log_operation(sprintf('Export %d panels (%s, %s): %s', ...
+            numel(exported), settings.label, ratio_str, strjoin(exported, ', ')));
         fprintf('  %s\n', msg);
+    end
+
+
+    function settings = local_export_mode_settings(mode)
+        settings = struct();
+        settings.label = char(string(mode));
+        settings.file_tag = 'quick';
+        settings.resolution = 150;
+        settings.write_pdf = false;
+
+        switch char(string(mode))
+            case 'Quick PNG'
+                settings.file_tag = 'quick';
+                settings.resolution = 150;
+                settings.write_pdf = false;
+            case 'PPT PNG'
+                settings.file_tag = 'ppt';
+                settings.resolution = 300;
+                settings.write_pdf = false;
+            case 'Publication'
+                settings.file_tag = 'publication';
+                settings.resolution = 300;
+                settings.write_pdf = true;
+            otherwise
+                settings.label = 'Quick PNG';
+        end
     end
 
 
