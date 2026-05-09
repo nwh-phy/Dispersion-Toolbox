@@ -4,9 +4,12 @@ end
 
 
 function setupOnce(testCase)
-project_root = fileparts(fileparts(mfilename('fullpath')));
+case_root = fileparts(fileparts(mfilename('fullpath')));
+scripts_dir = fullfile(case_root, 'scripts');
+addpath(scripts_dir);
+project_root = bisb_find_project_root(scripts_dir);
 run(fullfile(project_root, 'startup.m'));
-addpath(fullfile(project_root, 'scripts'));
+addpath(scripts_dir);
 testCase.TestData.project_root = project_root;
 end
 

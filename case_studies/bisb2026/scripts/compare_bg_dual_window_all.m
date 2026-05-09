@@ -1,30 +1,21 @@
-function results = compare_bg_dual_window_590()
-%COMPARE_BG_DUAL_WINDOW_590 Compare background models on the seminar dataset.
-% Focuses on the 590 PL2 10w dataset within |q| <= 0.15 A^-1, motivated by
-% the three candidate branches used in seminar exports.
+function results = compare_bg_dual_window_all()
+%COMPARE_BG_DUAL_WINDOW_ALL Compare background models across three Bi datasets.
+% Evaluates single-window and Nion-inspired dual-window settings within
+% |q| <= 0.15 A^-1 across all available eq3D datasets under 20260120 BiSb.
 %
 % Usage:
-%   results = compare_bg_dual_window_590();
+%   results = compare_bg_dual_window_all();
 %
-% It prints a JSON summary to the command window for easy checkpointing.
+% Prints JSON to stdout for checkpointing.
 
-project_root = fileparts(fileparts(mfilename('fullpath')));
+project_root = bisb_find_project_root();
 run(fullfile(project_root, 'startup.m'));
 
-data_path = fullfile(project_root, ...
-    '20260120 BiSb', '590 PL2 10w 0.004 10sx300', 'eq3D.mat');
-dataset = load_qe_dataset(data_path);
-qe = dataset.qe;
-
-q_axis = qe.q_Ainv(:)';
-focus_idx = find(abs(q_axis) <= 0.15);
-qe_focus = qe;
-qe_focus.intensity = qe.intensity(:, focus_idx);
-qe_focus.q_channel = qe.q_channel(focus_idx);
-qe_focus.q_Ainv = qe.q_Ainv(focus_idx);
-qe_focus.q_abs_Ainv = qe.q_abs_Ainv(focus_idx);
-[~, local_zero] = min(abs(qe_focus.q_Ainv));
-qe_focus.q_zero_index = local_zero;
+datasets = {
+    struct('name', '590_PL2_10w', 'path', fullfile(project_root, '20260120 BiSb', '590 PL2 10w 0.004 10sx300', 'eq3D.mat')), ...
+    struct('name', 'n0_pl2_10w', 'path', fullfile(project_root, '20260120 BiSb', 'n0 pl2 10w 0.004 10s x300', 'eq3D.mat')), ...
+    struct('name', 'no_pl2_20w_2film', 'path', fullfile(project_root, '20260120 BiSb', 'no pl2 20w 0.004 10sx300 2film', 'eq3D.mat')) ...
+};
 
 configs = {
     struct('name','single_auto_core4', 'method','Auto', 'candidates',{{'Power','Exp2','ExpPoly3','Pearson'}}, 'win_lo',[50 300], 'win_hi',[], 'group_qmax', NaN, 'group_ranges', zeros(0,2)), ...
@@ -38,6 +29,28 @@ configs = {
     struct('name','dual_pearsonvii', 'method','PearsonVII', 'candidates',{{'PearsonVII'}}, 'win_lo',[50 300], 'win_hi',[2800 3400], 'group_qmax', NaN, 'group_ranges', zeros(0,2)) ...
 };
 
+results = cell(1, numel(datasets));
+for di = 1:numel(datasets)
+    results{di} = evaluate_dataset(datasets{di}, configs);
+end
+
+fprintf('%s\n', jsonencode(results));
+end
+
+function dataset_result = evaluate_dataset(dataset_cfg, configs)
+dataset = load_qe_dataset(dataset_cfg.path);
+qe = dataset.qe;
+q_axis = qe.q_Ainv(:)';
+focus_idx = find(abs(q_axis) <= 0.15);
+
+qe_focus = qe;
+qe_focus.intensity = qe.intensity(:, focus_idx);
+qe_focus.q_channel = qe.q_channel(focus_idx);
+qe_focus.q_Ainv = qe.q_Ainv(focus_idx);
+qe_focus.q_abs_Ainv = qe.q_abs_Ainv(focus_idx);
+[~, local_zero] = min(abs(qe_focus.q_Ainv));
+qe_focus.q_zero_index = local_zero;
+
 energy = qe_focus.energy_meV(:);
 sub_mask = energy > 50;
 branch1_mask = energy >= 600 & energy <= 1700;
@@ -45,7 +58,7 @@ branch2_mask = energy >= 1700 & energy <= 2600;
 branch3_mask = energy >= 2900 & energy <= 3500;
 [~, q0_idx] = min(abs(qe_focus.q_Ainv));
 
-results = cell(1, numel(configs));
+comparisons = cell(1, numel(configs));
 for ci = 1:numel(configs)
     cfg = configs{ci};
     opts = struct();
@@ -120,12 +133,19 @@ for ci = 1:numel(configs)
     item.q0_processed_min_after50 = min(q0_proc);
     item.q0_negative_points_after50 = sum(q0_proc < 0);
     if strcmp(cfg.method, 'Auto')
-        item.q0_candidate_methods = {bg_diag(q0_idx).candidate_methods};
+        item.q0_candidate_methods = bg_diag(q0_idx).candidate_methods;
         item.q0_candidate_scores = bg_diag(q0_idx).candidate_scores;
         item.q0_candidate_linear_rmse = [bg_diag(q0_idx).candidate_details.linear_rmse];
     end
-    results{ci} = item;
+    comparisons{ci} = item;
 end
 
-fprintf('%s\n', jsonencode(results));
+dataset_result = struct();
+dataset_result.dataset_name = dataset_cfg.name;
+dataset_result.data_path = dataset_cfg.path;
+dataset_result.focus_channel_count = numel(focus_idx);
+dataset_result.actual_q_min = min(qe_focus.q_Ainv);
+dataset_result.actual_q_max = max(qe_focus.q_Ainv);
+dataset_result.comparisons = comparisons;
+dataset_result.screening = qe_recommend_lowq_background_configs(comparisons);
 end

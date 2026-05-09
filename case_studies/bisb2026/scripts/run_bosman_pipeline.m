@@ -9,9 +9,10 @@
 clearvars; close all; clc;
 
 %% Setup paths
-project_dir = 'c:\Users\HP\Desktop\vibecoding\2D-metal-plasmon';
+script_dir = fileparts(mfilename('fullpath'));
+project_dir = bisb_find_project_root(script_dir);
 cd(project_dir);
-run('startup.m');
+run(fullfile(project_dir, 'startup.m'));
 
 output_dir = fullfile(project_dir, 'output', 'bosman_pipeline');
 if ~exist(output_dir, 'dir'), mkdir(output_dir); end
