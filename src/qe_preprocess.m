@@ -1137,67 +1137,266 @@ function qe_out = apply_denoise(qe_in, opts)
     %   BM3D     — Block-matching and 3D filtering (requires Nion toolbox)
     qe_out = qe_in;
     intensity = double(qe_in.intensity);
-    method = char(opts.denoise_method);
+    if isfield(opts, 'denoise_q_ramp') && ~isempty(opts.denoise_q_ramp)
+        qe_out.intensity = apply_q_ramp_denoise(qe_in, intensity, opts);
+        return
+    end
+
+    if isfield(opts, 'denoise_windows') && ~isempty(opts.denoise_windows)
+        qe_out.intensity = apply_windowed_denoise(qe_in, intensity, opts);
+        return
+    end
+
+    method = get_denoise_method(opts, 'Wiener2D');
+    qe_out.intensity = denoise_intensity_matrix(intensity, method, opts);
+end
+
+
+function intensity_out = apply_q_ramp_denoise(qe_in, intensity, opts)
+    q_axis = get_denoise_q_axis(qe_in, size(intensity, 2));
+    if isempty(q_axis)
+        method = get_denoise_method(opts, 'Wiener2D');
+        intensity_out = denoise_intensity_matrix(intensity, method, opts);
+        return
+    end
+
+    ramp = opts.denoise_q_ramp;
+    method = get_q_ramp_method(ramp, opts);
+    low_opts = opts;
+    high_opts = opts;
+    low_opts.denoise_sigma = get_q_ramp_numeric(ramp, 'low_sigma', get_numeric_opt(opts, 'denoise_sigma', 0));
+    high_opts.denoise_sigma = get_q_ramp_numeric(ramp, 'high_sigma', get_numeric_opt(opts, 'denoise_sigma', 0));
+
+    low_result = denoise_intensity_matrix(intensity, method, low_opts);
+    high_result = denoise_intensity_matrix(intensity, method, high_opts);
+
+    weights = q_ramp_weights(abs(q_axis), ramp);
+    intensity_out = low_result .* (1 - reshape(weights, 1, [])) + ...
+        high_result .* reshape(weights, 1, []);
+end
+
+
+function intensity_out = apply_windowed_denoise(qe_in, intensity, opts)
+    q_axis = get_denoise_q_axis(qe_in, size(intensity, 2));
+    if isempty(q_axis)
+        method = get_denoise_method(opts, 'Wiener2D');
+        intensity_out = denoise_intensity_matrix(intensity, method, opts);
+        return
+    end
+
+    intensity_out = intensity;
+    windows = opts.denoise_windows;
+    for wi = 1:numel(windows)
+        q_mask = denoise_window_mask(windows(wi), q_axis);
+        if ~any(q_mask)
+            continue
+        end
+
+        win_opts = denoise_window_opts(opts, windows(wi));
+        method = get_denoise_method(win_opts, get_denoise_method(opts, 'Wiener2D'));
+        intensity_out(:, q_mask) = denoise_intensity_matrix( ...
+            intensity(:, q_mask), method, win_opts);
+    end
+end
+
+
+function denoised = denoise_intensity_matrix(intensity, method, opts)
+    method = char(method);
 
     switch method
         case 'Wiener2D'
-            sigma_input = opts.denoise_sigma;
+            sigma_input = get_numeric_opt(opts, 'denoise_sigma', 0);
             if sigma_input <= 0
-                noise_est = median(abs(intensity(:) - median(intensity(:)))) / 0.6745;
+                finite_vals = intensity(isfinite(intensity));
+                if isempty(finite_vals)
+                    noise_est = 1;
+                else
+                    noise_est = median(abs(finite_vals - median(finite_vals))) / 0.6745;
+                end
             else
                 noise_est = sigma_input;
             end
+            if ~isfinite(noise_est) || noise_est <= eps
+                noise_est = 1;
+            end
+            win = denoise_wiener_window(size(intensity));
             try
-                denoised = wiener2(intensity, [3 5], noise_est^2);
+                denoised = wiener2(intensity, win, noise_est^2);
             catch
-                kernel = ones(3, 5) / 15;
+                kernel = ones(win) / prod(win);
                 denoised = conv2(intensity, kernel, 'same');
             end
-            qe_out.intensity = denoised;
 
         case 'SavGol'
-            sg_order = round(opts.sg_order);
-            sg_framelen = round(opts.sg_framelen);
+            denoised = intensity;
+            sg_order = round(get_numeric_opt(opts, 'sg_order', 3));
+            sg_framelen = round(get_numeric_opt(opts, 'sg_framelen', 15));
+            sg_framelen = max(3, sg_framelen);
             if mod(sg_framelen, 2) == 0
                 sg_framelen = sg_framelen + 1;
             end
             sg_order = min(sg_order, sg_framelen - 1);
-            n_q = size(intensity, 2);
+            n_q = size(denoised, 2);
             for qi = 1:n_q
-                spec = intensity(:, qi);
+                spec = denoised(:, qi);
                 if numel(spec) >= sg_framelen
                     try
-                        intensity(:, qi) = sgolayfilt(spec, sg_order, sg_framelen);
+                        denoised(:, qi) = sgolayfilt(spec, sg_order, sg_framelen);
                     catch
-                        intensity(:, qi) = movmean(spec, sg_framelen);
+                        denoised(:, qi) = movmean(spec, sg_framelen);
                     end
                 end
             end
-            qe_out.intensity = intensity;
 
         case 'BM3D'
             % BM3D denoising using BM3D_QRS from Nion toolbox.
-            %   opts.denoise_sigma controls the noise overestimation factor:
-            %     0  = auto (default, BMfactor=1)
+            %   opts.denoise_sigma controls the noise scaling factor:
+            %     0  = weak default (BMfactor=0.5)
             %     >0 = used as BMfactor (higher = stronger denoising)
-            if isfield(opts, 'denoise_sigma') && opts.denoise_sigma > 0
-                bmfactor = opts.denoise_sigma;
+            sigma_input = get_numeric_opt(opts, 'denoise_sigma', 0);
+            if sigma_input > 0
+                bmfactor = sigma_input;
             else
-                bmfactor = 1;
+                bmfactor = 0.5;
             end
             try
                 denoised = BM3D_QRS(intensity, bmfactor);
-                qe_out.intensity = denoised;
             catch e
                 warning('qe_preprocess:bm3d', ...
                     'BM3D_QRS not available (%s). Falling back to Wiener2D.', e.message);
-                noise_est = median(abs(intensity(:) - median(intensity(:)))) / 0.6745;
-                try
-                    qe_out.intensity = wiener2(intensity, [3 5], noise_est^2);
-                catch
-                    kernel = ones(3, 5) / 15;
-                    qe_out.intensity = conv2(intensity, kernel, 'same');
-                end
+                fallback_opts = opts;
+                fallback_opts.denoise_method = 'Wiener2D';
+                denoised = denoise_intensity_matrix(intensity, 'Wiener2D', fallback_opts);
             end
+
+        otherwise
+            error('qe_preprocess:unknownDenoiseMethod', ...
+                'Unknown denoise method: %s', method);
     end
+end
+
+
+function q_axis = get_denoise_q_axis(qe_in, n_q)
+    q_axis = [];
+    if isfield(qe_in, 'q_Ainv') && numel(qe_in.q_Ainv) == n_q
+        q_axis = double(qe_in.q_Ainv(:))';
+    elseif isfield(qe_in, 'q_axis') && numel(qe_in.q_axis) == n_q
+        q_axis = double(qe_in.q_axis(:))';
+    end
+end
+
+
+function q_mask = denoise_window_mask(window, q_axis)
+    q_mask = false(size(q_axis));
+
+    if has_nonempty_field(window, 'q_range_Ainv')
+        q_mask = q_mask | range_mask(q_axis, window.q_range_Ainv);
+    end
+
+    if has_nonempty_field(window, 'abs_q_range_Ainv')
+        q_mask = q_mask | range_mask(abs(q_axis), window.abs_q_range_Ainv);
+    end
+end
+
+
+function method = get_q_ramp_method(ramp, opts)
+    if isfield(ramp, 'method') && ~isempty(ramp.method)
+        method = char(ramp.method);
+    else
+        method = get_denoise_method(opts, 'Wiener2D');
+    end
+end
+
+
+function value = get_q_ramp_numeric(ramp, field_name, default_value)
+    if isfield(ramp, field_name) && ~isempty(ramp.(field_name))
+        value = double(ramp.(field_name));
+    else
+        value = default_value;
+    end
+end
+
+
+function weights = q_ramp_weights(q_abs, ramp)
+    q_start = get_q_ramp_numeric(ramp, 'q_start_Ainv', 0);
+    q_end = get_q_ramp_numeric(ramp, 'q_end_Ainv', q_start);
+    q_start = abs(q_start);
+    q_end = abs(q_end);
+    q_lo = min(q_start, q_end);
+    q_hi = max(q_start, q_end);
+
+    if ~isfinite(q_lo) || ~isfinite(q_hi) || q_hi <= q_lo
+        weights = double(q_abs >= q_hi);
+        return
+    end
+
+    t = (double(q_abs) - q_lo) ./ (q_hi - q_lo);
+    t = min(max(t, 0), 1);
+    weights = t.^2 .* (3 - 2 .* t);
+end
+
+
+function mask = range_mask(values, range_values)
+    mask = false(size(values));
+    range_values = double(range_values);
+    if numel(range_values) < 2 || any(isnan(range_values(1:2)))
+        return
+    end
+
+    lo = min(range_values(1), range_values(2));
+    hi = max(range_values(1), range_values(2));
+    mask = values >= lo & values <= hi;
+end
+
+
+function win_opts = denoise_window_opts(opts, window)
+    win_opts = opts;
+    if has_nonempty_field(window, 'method')
+        win_opts.denoise_method = char(window.method);
+    elseif has_nonempty_field(window, 'denoise_method')
+        win_opts.denoise_method = char(window.denoise_method);
+    end
+
+    if has_nonempty_field(window, 'denoise_sigma')
+        win_opts.denoise_sigma = double(window.denoise_sigma);
+    elseif has_nonempty_field(window, 'sigma')
+        win_opts.denoise_sigma = double(window.sigma);
+    end
+
+    if has_nonempty_field(window, 'sg_order')
+        win_opts.sg_order = double(window.sg_order);
+    end
+
+    if has_nonempty_field(window, 'sg_framelen')
+        win_opts.sg_framelen = double(window.sg_framelen);
+    end
+end
+
+
+function method = get_denoise_method(opts, default_method)
+    if isfield(opts, 'denoise_method') && ~isempty(opts.denoise_method)
+        method = char(opts.denoise_method);
+    else
+        method = default_method;
+    end
+end
+
+
+function value = get_numeric_opt(opts, field_name, default_value)
+    if isfield(opts, field_name) && ~isempty(opts.(field_name))
+        value = double(opts.(field_name));
+    else
+        value = default_value;
+    end
+end
+
+
+function tf = has_nonempty_field(s, field_name)
+    tf = isfield(s, field_name) && ~isempty(s.(field_name));
+end
+
+
+function win = denoise_wiener_window(matrix_size)
+    win = [min(3, matrix_size(1)), min(5, matrix_size(2))];
+    win = max(win, [1 1]);
 end

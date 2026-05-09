@@ -9,6 +9,7 @@ state = local_initial_state();
 ui = local_build_ui();
 
 local_sync_manual_y_state();
+local_sync_denoise_profile_controls();
 
 if strlength(string(startPath)) > 0
     local_load_start_path(string(startPath));
@@ -61,10 +62,12 @@ end
         state_out.manual_branches = {};  % cell array of branch matrices; first two columns are [q, energy]
         state_out.branchCorrectionLog = [];  % struct array of auto-fit manual corrections
         state_out.fitResults = {};       % cell array of fit_quasi2d_plasmon results
-        state_out.autoFitResults = [];   % struct array from auto Drude-Lorentz fit
-        state_out.pendingFit = [];       % pending single-spectrum Lorentz fit result
+        state_out.autoFitResults = [];   % struct array from auto spectrum fits
+        state_out.pendingFit = [];       % pending single-spectrum fit result
         state_out.qeImage = gobjects(1);
         state_out.selectionMarker = gobjects(1);
+        state_out.stackOffsetMode = "auto";
+        state_out.lastAutoStackOffset = NaN;
         % Preprocessing cache (avoid redundant SVD/FFT on every click)
         state_out.ppCache = struct('hash', '', 'qe', [], 'qe_pre', [], 'bg_diag', []);
         state_out.singlePreviewCache = struct('hash', '', 'qe_pre', []);
@@ -469,6 +472,13 @@ end
         snap.bgIter = ui.BgIterCheckbox.Value;
         snap.denoise = ui.DenoiseCheckbox.Value;
         snap.denoiseMethod = char(ui.DenoiseMethodDropdown.Value);
+        snap.denoiseProfile = char(ui.DenoiseProfileDropdown.Value);
+        snap.denoiseQSplit = ui.DenoiseQSplitField.Value;
+        snap.denoiseRampWidth = ui.DenoiseRampWidthField.Value;
+        snap.denoiseLowStrength = ui.DenoiseLowStrengthField.Value;
+        snap.denoiseHighStrength = ui.DenoiseHighStrengthField.Value;
+        snap.denoiseLowQMethod = char(ui.DenoiseLowQMethodDropdown.Value);
+        snap.denoiseHighQMethod = char(ui.DenoiseHighQMethodDropdown.Value);
         snap.denoiseSigma = ui.DenoiseSigmaField.Value;
         snap.deconv = ui.DeconvCheckbox.Value;
         snap.deconvIter = ui.DeconvIterField.Value;
@@ -525,6 +535,8 @@ end
         ui.YMaxField.Value = snap.yMax;
         ui.OffsetField.Value = snap.offset;
         ui.TraceModeDropdown.Value = snap.traceMode;
+        state.stackOffsetMode = "manual";
+        state.lastAutoStackOffset = snap.offset;
         ui.BaselineLambdaField.Value = snap.baseLambda;
         ui.AreaNormCheckbox.Value = snap.areaNorm;
         ui.AreaNormMinField.Value = snap.areaNormMin;
@@ -541,7 +553,37 @@ end
         end
         ui.DenoiseCheckbox.Value = snap.denoise;
         ui.DenoiseMethodDropdown.Value = snap.denoiseMethod;
+        if isfield(snap, 'denoiseProfile') && any(strcmp(snap.denoiseProfile, ui.DenoiseProfileDropdown.Items))
+            ui.DenoiseProfileDropdown.Value = snap.denoiseProfile;
+        end
+        if isfield(snap, 'denoiseQSplit')
+            ui.DenoiseQSplitField.Value = snap.denoiseQSplit;
+        end
+        if isfield(snap, 'denoiseRampWidth')
+            ui.DenoiseRampWidthField.Value = snap.denoiseRampWidth;
+        end
+        if isfield(snap, 'denoiseLowStrength')
+            ui.DenoiseLowStrengthField.Value = snap.denoiseLowStrength;
+        end
+        if isfield(snap, 'denoiseHighStrength')
+            ui.DenoiseHighStrengthField.Value = snap.denoiseHighStrength;
+        end
+        low_q_denoise_values = ui.DenoiseLowQMethodDropdown.ItemsData;
+        if isempty(low_q_denoise_values)
+            low_q_denoise_values = ui.DenoiseLowQMethodDropdown.Items;
+        end
+        if isfield(snap, 'denoiseLowQMethod') && any(strcmp(snap.denoiseLowQMethod, low_q_denoise_values))
+            ui.DenoiseLowQMethodDropdown.Value = snap.denoiseLowQMethod;
+        end
+        high_q_denoise_values = ui.DenoiseHighQMethodDropdown.ItemsData;
+        if isempty(high_q_denoise_values)
+            high_q_denoise_values = ui.DenoiseHighQMethodDropdown.Items;
+        end
+        if isfield(snap, 'denoiseHighQMethod') && any(strcmp(snap.denoiseHighQMethod, high_q_denoise_values))
+            ui.DenoiseHighQMethodDropdown.Value = snap.denoiseHighQMethod;
+        end
         ui.DenoiseSigmaField.Value = snap.denoiseSigma;
+        local_sync_denoise_profile_controls();
         ui.DeconvCheckbox.Value = snap.deconv;
         ui.DeconvIterField.Value = snap.deconvIter;
         if isfield(snap, 'prominence')
@@ -803,6 +845,13 @@ end
             'bgMethod', 'BG method', ...
             'denoise', 'Denoise', ...
             'denoiseMethod', 'Denoise method', ...
+            'denoiseProfile', 'Denoise profile', ...
+            'denoiseQSplit', 'Denoise q split', ...
+            'denoiseRampWidth', 'Denoise ramp width', ...
+            'denoiseLowStrength', 'Low-q strength', ...
+            'denoiseHighStrength', 'High-q strength', ...
+            'denoiseLowQMethod', 'Low-q denoise', ...
+            'denoiseHighQMethod', 'High-q denoise', ...
             'denoiseSigma', 'Denoise σ', ...
             'deconv', 'Deconv', ...
             'deconvIter', 'Deconv iter', ...
@@ -902,10 +951,31 @@ end
     end
 
 
-    function local_on_display_change(~, ~)
+    function local_on_display_change(src, ~)
+        if local_is_offset_control(src)
+            state.stackOffsetMode = "manual";
+        elseif strcmp(state.stackOffsetMode, "auto")
+            state.lastAutoStackOffset = NaN;
+        end
+        local_sync_denoise_profile_controls();
         local_log_operation(local_describe_changes());
         local_sync_manual_y_state();
         local_update_all_views();
+    end
+
+
+    function local_sync_denoise_profile_controls()
+        if ~isfield(ui, 'DenoiseProfileDropdown')
+            return
+        end
+        profile = char(ui.DenoiseProfileDropdown.Value);
+        show_split_methods = strcmp(profile, 'Split |q|');
+        show_adaptive_strength = strcmp(profile, 'Adaptive |q|');
+
+        ui.DenoiseLowQMethodDropdown.Visible = local_on_off(show_split_methods);
+        ui.DenoiseHighQMethodDropdown.Visible = local_on_off(show_split_methods);
+        ui.DenoiseLowStrengthField.Visible = local_on_off(show_adaptive_strength);
+        ui.DenoiseHighStrengthField.Visible = local_on_off(show_adaptive_strength);
     end
 
 
@@ -1171,7 +1241,7 @@ end
 
 
     function local_on_fit_spectrum(~, ~)
-        % Fit the currently displayed single spectrum with Drude-Lorentz
+        % Fit the currently displayed single spectrum with the selected model.
         if isempty(state.physicalQE) && isempty(state.comparisonQE)
             ui.FitInfoLabel.Text = "Load data first";
             return
@@ -1247,20 +1317,23 @@ end
         % Overlay fit on spectrum axes
         ax = ui.SingleAxes;
         hold(ax, 'on');
+        fit_tag = local_fit_overlay_tag();
+        fit_label = local_fit_model_label(result);
 
         % Delete any previous fit overlay
+        delete(findobj(ax, 'Tag', fit_tag));
         delete(findobj(ax, 'Tag', 'lorentz_fit'));
 
         % Total fit curve
         plot(ax, result.energy_fit, result.curve_fit, 'r-', ...
-            'LineWidth', 2, 'Tag', 'lorentz_fit', ...
-            'DisplayName', 'Lorentz fit');
+            'LineWidth', 2, 'Tag', fit_tag, ...
+            'DisplayName', fit_label);
 
         % Background curve (power-law)
         if isfield(result, 'bg_curve')
             plot(ax, result.energy_fit, result.bg_curve, ':', ...
                 'Color', [0.5 0.5 0.5], 'LineWidth', 1.5, ...
-                'Tag', 'lorentz_fit', 'DisplayName', 'Background');
+                'Tag', fit_tag, 'DisplayName', 'Background');
         end
 
         % Individual peak components (plotted ON TOP of background)
@@ -1285,14 +1358,14 @@ end
             % Plot peak component + background so it's visible
             peak_on_bg = result.peak_curves{p} + bg_vals;
             plot(ax, result.energy_fit, peak_on_bg, '--', ...
-                'Color', col, 'LineWidth', 1.5, 'Tag', 'lorentz_fit');
+                'Color', col, 'LineWidth', 1.5, 'Tag', fit_tag);
 
             % Peak marker at peak position on total fit
             [~, pk_idx] = min(abs(result.energy_fit - peak_energy(p)));
             marker_y = result.curve_fit(pk_idx);
             plot(ax, peak_energy(p), marker_y, 'v', ...
                 'MarkerSize', 10, 'MarkerFaceColor', col, ...
-                'MarkerEdgeColor', 'k', 'Tag', 'lorentz_fit');
+                'MarkerEdgeColor', 'k', 'Tag', fit_tag);
 
             marker_label = sprintf('E0 %.0f', result.omega_p(p));
             if isfield(result, 'apex_energy_meV') && numel(result.apex_energy_meV) >= p
@@ -1305,7 +1378,7 @@ end
             text(ax, peak_energy(p), marker_y * 1.08, ...
                 marker_label, ...
                 'FontSize', 9, 'FontWeight', 'bold', 'Color', col, ...
-                'HorizontalAlignment', 'center', 'Tag', 'lorentz_fit');
+                'HorizontalAlignment', 'center', 'Tag', fit_tag);
 
             if isfield(result, 'gamma_ratio') && numel(result.gamma_ratio) >= p ...
                     && isfield(result, 'apex_energy_meV') && numel(result.apex_energy_meV) >= p
@@ -1331,8 +1404,8 @@ end
         hold(ax, 'off');
 
         % Update fit info
-        ui.FitInfoLabel.Text = sprintf('q=%.4f | %s | R²=%.3f', ...
-            abs_q, strjoin(info_parts, ', '), result.R_squared);
+        ui.FitInfoLabel.Text = sprintf('q=%.4f | %s | %s | R²=%.3f', ...
+            abs_q, fit_label, strjoin(info_parts, ', '), result.R_squared);
 
         % Enable Accept button
         ui.AcceptFitButton.Enable = local_on_off(any(keep));
@@ -1345,6 +1418,21 @@ end
             apex = result.apex_energy_meV(:);
             use_apex = isfinite(apex);
             peak_energy(use_apex) = apex(use_apex);
+        end
+    end
+
+
+    function tag = local_fit_overlay_tag()
+        tag = 'spectrum_fit_overlay';
+    end
+
+
+    function label = local_fit_model_label(result)
+        if isfield(result, 'peak_model_name') && ...
+                strlength(string(result.peak_model_name)) > 0
+            label = sprintf('%s fit', char(string(result.peak_model_name)));
+        else
+            label = 'Spectrum fit';
         end
     end
 
@@ -2021,7 +2109,13 @@ end
             pp_summary = [pp_summary '_norm'];
         end
         if pp_opts.do_denoise
-            pp_summary = [pp_summary '_' lower(pp_opts.denoise_method)];
+            if isfield(pp_opts, 'denoise_profile') && strcmp(pp_opts.denoise_profile, 'Adaptive |q|')
+                pp_summary = [pp_summary '_adaptiveq-denoise'];
+            elseif isfield(pp_opts, 'denoise_profile') && strcmp(pp_opts.denoise_profile, 'Split |q|')
+                pp_summary = [pp_summary '_splitq-denoise'];
+            else
+                pp_summary = [pp_summary '_' lower(pp_opts.denoise_method)];
+            end
         end
         if pp_opts.do_bg_sub
             pp_summary = [pp_summary '_bg' lower(pp_opts.bg_method)];
@@ -2719,12 +2813,14 @@ end
             'q_start', ui.QStartField.Value, ...
             'q_end', ui.QEndField.Value, ...
             'q_step', ui.QStepField.Value, ...
-            'offset', ui.OffsetField.Value);
+            'offset', 0);
         stack = qe_prepare_stacked_spectra(energy_axis, spectra_matrix, qe.q_Ainv, stack_opts);
         if isempty(stack.q_indices)
             title(ax, "Stacked Spectra");
             return
         end
+        stack_offset = local_effective_stack_offset(stack.traces);
+        stack = local_apply_stack_offset(stack, stack_offset);
 
         plotted_values = stack.shifted_traces(:);
         hold(ax, "on");
@@ -2763,6 +2859,40 @@ end
         ax.YScale = local_trace_y_scale();
         xlim(ax, [stack.energy_meV(1), stack.energy_meV(end)]);
         local_apply_y_limits(ax, plotted_values);
+    end
+
+
+    function stack = local_apply_stack_offset(stack, stack_offset)
+        stack.offsets = qe_adaptive_stack_offsets(stack.traces, stack_offset);
+        stack.shifted_traces = stack.traces + reshape(stack.offsets, 1, []);
+    end
+
+
+    function stack_offset = local_effective_stack_offset(traces)
+        if strcmp(state.stackOffsetMode, "manual")
+            stack_offset = double(ui.OffsetField.Value);
+            if isfinite(stack_offset)
+                return
+            end
+            state.stackOffsetMode = "auto";
+        end
+
+        stack_offset = qe_auto_stack_offset(traces);
+        state.lastAutoStackOffset = stack_offset;
+        ui.OffsetField.Value = stack_offset;
+    end
+
+
+    function tf = local_is_offset_control(src)
+        tf = false;
+        if nargin < 1 || isempty(src)
+            return
+        end
+        try
+            tf = isequal(src, ui.OffsetField);
+        catch
+            tf = false;
+        end
     end
 
 
@@ -3280,7 +3410,10 @@ end
         ui.QStepField.Value = qe.dq_Ainv;
         ui.EnergyMinField.Value = qe.energy_meV(1);
         ui.EnergyMaxField.Value = qe.energy_meV(end);
+        state.stackOffsetMode = "auto";
+        state.lastAutoStackOffset = NaN;
         ui.OffsetField.Value = local_default_offset(qe);
+        state.lastAutoStackOffset = ui.OffsetField.Value;
         ui.RefAbsQMinField.Value = default_ref_q_min;
         ui.RefAbsQMaxField.Value = default_ref_q_max;
     end
@@ -3936,17 +4069,30 @@ end
 
 
     function value = local_default_offset(qe)
-        sample = double(qe.intensity);
-        finite_values = sample(isfinite(sample));
-        if isempty(finite_values)
-            value = 0.25;
-            return
-        end
-        span = max(finite_values) - min(finite_values);
-        if span <= 0 || ~isfinite(span)
-            value = max(abs(max(finite_values)), 1) * 0.05;
-        else
-            value = span * 0.08;
+        try
+            [mask, energy_axis] = local_energy_mask(qe);
+            all_q_mask = true(1, size(qe.intensity, 2));
+            spectra_matrix = local_build_map_values(qe, mask, all_q_mask, local_trace_mode());
+            stack_opts = struct( ...
+                'q_start', ui.QStartField.Value, ...
+                'q_end', ui.QEndField.Value, ...
+                'q_step', ui.QStepField.Value, ...
+                'offset', 0);
+            stack = qe_prepare_stacked_spectra(energy_axis, spectra_matrix, qe.q_Ainv, stack_opts);
+            value = qe_auto_stack_offset(stack.traces);
+        catch
+            sample = double(qe.intensity);
+            finite_values = sample(isfinite(sample));
+            if isempty(finite_values)
+                value = 0.25;
+                return
+            end
+            span = max(finite_values) - min(finite_values);
+            if span <= 0 || ~isfinite(span)
+                value = max(abs(max(finite_values)), 1) * 0.05;
+            else
+                value = span * 0.08;
+            end
         end
         value = max(value, eps);
     end
@@ -3997,8 +4143,39 @@ end
         opts.do_denoise = ui.DenoiseCheckbox.Value;
         opts.denoise_method = char(ui.DenoiseMethodDropdown.Value);
         opts.denoise_sigma = ui.DenoiseSigmaField.Value;
+        opts.denoise_profile = char(ui.DenoiseProfileDropdown.Value);
+        opts.denoise_q_split_Ainv = ui.DenoiseQSplitField.Value;
+        opts.denoise_ramp_width_Ainv = ui.DenoiseRampWidthField.Value;
+        opts.denoise_low_strength = ui.DenoiseLowStrengthField.Value;
+        opts.denoise_high_strength = ui.DenoiseHighStrengthField.Value;
+        opts.denoise_lowq_method = char(ui.DenoiseLowQMethodDropdown.Value);
+        opts.denoise_highq_method = char(ui.DenoiseHighQMethodDropdown.Value);
         opts.sg_order = ui.SGOrderField.Value;
         opts.sg_framelen = ui.SGFrameLenField.Value;
+        opts.denoise_q_ramp = struct([]);
+        opts.denoise_windows = struct([]);
+        if opts.do_denoise && strcmp(opts.denoise_profile, 'Adaptive |q|')
+            ramp_width = abs(double(opts.denoise_ramp_width_Ainv));
+            if ~isfinite(ramp_width)
+                ramp_width = 0;
+            end
+            q_center = abs(double(opts.denoise_q_split_Ainv));
+            if ~isfinite(q_center)
+                q_center = 0;
+            end
+            opts.denoise_q_ramp = struct( ...
+                'method', opts.denoise_method, ...
+                'q_start_Ainv', max(0, q_center - ramp_width), ...
+                'q_end_Ainv', q_center + ramp_width, ...
+                'low_sigma', opts.denoise_low_strength, ...
+                'high_sigma', opts.denoise_high_strength);
+        elseif opts.do_denoise && strcmp(opts.denoise_profile, 'Split |q|')
+            opts.denoise_windows = local_split_denoise_windows( ...
+                opts.denoise_q_split_Ainv, ...
+                opts.denoise_lowq_method, ...
+                opts.denoise_highq_method, ...
+                opts);
+        end
         opts.do_bg_sub = ui.BgSubCheckbox.Value;
         opts.bg_method = char(ui.BgMethodDropdown.Value);
         opts.do_deconv = ui.DeconvCheckbox.Value;
@@ -4012,6 +4189,28 @@ end
             opts.bg_win_hi = [];
         end
         opts.bg_iterative = ui.BgIterCheckbox.Value;
+    end
+
+
+    function windows = local_split_denoise_windows(q_split_Ainv, low_q_method, high_q_method, opts)
+        q_split_Ainv = abs(double(q_split_Ainv));
+        if ~isfinite(q_split_Ainv)
+            q_split_Ainv = 0;
+        end
+        high_q_min = q_split_Ainv + max(eps(q_split_Ainv), 1e-12);
+
+        template = struct( ...
+            'method', '', ...
+            'q_range_Ainv', [], ...
+            'abs_q_range_Ainv', [], ...
+            'denoise_sigma', opts.denoise_sigma, ...
+            'sg_order', opts.sg_order, ...
+            'sg_framelen', opts.sg_framelen);
+        windows = repmat(template, 1, 2);
+        windows(1).method = char(low_q_method);
+        windows(1).abs_q_range_Ainv = [0 q_split_Ainv];
+        windows(2).method = char(high_q_method);
+        windows(2).abs_q_range_Ainv = [high_q_min inf];
     end
 
 
@@ -4127,6 +4326,27 @@ end
         parts{end+1} = sprintf('%d', opts.do_denoise);
         parts{end+1} = opts.denoise_method;
         parts{end+1} = sprintf('%.1f', opts.denoise_sigma);
+        if isfield(opts, 'denoise_profile')
+            parts{end+1} = opts.denoise_profile;
+        end
+        if isfield(opts, 'denoise_q_split_Ainv')
+            parts{end+1} = sprintf('%.6g', opts.denoise_q_split_Ainv);
+        end
+        if isfield(opts, 'denoise_ramp_width_Ainv')
+            parts{end+1} = sprintf('%.6g', opts.denoise_ramp_width_Ainv);
+        end
+        if isfield(opts, 'denoise_low_strength')
+            parts{end+1} = sprintf('%.6g', opts.denoise_low_strength);
+        end
+        if isfield(opts, 'denoise_high_strength')
+            parts{end+1} = sprintf('%.6g', opts.denoise_high_strength);
+        end
+        if isfield(opts, 'denoise_lowq_method')
+            parts{end+1} = opts.denoise_lowq_method;
+        end
+        if isfield(opts, 'denoise_highq_method')
+            parts{end+1} = opts.denoise_highq_method;
+        end
         parts{end+1} = sprintf('%d', opts.do_bg_sub);
         parts{end+1} = opts.bg_method;
         parts{end+1} = sprintf('%.1f_%.1f', opts.bg_win_lo(1), opts.bg_win_lo(2));

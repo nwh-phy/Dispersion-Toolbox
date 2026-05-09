@@ -132,6 +132,22 @@ classdef QeBrowserCuratedWorkflowTest < matlab.unittest.TestCase
             testCase.verifyTrue(contains(src, 'export_mode.Layout.Row = 10'));
         end
 
+        function testMainUiExposesQAdaptiveDenoiseControls(testCase)
+            projectRoot = fileparts(fileparts(mfilename('fullpath')));
+            uiSrc = fileread(fullfile(projectRoot, 'src', 'ui', 'qe_browser_ui.m'));
+            guiSrc = fileread(fullfile(projectRoot, 'src', 'interactive_qe_browser.m'));
+
+            testCase.verifyTrue(contains(uiSrc, '''Adaptive |q|'''));
+            testCase.verifyFalse(contains(uiSrc, '''Split |q|'''));
+            testCase.verifyTrue(contains(uiSrc, 'DenoiseProfileDropdown'));
+            testCase.verifyTrue(contains(uiSrc, 'DenoiseQSplitField'));
+            testCase.verifyTrue(contains(uiSrc, 'DenoiseRampWidthField'));
+            testCase.verifyTrue(contains(uiSrc, 'DenoiseLowStrengthField'));
+            testCase.verifyTrue(contains(uiSrc, 'DenoiseHighStrengthField'));
+            testCase.verifyTrue(contains(guiSrc, 'denoise_q_ramp'));
+            testCase.verifyTrue(contains(guiSrc, 'denoise_windows'));
+        end
+
         function testPanelExportSupportsMultiSelectAndPresets(testCase)
             projectRoot = fileparts(fileparts(mfilename('fullpath')));
             src = fileread(fullfile(projectRoot, 'src', 'interactive_qe_browser.m'));

@@ -234,6 +234,24 @@ runtests('tests')
 
 ---
 
+## Case Studies
+
+Reusable toolbox code lives in `src/`; core tests are run with:
+
+```matlab
+startup; runtests('tests')
+```
+
+BiSb-specific analysis examples live in `case_studies/bisb2026/`. These scripts
+may require ignored local data and outputs such as `20260120 BiSb/` and
+`paper_results/`. Run their workflow tests separately:
+
+```matlab
+runtests('case_studies/bisb2026/tests')
+```
+
+---
+
 ## License
 
 This project is provided for academic and research use within the group.

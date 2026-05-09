@@ -39,22 +39,27 @@ q_axis = double(q_axis(:)).';
 q_min = min(opts.q_start, opts.q_end);
 q_max = max(opts.q_start, opts.q_end);
 q_step = max(double(opts.q_step), eps);
+q_scale = max([1, abs(q_axis), abs(q_min), abs(q_max)]);
+q_tol = 32 * eps(q_scale);
+q_candidate_indices = find(q_axis >= (q_min - q_tol) & q_axis <= (q_max + q_tol));
 
 targets = q_min:q_step:q_max;
 if isempty(targets)
     targets = q_min;
 end
 
+if isempty(q_candidate_indices)
+    [~, nearest_idx] = min(abs(q_axis - mean([q_min, q_max])));
+    q_candidate_indices = nearest_idx;
+end
+q_candidates = q_axis(q_candidate_indices);
+
 q_indices = zeros(1, numel(targets));
 for idx = 1:numel(targets)
-    [~, q_indices(idx)] = min(abs(q_axis - targets(idx)));
+    [~, nearest_idx] = min(abs(q_candidates - targets(idx)));
+    q_indices(idx) = q_candidate_indices(nearest_idx);
 end
 q_indices = unique(q_indices, 'stable');
-
-if isempty(q_indices)
-    [~, nearest_idx] = min(abs(q_axis - mean([q_min, q_max])));
-    q_indices = nearest_idx;
-end
 
 traces = double(spectra(:, q_indices));
 offsets = (0:(numel(q_indices) - 1)) * double(opts.offset);
