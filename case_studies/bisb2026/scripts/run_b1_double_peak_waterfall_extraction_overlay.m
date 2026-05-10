@@ -108,6 +108,10 @@ for i = 1:size(normalized, 2)
         'LineWidth', 1.05);
 end
 
+if isfield(extract, 'candidate_points')
+    local_overlay_candidates(ax, extract.candidate_points, energy_axis, ...
+        normalized, offsets, q_values);
+end
 overlay_rows = local_overlay_branch(ax, extract.lower_points, energy_axis, ...
     normalized, offsets, q_values, groups, [0.00 0.40 1.00], 'lower');
 overlay_rows = [overlay_rows; local_overlay_branch(ax, extract.upper_points, ...
@@ -180,6 +184,39 @@ end
 parts{end + 1} = 'lower blue'; %#ok<AGROW>
 parts{end + 1} = 'upper magenta'; %#ok<AGROW>
 line = strjoin(parts, ' | ');
+end
+
+
+function local_overlay_candidates(ax, candidates, energy_axis, normalized, ...
+    offsets, q_values)
+if isempty(candidates) || height(candidates) == 0 || ...
+        ~all(ismember({'q_Ainv', 'lower_energy_meV', 'upper_energy_meV'}, ...
+        candidates.Properties.VariableNames))
+    return
+end
+for i = 1:height(candidates)
+    q = double(candidates.q_Ainv(i));
+    [~, trace_idx] = min(abs(q_values - q));
+    if isempty(trace_idx)
+        continue
+    end
+    energies = [double(candidates.lower_energy_meV(i)), ...
+        double(candidates.upper_energy_meV(i))];
+    for j = 1:numel(energies)
+        energy = energies(j);
+        if ~isfinite(energy) || energy < min(energy_axis) || ...
+                energy > max(energy_axis)
+            continue
+        end
+        y = interp1(energy_axis, normalized(:, trace_idx), energy, ...
+            'linear', NaN) + offsets(trace_idx);
+        if ~isfinite(y)
+            continue
+        end
+        plot(ax, energy, y, '.', 'MarkerSize', 5.0, ...
+            'Color', [0.45 0.45 0.45]);
+    end
+end
 end
 
 

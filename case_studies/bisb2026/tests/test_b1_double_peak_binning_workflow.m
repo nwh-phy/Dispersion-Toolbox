@@ -600,6 +600,187 @@ verifyEmpty(testCase, strfind(src, 'u1_baseline_diagnostics'));
 end
 
 
+function testRidgeReferenceFindsContinuousSyntheticBranches(testCase)
+[qe, ~, ~] = local_synthetic_ridge_qe();
+
+ref = b1_double_peak_ridge_reference(qe.energy_meV, qe.q_Ainv, ...
+    qe.intensity, energyWindowMeV=[300 2100], smoothWindow=7);
+
+verifyTrue(testCase, isfield(ref, 'lower_points'));
+verifyTrue(testCase, isfield(ref, 'upper_points'));
+verifyEqual(testCase, height(ref.lower_points), numel(qe.q_Ainv));
+verifyEqual(testCase, height(ref.upper_points), numel(qe.q_Ainv));
+verifyTrue(testCase, all(ref.lower_points.energy_meV < ...
+    ref.upper_points.energy_meV));
+verifyLessThan(testCase, max(abs(diff(ref.lower_points.energy_meV))), 120);
+verifyLessThan(testCase, max(abs(diff(ref.upper_points.energy_meV))), 120);
+verifyTrue(testCase, all(strcmp(ref.reference_points.ridge_source, ...
+    'ridge_reference')));
+end
+
+
+function testCandidatePathSelectionPrefersContinuousPathOverBestR2Outlier(testCase)
+q = (-0.02:0.01:0.02).';
+n = numel(q);
+candidate_id = (1:(2*n)).';
+q_rep = repelem(q, 2);
+source = repmat({'continuous_pair'; 'high_r2_outlier'}, n, 1);
+lower = repelem(700 + 20 * (1:n).', 2);
+upper = repelem(1180 + 18 * (1:n).', 2);
+r2 = repmat([0.95; 0.999], n, 1);
+gamma = repmat(80, 2*n, 1);
+upper(2*3) = 1700;
+
+candidates = table(candidate_id, q_rep, abs(q_rep), source, ...
+    lower, upper, gamma, gamma, r2, ...
+    'VariableNames', {'candidate_id', 'q_Ainv', 'q_abs_Ainv', ...
+    'candidate_source', 'lower_energy_meV', 'upper_energy_meV', ...
+    'lower_gamma_meV', 'upper_gamma_meV', 'R2'});
+
+selection = b1_double_peak_candidate_path_select(candidates, ...
+    sessionKey="no_PL2_20w_2film");
+
+selected = selection.path_selection;
+verifyEqual(testCase, height(selected), n);
+verifyEqual(testCase, selected.candidate_source{3}, 'continuous_pair');
+verifyEqual(testCase, sum(abs(diff(selected.upper_energy_meV)) > 250), 0);
+
+[~, best_idx] = max(reshape(candidates.R2, 2, []).', [], 2);
+best_rows = (0:n-1).' * 2 + best_idx;
+verifyGreaterThan(testCase, ...
+    sum(abs(diff(candidates.upper_energy_meV(best_rows))) > 250), 0);
+end
+
+
+function testRidgeGuidedExtractionRecordsCandidatesAndUsesLorentz(testCase)
+[qe, qe_raw, old_points] = local_synthetic_ridge_qe();
+opts = local_default_opts(old_points);
+opts.energy_window_meV = [300 2100];
+opts.q_range_Ainv = [-0.05 0.05];
+opts.peak_model = 'lorentz';
+opts.tracking_mode = 'ridge_guided_candidate_path';
+opts.fallback_split_candidates_meV = [120 160 220];
+opts.bin_size = 3;
+opts.noise_threshold = Inf;
+opts.high_q_force_bin_abs_Ainv = Inf;
+opts.fit_denoise_method = 'sgolay';
+opts.fit_denoise_profile = 'adaptive_absq';
+opts.fit_denoise_low_window = 7;
+opts.fit_denoise_high_window = 11;
+opts.fit_denoise_q_start_Ainv = 0.03;
+opts.fit_denoise_q_end_Ainv = 0.05;
+
+result = b1_double_peak_binning_extract(qe, qe_raw, opts);
+
+verifyTrue(testCase, isfield(result, 'candidate_points'));
+verifyTrue(testCase, isfield(result, 'path_selection'));
+verifyGreaterThan(testCase, height(result.candidate_points), 0);
+verifyEqual(testCase, height(result.path_selection), ...
+    height(result.lower_points));
+verifyGreaterThan(testCase, height(result.lower_points), 0);
+verifyGreaterThan(testCase, height(result.upper_points), 0);
+verifyTrue(testCase, all(strcmp(result.lower_points.peak_model, ...
+    'lorentz')));
+verifyTrue(testCase, all(strcmp(result.upper_points.tracking_mode, ...
+    'ridge_guided_candidate_path')));
+verifyFalse(testCase, any(strcmp(result.candidate_points.peak_model, ...
+    'fano')));
+verifyTrue(testCase, all(ismember({'candidate_id', 'candidate_source', ...
+    'source_q_Ainv'}, result.candidate_points.Properties.VariableNames)));
+end
+
+
+function testWeakSecondLorentzCanBeKeptForFailureRetry(testCase)
+energy = (300:10:1800).';
+spectrum = 0.02 + 1.00 * local_gaussian(energy, 760, 45) + ...
+    0.06 * local_gaussian(energy, 980, 55);
+
+strict = fit_loss_function(energy, spectrum, ...
+    E_min=300, E_max=1800, max_peaks=2, ...
+    initial_guesses=[760; 980], peak_model='lorentz', ...
+    pre_subtracted=true, min_peak_amplitude_fraction=0.10);
+retry = fit_loss_function(energy, spectrum, ...
+    E_min=300, E_max=1800, max_peaks=2, ...
+    initial_guesses=[760; 980], peak_model='lorentz', ...
+    pre_subtracted=true, min_peak_amplitude_fraction=0.02);
+
+verifyEqual(testCase, strict.n_peaks, 1);
+verifyEqual(testCase, retry.n_peaks, 2);
+verifyTrue(testCase, contains(lower(char(retry.peak_model_name)), 'lorentz'));
+end
+
+
+function testRidgeGuidedScriptDeclaresClean300ReferencesAndTemplateOnly(testCase)
+script_path = fullfile(testCase.TestData.project_root, ...
+    'case_studies', 'bisb2026', 'scripts', ...
+    'run_b1_lorentz_tracking_ridge_guided_optimization.m');
+
+verifyTrue(testCase, isfile(script_path));
+src = fileread(script_path);
+
+required = { ...
+    'b1_lorentz_tracking_optimization_260510_ridge_guided', ...
+    'ridge_guided_candidate_path', ...
+    'targetScore (1,1) double = 300', ...
+    'manualAnchorPolicy', ...
+    'template_only', ...
+    'v10a_300_2100_ridge_seed', ...
+    'v10b_300_2100_candidate_path', ...
+    'v10c_300_2100_qualityretry', ...
+    'v11a_20w_bin11_sg111', ...
+    'v11b_20w_bin11_sg131', ...
+    'v11c_300_1800_20w_bin11_sg111', ...
+    'b1_double_peak_lorentz_candidate_points.csv', ...
+    'b1_double_peak_candidate_path_selection.csv', ...
+    'b1_double_peak_manual_anchor_template_ridge_guided.csv', ...
+    'runFits=false', ...
+    'qRangeOverride_Ainv=[-0.15 0.15]', ...
+    'low_q_no_bin_abs_Ainv=0.05', ...
+    'peakModelOverride=''lorentz''', ...
+    'b1EnergyWindowOverrideMeV=variant.b1_energy_window'};
+for i = 1:numel(required)
+    verifyNotEmpty(testCase, strfind(src, required{i}), ...
+        sprintf('Missing ridge-guided token: %s', required{i}));
+end
+forbidden = {'until300_v7', 'DEPRECATED_B1_500MEV_WINDOW', ...
+    'branch1Min'', 500', 'peakModelOverride=''fano''', ...
+    'run_b1_physical_fit_analysis'};
+for i = 1:numel(forbidden)
+    verifyEmpty(testCase, strfind(src, forbidden{i}), ...
+        sprintf('Deprecated ridge-guided token found: %s', forbidden{i}));
+end
+end
+
+
+function testRidgeGuidedFailureRetryScriptDeclaresTargetedNoFitWorkflow(testCase)
+script_path = fullfile(testCase.TestData.project_root, ...
+    'case_studies', 'bisb2026', 'scripts', ...
+    'run_b1_lorentz_tracking_ridge_guided_failure_retry.m');
+
+verifyTrue(testCase, isfile(script_path));
+src = fileread(script_path);
+
+required = { ...
+    'b1_lorentz_tracking_optimization_260510_ridge_guided_failure_retry', ...
+    'v14_failure_retry_amp0_split40_420', ...
+    'fitMinPeakAmplitudeFraction=0', ...
+    'fallbackSplitCandidatesMeV=[40 60 80 120 160 220 280 340 420]', ...
+    'b1EnergyWindowOverrideMeV=[300 1800]', ...
+    'trackingMode=''ridge_guided_candidate_path''', ...
+    'runFits=false', ...
+    'targetScore (1,1) double = 300', ...
+    'manualAnchorPolicy', ...
+    'template_only', ...
+    'no physical fit was run'};
+for i = 1:numel(required)
+    verifyNotEmpty(testCase, strfind(src, required{i}), ...
+        sprintf('Missing failure-retry token: %s', required{i}));
+end
+verifyEmpty(testCase, strfind(src, 'DEPRECATED_B1_500MEV_WINDOW'));
+verifyEmpty(testCase, strfind(src, 'run_b1_physical_fit_analysis'));
+end
+
+
 function [qe, qe_raw, old_points] = local_synthetic_qe(with_highq_noise)
 energy = (400:10:2200).';
 q = (0.01:0.01:0.05).';
@@ -670,6 +851,27 @@ end
 qe = struct('energy_meV', energy, 'q_Ainv', q, 'intensity', intensity);
 qe_raw = qe;
 old_points = table(q, 820 + 3600 * q, ...
+    'VariableNames', {'q_Ainv', 'energy_meV'});
+end
+
+
+function [qe, qe_raw, old_points] = local_synthetic_ridge_qe()
+energy = (300:10:2100).';
+q = (-0.05:0.01:0.05).';
+intensity = zeros(numel(energy), numel(q));
+
+for i = 1:numel(q)
+    lower = 620 + 1600 * abs(q(i)) + 20 * q(i);
+    upper = 1120 + 1100 * abs(q(i)) - 15 * q(i);
+    y = 0.008 + 0.90 * local_gaussian(energy, lower, 42) + ...
+        0.70 * local_gaussian(energy, upper, 55);
+    y = y + 0.015 * sin(energy ./ 85 + 30 * q(i));
+    intensity(:, i) = y;
+end
+
+qe = struct('energy_meV', energy, 'q_Ainv', q, 'intensity', intensity);
+qe_raw = qe;
+old_points = table(q, 870 + 1200 * abs(q), ...
     'VariableNames', {'q_Ainv', 'energy_meV'});
 end
 

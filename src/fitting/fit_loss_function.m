@@ -28,6 +28,7 @@ arguments
     options.peak_model     (1,:) char = 'lorentz'
     options.pre_subtracted (1,1) logical = false
     options.bootstrap_ci_samples (1,1) double = NaN
+    options.min_peak_amplitude_fraction (1,1) double = 0.10
 end
 
 %% Load peak model definition
@@ -273,9 +274,10 @@ omega_p_ci = omega_p_ci(si, :);
 gamma_ci = gamma_ci(si, :);
 amplitude_ci = amplitude_ci(si, :);
 
-% Post-fit filter: remove peaks with amplitude < 10% of max
+% Post-fit filter: remove peaks with amplitude below the configured fraction.
 max_amp = max(amp_vals);
-keep = amp_vals >= 0.1 * max_amp;
+amp_fraction = max(0, double(options.min_peak_amplitude_fraction));
+keep = amp_vals >= amp_fraction * max_amp;
 if any(keep)
     omega_p_vals = omega_p_vals(keep);
     gamma_vals = gamma_vals(keep);

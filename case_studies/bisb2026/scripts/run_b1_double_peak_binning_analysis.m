@@ -24,7 +24,9 @@ arguments
     options.fitDenoiseQStartAinv (1,1) double = 0.07
     options.fitDenoiseQEndAinv (1,1) double = 0.15
     options.fitDenoiseOrder (1,1) double = 3
+    options.fitMinPeakAmplitudeFraction (1,1) double = 0.10
     options.highQForceBinAbsAinv (1,1) double = Inf
+    options.lowQNoBinAbsAinv (1,1) double = 0.05
     options.binSize (1,1) double = 3
     options.peakModelOverride {mustBeTextScalar} = ""
     options.trackingMode {mustBeTextScalar} = "independent_double_peak"
@@ -43,6 +45,10 @@ arguments
     options.upperRetryWindowHalfWidthMeV (1,1) double = 180
     options.upperRetryHighQHalfWidthMeV (1,1) double = 240
     options.upperRetryHighQAbsAinv (1,1) double = 0.09
+    options.ridgeSmoothWindow (1,1) double = 9
+    options.candidatePathUpperMediumJumpThresholdMeV (1,1) double = NaN
+    options.candidatePathLargeJumpThresholdMeV (1,1) double = 250
+    options.candidatePathEdgeEnergyMeV (1,2) double = [650 1900]
     options.enableJumpRepair (1,1) logical = false
     options.largeJumpThresholdMeV (1,1) double = 250
     options.referenceLowerPoints table = table()
@@ -215,6 +221,7 @@ qe_raw = local_reconstruct_raw_qe(result_data.output, qe_pp);
 snap = result_data.output.snap;
 
 extract_opts = local_extract_options(snap, old_points, options);
+extract_opts.session_key = session.session_key;
 extract = b1_double_peak_binning_extract(qe_pp, qe_raw, extract_opts);
 if options.enableJumpRepair
     repaired = b1_double_peak_repair_tracking_points( ...
@@ -249,6 +256,10 @@ noise_csv = fullfile(out_dir, 'b1_double_peak_noise_profile.csv');
 failures_csv = fullfile(out_dir, 'b1_double_peak_fit_failures.csv');
 repair_log_csv = fullfile(out_dir, 'b1_double_peak_repair_log.csv');
 exclusion_csv = fullfile(out_dir, 'b1_double_peak_exclusion_points.csv');
+candidate_csv = fullfile(out_dir, ...
+    'b1_double_peak_lorentz_candidate_points.csv');
+path_selection_csv = fullfile(out_dir, ...
+    'b1_double_peak_candidate_path_selection.csv');
 writetable(extract.combined_points, combined_csv);
 writetable(extract.lower_points, lower_csv);
 writetable(extract.upper_points, upper_csv);
@@ -257,6 +268,16 @@ writetable(extract.noise_profile, noise_csv);
 writetable(extract.fit_failures, failures_csv);
 writetable(extract.repair_log, repair_log_csv);
 writetable(extract.exclusion_points, exclusion_csv);
+if isfield(extract, 'candidate_points')
+    writetable(extract.candidate_points, candidate_csv);
+else
+    writetable(table(), candidate_csv);
+end
+if isfield(extract, 'path_selection')
+    writetable(extract.path_selection, path_selection_csv);
+else
+    writetable(table(), path_selection_csv);
+end
 
 fig_paths = struct();
 fig_paths.binning_spectrum_png = fullfile(out_dir, ...
@@ -346,6 +367,8 @@ out.noise_csv = noise_csv;
 out.failures_csv = failures_csv;
 out.repair_log_csv = repair_log_csv;
 out.exclusion_csv = exclusion_csv;
+out.candidate_csv = candidate_csv;
+out.path_selection_csv = path_selection_csv;
 out.manual_window_seed_csv = manual_window_seed_csv;
 out.plot_q_binning_csv = plot_q_binning_csv;
 out.figure_paths = fig_paths;
@@ -385,7 +408,7 @@ opts.q_range_Ainv = q_range;
 opts.q_skip_Ainv = 0.005;
 opts.bin_size = run_options.binSize;
 opts.noise_threshold = NaN;
-opts.low_q_no_bin_abs_Ainv = 0.05;
+opts.low_q_no_bin_abs_Ainv = run_options.lowQNoBinAbsAinv;
 opts.peak_model = char(local_snap_value(snap, 'peakModel', 'fano'));
 if strlength(string(run_options.peakModelOverride)) > 0
     opts.peak_model = char(string(run_options.peakModelOverride));
@@ -427,6 +450,12 @@ opts.upper_retry_window_half_width_meV = ...
 opts.upper_retry_highq_half_width_meV = ...
     run_options.upperRetryHighQHalfWidthMeV;
 opts.upper_retry_highq_abs_Ainv = run_options.upperRetryHighQAbsAinv;
+opts.ridge_smooth_window = run_options.ridgeSmoothWindow;
+opts.candidate_path_upper_medium_jump_threshold_meV = ...
+    run_options.candidatePathUpperMediumJumpThresholdMeV;
+opts.candidate_path_large_jump_threshold_meV = ...
+    run_options.candidatePathLargeJumpThresholdMeV;
+opts.candidate_path_edge_energy_meV = run_options.candidatePathEdgeEnergyMeV;
 opts.reference_lower_points = run_options.referenceLowerPoints;
 opts.reference_upper_points = run_options.referenceUpperPoints;
 opts.waterfall_start_meV = max(0, run_options.waterfallStartMeV);
@@ -443,6 +472,7 @@ opts.fit_denoise_high_window = run_options.fitDenoiseHighWindow;
 opts.fit_denoise_q_start_Ainv = run_options.fitDenoiseQStartAinv;
 opts.fit_denoise_q_end_Ainv = run_options.fitDenoiseQEndAinv;
 opts.fit_denoise_order = run_options.fitDenoiseOrder;
+opts.min_peak_amplitude_fraction = run_options.fitMinPeakAmplitudeFraction;
 opts.high_q_force_bin_abs_Ainv = run_options.highQForceBinAbsAinv;
 end
 
