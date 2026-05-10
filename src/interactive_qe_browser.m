@@ -458,6 +458,13 @@ end
         snap.yMax = ui.YMaxField.Value;
         snap.offset = ui.OffsetField.Value;
         snap.traceMode = char(ui.TraceModeDropdown.Value);
+        snap.waterfallMin = ui.WaterfallMinField.Value;
+        snap.waterfallMax = ui.WaterfallMaxField.Value;
+        snap.waterfallNorm = char(ui.WaterfallNormDropdown.Value);
+        snap.waterfallNormMin = ui.WaterfallNormMinField.Value;
+        snap.waterfallNormMax = ui.WaterfallNormMaxField.Value;
+        snap.waterfallGain = ui.WaterfallGainField.Value;
+        snap.waterfallResidual = ui.WaterfallResidualCheckbox.Value;
         snap.baseLambda = ui.BaselineLambdaField.Value;
         snap.areaNorm = ui.AreaNormCheckbox.Value;
         snap.areaNormMin = ui.AreaNormMinField.Value;
@@ -537,6 +544,17 @@ end
         ui.TraceModeDropdown.Value = snap.traceMode;
         state.stackOffsetMode = "manual";
         state.lastAutoStackOffset = snap.offset;
+        if isfield(snap, 'waterfallMin')
+            ui.WaterfallMinField.Value = snap.waterfallMin;
+            ui.WaterfallMaxField.Value = snap.waterfallMax;
+            if any(strcmp(snap.waterfallNorm, ui.WaterfallNormDropdown.Items))
+                ui.WaterfallNormDropdown.Value = snap.waterfallNorm;
+            end
+            ui.WaterfallNormMinField.Value = snap.waterfallNormMin;
+            ui.WaterfallNormMaxField.Value = snap.waterfallNormMax;
+            ui.WaterfallGainField.Value = snap.waterfallGain;
+            ui.WaterfallResidualCheckbox.Value = snap.waterfallResidual;
+        end
         ui.BaselineLambdaField.Value = snap.baseLambda;
         ui.AreaNormCheckbox.Value = snap.areaNorm;
         ui.AreaNormMinField.Value = snap.areaNormMin;
@@ -2801,9 +2819,11 @@ end
         end
 
         [qe, ~, ~] = local_get_cached_preprocess(qe, local_preprocess_opts());
-        [mask, energy_axis] = local_energy_mask(qe);
+        [mask, energy_axis] = local_waterfall_energy_mask(qe);
         all_q_mask = true(1, size(qe.intensity, 2));
         spectra_matrix = local_build_map_values(qe, mask, all_q_mask, local_trace_mode());
+        spectra_matrix = local_apply_waterfall_display_options(qe, mask, ...
+            all_q_mask, energy_axis, spectra_matrix);
 
         if strcmpi(local_trace_y_scale(), "log")
             spectra_matrix = max(spectra_matrix, eps);
@@ -2853,8 +2873,9 @@ end
         grid(ax, "on");
         xlabel(ax, "Energy relative to ZLP (meV)");
         ylabel(ax, sprintf("%s + offset", local_single_ylabel()));
-        title(ax, sprintf("Stacked spectra | %s | %s | %d traces", ...
-            local_current_view_name(), local_trace_mode(), numel(stack.q_indices)), ...
+        title(ax, sprintf("Stacked spectra | %s | %s | %s | %d traces", ...
+            local_current_view_name(), local_trace_mode(), ...
+            local_waterfall_title_suffix(), numel(stack.q_indices)), ...
             "Interpreter", "none");
         ax.YScale = local_trace_y_scale();
         xlim(ax, [stack.energy_meV(1), stack.energy_meV(end)]);
@@ -2865,6 +2886,85 @@ end
     function stack = local_apply_stack_offset(stack, stack_offset)
         stack.offsets = qe_adaptive_stack_offsets(stack.traces, stack_offset);
         stack.shifted_traces = stack.traces + reshape(stack.offsets, 1, []);
+    end
+
+
+    function [mask, energy_axis] = local_waterfall_energy_mask(qe)
+        window = sort([ui.WaterfallMinField.Value, ui.WaterfallMaxField.Value]);
+        if ~all(isfinite(window)) || window(2) <= window(1)
+            window = sort([ui.EnergyMinField.Value, ui.EnergyMaxField.Value]);
+        end
+        [mask, energy_axis] = local_energy_mask_for_window(qe, window);
+    end
+
+
+    function spectra_matrix = local_apply_waterfall_display_options(qe, ...
+            energy_mask, q_mask, energy_axis, spectra_matrix)
+        if strcmpi(char(ui.WaterfallNormDropdown.Value), 'area')
+            norm_window = sort([ui.WaterfallNormMinField.Value, ...
+                ui.WaterfallNormMaxField.Value]);
+            [norm_mask, norm_energy] = local_energy_mask_for_window(qe, norm_window);
+            norm_spectra = local_build_map_values(qe, norm_mask, q_mask, "display");
+            factors = local_waterfall_area_factors(norm_energy, norm_spectra);
+            spectra_matrix = spectra_matrix ./ reshape(factors, 1, []);
+        end
+
+        if ui.WaterfallResidualCheckbox.Value
+            for col = 1:size(spectra_matrix, 2)
+                baseline = local_asls_baseline(spectra_matrix(:, col), ...
+                    ui.BaselineLambdaField.Value, 0.01, 12);
+                spectra_matrix(:, col) = spectra_matrix(:, col) - baseline;
+            end
+        end
+
+        gain = double(ui.WaterfallGainField.Value);
+        if ~isfinite(gain) || gain <= 0
+            gain = 1;
+        end
+        spectra_matrix = spectra_matrix .* gain;
+        spectra_matrix(~isfinite(spectra_matrix)) = NaN;
+    end
+
+
+    function factors = local_waterfall_area_factors(energy_axis, spectra_matrix)
+        factors = ones(1, size(spectra_matrix, 2));
+        for col = 1:size(spectra_matrix, 2)
+            y = double(spectra_matrix(:, col));
+            valid = isfinite(energy_axis) & isfinite(y);
+            if nnz(valid) >= 2
+                area = trapz(energy_axis(valid), y(valid));
+            else
+                area = NaN;
+            end
+            if ~isfinite(area) || abs(area) <= eps
+                if nnz(valid) >= 2
+                    area = trapz(energy_axis(valid), abs(y(valid)));
+                end
+            end
+            if ~isfinite(area) || abs(area) <= eps
+                area = 1;
+            end
+            factors(col) = area;
+        end
+    end
+
+
+    function suffix = local_waterfall_title_suffix()
+        e_window = sort([ui.WaterfallMinField.Value, ui.WaterfallMaxField.Value]);
+        suffix = sprintf('E %.0f-%.0f meV', e_window(1), e_window(2));
+        if strcmpi(char(ui.WaterfallNormDropdown.Value), 'area')
+            norm_window = sort([ui.WaterfallNormMinField.Value, ...
+                ui.WaterfallNormMaxField.Value]);
+            suffix = sprintf('%s | area %.0f-%.0f norm', suffix, ...
+                norm_window(1), norm_window(2));
+        end
+        if ui.WaterfallResidualCheckbox.Value
+            suffix = sprintf('%s | residual', suffix);
+        end
+        gain = double(ui.WaterfallGainField.Value);
+        if isfinite(gain) && abs(gain - 1) > 1e-12
+            suffix = sprintf('%s | gain %.3g', suffix, gain);
+        end
     end
 
 
@@ -4070,9 +4170,11 @@ end
 
     function value = local_default_offset(qe)
         try
-            [mask, energy_axis] = local_energy_mask(qe);
+            [mask, energy_axis] = local_waterfall_energy_mask(qe);
             all_q_mask = true(1, size(qe.intensity, 2));
             spectra_matrix = local_build_map_values(qe, mask, all_q_mask, local_trace_mode());
+            spectra_matrix = local_apply_waterfall_display_options(qe, mask, ...
+                all_q_mask, energy_axis, spectra_matrix);
             stack_opts = struct( ...
                 'q_start', ui.QStartField.Value, ...
                 'q_end', ui.QEndField.Value, ...
