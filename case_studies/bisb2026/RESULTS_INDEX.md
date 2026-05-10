@@ -132,3 +132,16 @@ moving them or changing script output paths.
 - Physical fit: no physical fit was run in this retry round.
 
 <!-- B1_FAILURE_RETRY_260510_END -->
+
+<!-- B1_UPPER_RAPIDRISE_PLATEAU_260510_START -->
+## 2026-05-10 B1 Lorentz upper rapidrise-plateau retry
+
+- Summary: `C:/Users/HP/Desktop/vibecoding/2D-metal-plasmon/paper_results/b1_lorentz_tracking_optimization_260510_upper_rapidrise_plateau`
+- Best tag: `260510_lorentz_tracking_v15_upper_rapidrise_plateau`
+- Best variant: `v15_upper_rapidrise_plateau`
+- Best score: `326`
+- Gate <=300: `0`
+- Physical fit: no physical fit was run in this retry round.
+- Trend rule: small-q rapid rise allowed, isolated jumps and high-q wandering penalized.
+
+<!-- B1_UPPER_RAPIDRISE_PLATEAU_260510_END -->

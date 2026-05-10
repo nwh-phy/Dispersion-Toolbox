@@ -49,6 +49,10 @@ arguments
     options.candidatePathUpperMediumJumpThresholdMeV (1,1) double = NaN
     options.candidatePathLargeJumpThresholdMeV (1,1) double = 250
     options.candidatePathEdgeEnergyMeV (1,2) double = [650 1900]
+    options.candidatePathUpperTrendMode {mustBeTextScalar} = "none"
+    options.candidatePathUpperTrendAnchorQAbsAinv (1,1) double = 0.005
+    options.candidatePathUpperTrendSmallQAbsAinv (1,1) double = 0.02
+    options.candidatePathUpperTrendPlateauQAbsAinv (1,1) double = 0.06
     options.enableJumpRepair (1,1) logical = false
     options.largeJumpThresholdMeV (1,1) double = 250
     options.referenceLowerPoints table = table()
@@ -456,6 +460,14 @@ opts.candidate_path_upper_medium_jump_threshold_meV = ...
 opts.candidate_path_large_jump_threshold_meV = ...
     run_options.candidatePathLargeJumpThresholdMeV;
 opts.candidate_path_edge_energy_meV = run_options.candidatePathEdgeEnergyMeV;
+opts.candidate_path_upper_trend_mode = ...
+    char(string(run_options.candidatePathUpperTrendMode));
+opts.candidate_path_upper_trend_anchor_q_abs_Ainv = ...
+    run_options.candidatePathUpperTrendAnchorQAbsAinv;
+opts.candidate_path_upper_trend_small_q_abs_Ainv = ...
+    run_options.candidatePathUpperTrendSmallQAbsAinv;
+opts.candidate_path_upper_trend_plateau_q_abs_Ainv = ...
+    run_options.candidatePathUpperTrendPlateauQAbsAinv;
 opts.reference_lower_points = run_options.referenceLowerPoints;
 opts.reference_upper_points = run_options.referenceUpperPoints;
 opts.waterfall_start_meV = max(0, run_options.waterfallStartMeV);
