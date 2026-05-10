@@ -9,6 +9,44 @@ arguments
     options.runFits (1,1) logical = true
     options.outputDateTag {mustBeTextScalar} = "260508"
     options.qRangeOverride_Ainv (1,2) double = [-0.15 0.15]
+    options.b1EnergyWindowOverrideMeV (1,2) double = [300 2100]
+    options.waterfallStartMeV (1,1) double = 0
+    options.waterfallEndMeV (1,1) double = NaN
+    options.waterfallNormMode {mustBeTextScalar} = "visual"
+    options.waterfallAreaNormWindowMeV (1,2) double = [250 3800]
+    options.waterfallResidual (1,1) logical = false
+    options.waterfallGain (1,1) double = 1
+    options.fitDenoiseMethod {mustBeTextScalar} = "none"
+    options.fitDenoiseProfile {mustBeTextScalar} = "global"
+    options.fitDenoiseWindow (1,1) double = 11
+    options.fitDenoiseLowWindow (1,1) double = 11
+    options.fitDenoiseHighWindow (1,1) double = 31
+    options.fitDenoiseQStartAinv (1,1) double = 0.07
+    options.fitDenoiseQEndAinv (1,1) double = 0.15
+    options.fitDenoiseOrder (1,1) double = 3
+    options.highQForceBinAbsAinv (1,1) double = Inf
+    options.binSize (1,1) double = 3
+    options.peakModelOverride {mustBeTextScalar} = ""
+    options.trackingMode {mustBeTextScalar} = "independent_double_peak"
+    options.fallbackSplitCandidatesMeV (1,:) double = NaN
+    options.maxTrackingShiftMeV (1,1) double = 180
+    options.trackingWindowHalfWidthMeV (1,1) double = 220
+    options.trackingWindowHighQHalfWidthMeV (1,1) double = 300
+    options.trackingWindowHighQAbsAinv (1,1) double = 0.09
+    options.trackingWindowInvalidFallback {mustBeTextScalar} = "fail"
+    options.upperTrackingWindowHalfWidthMeV (1,1) double = NaN
+    options.upperTrackingWindowHighQHalfWidthMeV (1,1) double = NaN
+    options.upperTrackingWindowHighQAbsAinv (1,1) double = NaN
+    options.upperQualityRetry (1,1) logical = false
+    options.upperMaxGammaOverE (1,1) double = Inf
+    options.upperMaxGammaMeV (1,1) double = Inf
+    options.upperRetryWindowHalfWidthMeV (1,1) double = 180
+    options.upperRetryHighQHalfWidthMeV (1,1) double = 240
+    options.upperRetryHighQAbsAinv (1,1) double = 0.09
+    options.enableJumpRepair (1,1) logical = false
+    options.largeJumpThresholdMeV (1,1) double = 250
+    options.referenceLowerPoints table = table()
+    options.referenceUpperPoints table = table()
 end
 
 script_dir = fileparts(mfilename('fullpath'));
@@ -178,6 +216,25 @@ snap = result_data.output.snap;
 
 extract_opts = local_extract_options(snap, old_points, options);
 extract = b1_double_peak_binning_extract(qe_pp, qe_raw, extract_opts);
+if options.enableJumpRepair
+    repaired = b1_double_peak_repair_tracking_points( ...
+        extract.lower_points, extract.upper_points, extract.fit_failures, ...
+        largeJumpThresholdMeV=options.largeJumpThresholdMeV);
+    if isfield(extract, 'repair_log')
+        extract.repair_log = [extract.repair_log; repaired.repair_log];
+    else
+        extract.repair_log = repaired.repair_log;
+    end
+    extract.exclusion_points = repaired.exclusion_points;
+    extract.lower_points = repaired.lower_points;
+    extract.upper_points = repaired.upper_points;
+    extract.combined_points = repaired.combined_points;
+elseif ~isfield(extract, 'exclusion_points')
+    extract.exclusion_points = table();
+end
+if ~isfield(extract, 'repair_log')
+    extract.repair_log = table();
+end
 
 out_dir = fullfile(project_root, 'paper_results', session.output_tag);
 if ~isfolder(out_dir)
@@ -190,12 +247,16 @@ upper_csv = fullfile(out_dir, 'b1_double_peak_upper_points.csv');
 binning_csv = fullfile(out_dir, 'b1_double_peak_binning_map.csv');
 noise_csv = fullfile(out_dir, 'b1_double_peak_noise_profile.csv');
 failures_csv = fullfile(out_dir, 'b1_double_peak_fit_failures.csv');
+repair_log_csv = fullfile(out_dir, 'b1_double_peak_repair_log.csv');
+exclusion_csv = fullfile(out_dir, 'b1_double_peak_exclusion_points.csv');
 writetable(extract.combined_points, combined_csv);
 writetable(extract.lower_points, lower_csv);
 writetable(extract.upper_points, upper_csv);
 writetable(extract.binning_map, binning_csv);
 writetable(extract.noise_profile, noise_csv);
 writetable(extract.fit_failures, failures_csv);
+writetable(extract.repair_log, repair_log_csv);
+writetable(extract.exclusion_points, exclusion_csv);
 
 fig_paths = struct();
 fig_paths.binning_spectrum_png = fullfile(out_dir, ...
@@ -206,38 +267,41 @@ fig_paths.single_vs_double_png = fullfile(out_dir, ...
     'b1_single_peak_vs_double_peak_comparison.png');
 fig_paths.single_vs_double_pdf = fullfile(out_dir, ...
     'b1_single_peak_vs_double_peak_comparison.pdf');
+fig_paths.fit_denoise_comparison_png = fullfile(out_dir, ...
+    'b1_double_peak_fit_spectrum_denoise_comparison.png');
+fig_paths.fit_denoise_comparison_pdf = fullfile(out_dir, ...
+    'b1_double_peak_fit_spectrum_denoise_comparison.pdf');
 fig_paths.double_peak_heatmap_png = fullfile(out_dir, ...
     'b1_double_peak_heatmap_overlay.png');
 fig_paths.double_peak_heatmap_pdf = fullfile(out_dir, ...
     'b1_double_peak_heatmap_overlay.pdf');
-fig_paths.stacked_positive_q_png = fullfile(out_dir, ...
-    'b1_double_peak_stacked_spectra_positive_q.png');
-fig_paths.stacked_positive_q_pdf = fullfile(out_dir, ...
-    'b1_double_peak_stacked_spectra_positive_q.pdf');
-fig_paths.stacked_negative_q_png = fullfile(out_dir, ...
-    'b1_double_peak_stacked_spectra_negative_q.png');
-fig_paths.stacked_negative_q_pdf = fullfile(out_dir, ...
-    'b1_double_peak_stacked_spectra_negative_q.pdf');
-fig_paths.stacked_absq_combined_png = fullfile(out_dir, ...
-    'b1_double_peak_stacked_spectra_absq_combined.png');
-fig_paths.stacked_absq_combined_pdf = fullfile(out_dir, ...
-    'b1_double_peak_stacked_spectra_absq_combined.pdf');
-fig_paths.combined_q_stacked_png = fullfile(out_dir, ...
-    'b1_double_peak_combined_q_stacked_spectra.png');
-fig_paths.combined_q_stacked_pdf = fullfile(out_dir, ...
-    'b1_double_peak_combined_q_stacked_spectra.pdf');
-fig_paths.waterfall_signed_q_png = fullfile(out_dir, ...
-    'b1_double_peak_waterfall_signed_q.png');
-fig_paths.waterfall_signed_q_pdf = fullfile(out_dir, ...
-    'b1_double_peak_waterfall_signed_q.pdf');
-fig_paths.waterfall_absq_combined_png = fullfile(out_dir, ...
-    'b1_double_peak_waterfall_absq_combined.png');
-fig_paths.waterfall_absq_combined_pdf = fullfile(out_dir, ...
-    'b1_double_peak_waterfall_absq_combined.pdf');
-fig_paths.waterfall_combined_q_png = fullfile(out_dir, ...
-    'b1_double_peak_waterfall_combined_q.png');
-fig_paths.waterfall_combined_q_pdf = fullfile(out_dir, ...
-    'b1_double_peak_waterfall_combined_q.pdf');
+fig_paths.stacked_signed_q_png = fullfile(out_dir, ...
+    'b1_double_peak_stacked_spectra_signed_q.png');
+fig_paths.stacked_signed_q_pdf = fullfile(out_dir, ...
+    'b1_double_peak_stacked_spectra_signed_q.pdf');
+waterfall_name = 'b1_double_peak_waterfall_signed_q';
+if strcmp(extract_opts.waterfall_norm_mode, 'area')
+    waterfall_name = sprintf('%s_area%s_%snorm', waterfall_name, ...
+        local_meV_tag(extract_opts.waterfall_area_norm_window_meV(1)), ...
+        local_meV_tag(extract_opts.waterfall_area_norm_window_meV(2)));
+end
+if extract_opts.waterfall_start_meV > 0
+    waterfall_name = sprintf('%s_start%smeV', waterfall_name, ...
+        local_meV_tag(extract_opts.waterfall_start_meV));
+end
+if isfinite(extract_opts.waterfall_end_meV)
+    waterfall_name = sprintf('%s_end%smeV', waterfall_name, ...
+        local_meV_tag(extract_opts.waterfall_end_meV));
+end
+if extract_opts.waterfall_residual
+    waterfall_name = sprintf('%s_residual', waterfall_name);
+end
+if abs(extract_opts.waterfall_gain - 1) > 1e-12
+    waterfall_name = sprintf('%s_gain%s', waterfall_name, ...
+        local_meV_tag(extract_opts.waterfall_gain));
+end
+fig_paths.waterfall_signed_q_png = fullfile(out_dir, [waterfall_name '.png']);
+fig_paths.waterfall_signed_q_pdf = fullfile(out_dir, [waterfall_name '.pdf']);
 manual_window_seed_csv = fullfile(out_dir, ...
     'b1_double_peak_manual_window_seed.csv');
 plot_q_binning_csv = fullfile(out_dir, ...
@@ -247,30 +311,18 @@ local_plot_binning_spectra(qe_pp, extract, extract_opts, ...
     fig_paths.binning_spectrum_png, fig_paths.binning_spectrum_pdf);
 local_plot_single_vs_double(old_points, extract, session, ...
     fig_paths.single_vs_double_png, fig_paths.single_vs_double_pdf);
+local_plot_fit_denoise_comparison(qe_pp, extract, extract_opts, session, ...
+    fig_paths.fit_denoise_comparison_png, ...
+    fig_paths.fit_denoise_comparison_pdf);
 local_plot_double_peak_heatmap(qe_pp, old_points, extract, extract_opts, ...
     session, fig_paths.double_peak_heatmap_png, ...
     fig_paths.double_peak_heatmap_pdf);
 local_plot_stacked_spectra(qe_pp, extract, old_points, extract_opts, session, ...
-    'positive_q', fig_paths.stacked_positive_q_png, ...
-    fig_paths.stacked_positive_q_pdf);
-local_plot_stacked_spectra(qe_pp, extract, old_points, extract_opts, session, ...
-    'negative_q', fig_paths.stacked_negative_q_png, ...
-    fig_paths.stacked_negative_q_pdf);
-local_plot_stacked_spectra(qe_pp, extract, old_points, extract_opts, session, ...
-    'absq_combined', fig_paths.stacked_absq_combined_png, ...
-    fig_paths.stacked_absq_combined_pdf);
-local_plot_combined_q_stacked_spectra(qe_pp, extract, extract_opts, ...
-    session, fig_paths.combined_q_stacked_png, ...
-    fig_paths.combined_q_stacked_pdf);
+    'signed_q', fig_paths.stacked_signed_q_png, ...
+    fig_paths.stacked_signed_q_pdf);
 local_plot_waterfall_spectra(qe_pp, extract, extract_opts, session, ...
     'signed_q', fig_paths.waterfall_signed_q_png, ...
     fig_paths.waterfall_signed_q_pdf);
-local_plot_waterfall_spectra(qe_pp, extract, extract_opts, session, ...
-    'absq_combined', fig_paths.waterfall_absq_combined_png, ...
-    fig_paths.waterfall_absq_combined_pdf);
-local_plot_waterfall_spectra(qe_pp, extract, extract_opts, session, ...
-    'combined_q_binning_3', fig_paths.waterfall_combined_q_png, ...
-    fig_paths.waterfall_combined_q_pdf);
 manual_window_seed = local_manual_window_seed_table(session, extract_opts);
 writetable(manual_window_seed, manual_window_seed_csv);
 plot_q_binning_map = local_plot_q_binning_map(qe_pp, extract, extract_opts);
@@ -292,6 +344,8 @@ out.upper_csv = upper_csv;
 out.binning_csv = binning_csv;
 out.noise_csv = noise_csv;
 out.failures_csv = failures_csv;
+out.repair_log_csv = repair_log_csv;
+out.exclusion_csv = exclusion_csv;
 out.manual_window_seed_csv = manual_window_seed_csv;
 out.plot_q_binning_csv = plot_q_binning_csv;
 out.figure_paths = fig_paths;
@@ -319,6 +373,9 @@ function opts = local_extract_options(snap, old_points, run_options)
 opts = struct();
 opts.energy_window_meV = sort([local_snap_value(snap, 'branch1Min', 500), ...
     local_snap_value(snap, 'branch1Max', 2100)]);
+if all(isfinite(run_options.b1EnergyWindowOverrideMeV))
+    opts.energy_window_meV = sort(run_options.b1EnergyWindowOverrideMeV);
+end
 q_range = sort([local_snap_value(snap, 'qStart', -0.15), ...
     local_snap_value(snap, 'qEnd', 0.15)]);
 if all(isfinite(run_options.qRangeOverride_Ainv))
@@ -326,17 +383,81 @@ if all(isfinite(run_options.qRangeOverride_Ainv))
 end
 opts.q_range_Ainv = q_range;
 opts.q_skip_Ainv = 0.005;
-opts.bin_size = 3;
+opts.bin_size = run_options.binSize;
 opts.noise_threshold = NaN;
-opts.low_q_no_bin_abs_Ainv = 0.03;
+opts.low_q_no_bin_abs_Ainv = 0.05;
 opts.peak_model = char(local_snap_value(snap, 'peakModel', 'fano'));
+if strlength(string(run_options.peakModelOverride)) > 0
+    opts.peak_model = char(string(run_options.peakModelOverride));
+end
 opts.pre_subtracted = logical(local_snap_value(snap, 'bgSub', false));
 opts.min_prominence = local_snap_value(snap, 'prominence', 0.10);
 opts.smooth_width = 1;
 opts.bootstrap_ci_samples = local_snap_value(snap, 'bootstrapCiSamples', 0);
 opts.old_branch_points = old_points;
 opts.fallback_split_meV = 180;
+if all(isfinite(run_options.fallbackSplitCandidatesMeV))
+    opts.fallback_split_candidates_meV = run_options.fallbackSplitCandidatesMeV;
+end
 opts.min_peak_separation_meV = 10;
+opts.tracking_mode = char(string(run_options.trackingMode));
+opts.max_tracking_shift_meV = run_options.maxTrackingShiftMeV;
+opts.tracking_window_half_width_meV = run_options.trackingWindowHalfWidthMeV;
+opts.tracking_window_highq_half_width_meV = run_options.trackingWindowHighQHalfWidthMeV;
+opts.tracking_window_highq_abs_Ainv = run_options.trackingWindowHighQAbsAinv;
+opts.tracking_window_invalid_fallback = char(string( ...
+    run_options.trackingWindowInvalidFallback));
+if isfinite(run_options.upperTrackingWindowHalfWidthMeV)
+    opts.upper_tracking_window_half_width_meV = ...
+        run_options.upperTrackingWindowHalfWidthMeV;
+end
+if isfinite(run_options.upperTrackingWindowHighQHalfWidthMeV)
+    opts.upper_tracking_window_highq_half_width_meV = ...
+        run_options.upperTrackingWindowHighQHalfWidthMeV;
+end
+if isfinite(run_options.upperTrackingWindowHighQAbsAinv)
+    opts.upper_tracking_window_highq_abs_Ainv = ...
+        run_options.upperTrackingWindowHighQAbsAinv;
+end
+opts.upper_quality_retry = run_options.upperQualityRetry;
+opts.upper_max_gamma_over_E = run_options.upperMaxGammaOverE;
+opts.upper_max_gamma_meV = run_options.upperMaxGammaMeV;
+opts.upper_retry_window_half_width_meV = ...
+    run_options.upperRetryWindowHalfWidthMeV;
+opts.upper_retry_highq_half_width_meV = ...
+    run_options.upperRetryHighQHalfWidthMeV;
+opts.upper_retry_highq_abs_Ainv = run_options.upperRetryHighQAbsAinv;
+opts.reference_lower_points = run_options.referenceLowerPoints;
+opts.reference_upper_points = run_options.referenceUpperPoints;
+opts.waterfall_start_meV = max(0, run_options.waterfallStartMeV);
+opts.waterfall_end_meV = run_options.waterfallEndMeV;
+opts.waterfall_norm_mode = local_waterfall_norm_mode(run_options.waterfallNormMode);
+opts.waterfall_area_norm_window_meV = sort(run_options.waterfallAreaNormWindowMeV);
+opts.waterfall_residual = run_options.waterfallResidual;
+opts.waterfall_gain = run_options.waterfallGain;
+opts.fit_denoise_method = char(string(run_options.fitDenoiseMethod));
+opts.fit_denoise_profile = char(string(run_options.fitDenoiseProfile));
+opts.fit_denoise_window = run_options.fitDenoiseWindow;
+opts.fit_denoise_low_window = run_options.fitDenoiseLowWindow;
+opts.fit_denoise_high_window = run_options.fitDenoiseHighWindow;
+opts.fit_denoise_q_start_Ainv = run_options.fitDenoiseQStartAinv;
+opts.fit_denoise_q_end_Ainv = run_options.fitDenoiseQEndAinv;
+opts.fit_denoise_order = run_options.fitDenoiseOrder;
+opts.high_q_force_bin_abs_Ainv = run_options.highQForceBinAbsAinv;
+end
+
+
+function mode = local_waterfall_norm_mode(value)
+text = lower(strtrim(char(string(value))));
+switch text
+    case {'visual', 'default'}
+        mode = 'visual';
+    case {'area', 'area250_3800', 'area250_3800norm', 'area_norm'}
+        mode = 'area';
+    otherwise
+        error('run_b1_double_peak_binning_analysis:UnknownWaterfallNormMode', ...
+            'Unknown waterfall normalization mode "%s".', char(string(value)));
+end
 end
 
 
@@ -432,6 +553,94 @@ close(fig);
 end
 
 
+function local_plot_fit_denoise_comparison(qe, extract, opts, session, ...
+    png_path, pdf_path)
+details = extract.fit_details(~cellfun(@isempty, extract.fit_details));
+details = local_flatten_fit_details(details);
+has_denoise = isfield(opts, 'fit_denoise_method') && ...
+    ~strcmpi(char(opts.fit_denoise_method), 'none');
+if isempty(details) || ~has_denoise
+    fig = figure('Visible', 'off', 'Color', 'w', 'Position', [100 100 760 360]);
+    ax = axes(fig);
+    text(ax, 0.5, 0.5, 'Fit-spectrum denoise is disabled for this run', ...
+        'HorizontalAlignment', 'center');
+    axis(ax, 'off');
+    title(ax, sprintf('B1 fit-spectrum denoise comparison: %s', ...
+        session.session_label), 'Interpreter', 'none');
+    exportgraphics(fig, png_path, 'Resolution', 300);
+    exportgraphics(fig, pdf_path, 'ContentType', 'vector');
+    close(fig);
+    return
+end
+
+n_show = min(6, numel(details));
+pick = unique(round(linspace(1, numel(details), n_show)));
+n_show = numel(pick);
+fig = figure('Visible', 'off', 'Color', 'w', 'Position', [80 80 1100 680]);
+tiledlayout(fig, ceil(n_show / 2), 2, 'Padding', 'compact', ...
+    'TileSpacing', 'compact');
+energy_axis = double(qe.energy_meV(:));
+for i = 1:n_show
+    detail = details{pick(i)};
+    ax = nexttile;
+    raw = local_fit_detail_vector(detail, 'raw_unit_spectrum', energy_axis);
+    fit_input = local_fit_detail_vector(detail, 'fit_input_spectrum', ...
+        energy_axis);
+    plot(ax, energy_axis, raw, '-', 'Color', [0.62 0.62 0.62], ...
+        'DisplayName', 'original unit spectrum');
+    hold(ax, 'on');
+    plot(ax, energy_axis, fit_input, '-', 'Color', [0.04 0.28 0.90], ...
+        'LineWidth', 1.1, 'DisplayName', 'denoised fit input');
+    hold(ax, 'off');
+    xlim(ax, [opts.energy_window_meV(1), opts.energy_window_meV(2)]);
+    grid(ax, 'on');
+    title(ax, sprintf('unit %d | %s w=%d order=%d', pick(i), ...
+        detail.fit_denoise_method, detail.fit_denoise_window, ...
+        detail.fit_denoise_order), 'Interpreter', 'none');
+    if i == 1
+        legend(ax, 'Location', 'best', 'Box', 'off');
+    end
+    xlabel(ax, 'Energy (meV)');
+    ylabel(ax, 'Intensity');
+end
+sgtitle(fig, sprintf('B1 fit input denoise comparison: %s', ...
+    session.session_label), 'Interpreter', 'none');
+exportgraphics(fig, png_path, 'Resolution', 300);
+exportgraphics(fig, pdf_path, 'ContentType', 'vector');
+close(fig);
+end
+
+
+function details = local_flatten_fit_details(details)
+flat = {};
+for i = 1:numel(details)
+    detail = details{i};
+    if isstruct(detail) && isfield(detail, 'raw_unit_spectrum')
+        flat{end + 1} = detail; %#ok<AGROW>
+    elseif isstruct(detail) && isfield(detail, 'lower_fit')
+        if isstruct(detail.lower_fit) && isfield(detail.lower_fit, ...
+                'raw_unit_spectrum')
+            flat{end + 1} = detail.lower_fit; %#ok<AGROW>
+        end
+        if isfield(detail, 'upper_fit') && isstruct(detail.upper_fit) && ...
+                isfield(detail.upper_fit, 'raw_unit_spectrum')
+            flat{end + 1} = detail.upper_fit; %#ok<AGROW>
+        end
+    end
+end
+details = flat;
+end
+
+
+function y = local_fit_detail_vector(detail, field_name, energy_axis)
+if isfield(detail, field_name) && numel(detail.(field_name)) == numel(energy_axis)
+    y = double(detail.(field_name)(:));
+else
+    y = NaN(size(energy_axis));
+end
+end
+
+
 function local_plot_stacked_spectra(qe, extract, old_points, opts, session, mode, ...
     png_path, pdf_path)
 [energy_axis, energy_mask] = local_stack_energy_window(qe, opts);
@@ -447,10 +656,14 @@ switch char(mode)
         title_text = sprintf('B1 stacked spectra, negative q: %s', ...
             session.session_label);
         y_label = 'q (A^{-1})';
-    case 'absq_combined'
-        title_text = sprintf('B1 stacked spectra, |q|-combined: %s', ...
+    case 'signed_q'
+        title_text = sprintf('B1 stacked spectra, signed q centered: %s', ...
             session.session_label);
-        y_label = '|q| (A^{-1})';
+        y_label = 'signed q (A^{-1}); negative below, positive above';
+    case 'absq_combined'
+        error('run_b1_double_peak_binning_analysis:DeprecatedAbsQCombined', ...
+            ['absq_combined stacked spectra are obsolete because they ', ...
+            'average +q and -q. Use signed_q instead.']);
     otherwise
         error('run_b1_double_peak_binning_analysis:UnknownStackMode', ...
             'Unknown stacked-spectrum mode "%s".', char(mode));
@@ -503,7 +716,11 @@ if isempty(traces) || size(traces, 2) == 0
         'HorizontalAlignment', 'center');
     axis(ax, 'off');
 else
-    normalized = local_visual_normalize_traces(energy_axis, traces);
+    [norm_energy_axis, norm_energy_mask] = local_waterfall_norm_window(qe, opts);
+    [~, norm_traces] = local_waterfall_trace_set(qe, extract, opts, ...
+        norm_energy_mask, mode);
+    normalized = local_visual_normalize_traces(energy_axis, traces, ...
+        norm_energy_axis, norm_traces, opts);
     offset = 0.55;
     offsets = (0:(size(normalized, 2) - 1)) .* offset;
     hold(ax, 'on');
@@ -525,6 +742,9 @@ else
     ax.XTick = [0 1000 2000];
     xlabel(ax, 'Energy loss (meV)', 'FontSize', 24);
 end
+title(ax, {'B1 double-peak waterfall', ...
+    char(session.session_label), local_waterfall_mode_label(mode, opts)}, ...
+    'FontSize', 12, 'Interpreter', 'none');
 box(ax, 'off');
 exportgraphics(fig, png_path, 'Resolution', 300);
 exportgraphics(fig, pdf_path, 'ContentType', 'vector');
@@ -532,12 +752,72 @@ close(fig);
 end
 
 
+function label = local_waterfall_mode_label(mode, opts)
+switch char(mode)
+    case 'signed_q'
+        label = 'signed q';
+    case 'absq_combined'
+        label = 'obsolete |q| combined';
+    case 'combined_q_binning_3'
+        label = 'combined-q binning';
+    otherwise
+        label = char(mode);
+end
+if isfield(opts, 'waterfall_start_meV') && opts.waterfall_start_meV > 0
+    label = sprintf('%s | start %s meV', label, ...
+        local_meV_tag(opts.waterfall_start_meV));
+end
+if isfield(opts, 'waterfall_end_meV') && isfinite(opts.waterfall_end_meV)
+    label = sprintf('%s | end %s meV', label, ...
+        local_meV_tag(opts.waterfall_end_meV));
+end
+if isfield(opts, 'waterfall_norm_mode') && strcmp(opts.waterfall_norm_mode, 'area')
+    label = sprintf('%s | area %s-%s norm', label, ...
+        local_meV_tag(opts.waterfall_area_norm_window_meV(1)), ...
+        local_meV_tag(opts.waterfall_area_norm_window_meV(2)));
+end
+if isfield(opts, 'waterfall_residual') && opts.waterfall_residual
+    label = sprintf('%s | residual', label);
+end
+if isfield(opts, 'waterfall_gain') && isfinite(opts.waterfall_gain) && ...
+        abs(opts.waterfall_gain - 1) > 1e-12
+    label = sprintf('%s | gain %s', label, local_meV_tag(opts.waterfall_gain));
+end
+end
+
+
 function [energy_axis, energy_mask] = local_waterfall_energy_window(qe, opts)
 full_energy = double(qe.energy_meV(:));
-e_min = max(0, min(full_energy));
+e_min = max(opts.waterfall_start_meV, max(0, min(full_energy)));
 e_max = min(max(full_energy), max(opts.energy_window_meV(2), 2000));
+if isfield(opts, 'waterfall_end_meV') && isfinite(opts.waterfall_end_meV)
+    e_max = min(max(full_energy), opts.waterfall_end_meV);
+end
 energy_mask = full_energy >= e_min & full_energy <= e_max;
 energy_axis = full_energy(energy_mask);
+end
+
+
+function [energy_axis, energy_mask] = local_waterfall_norm_window(qe, opts)
+full_energy = double(qe.energy_meV(:));
+if isfield(opts, 'waterfall_area_norm_window_meV')
+    window = opts.waterfall_area_norm_window_meV;
+else
+    window = [250 3800];
+end
+energy_mask = full_energy >= window(1) & full_energy <= window(2);
+if ~any(energy_mask)
+    energy_mask = full_energy >= 250;
+end
+if ~any(energy_mask)
+    energy_mask = true(size(full_energy));
+end
+energy_axis = full_energy(energy_mask);
+end
+
+
+function tag = local_meV_tag(value)
+tag = regexprep(sprintf('%.6g', value), '\.', 'p');
 end
 
 
@@ -551,8 +831,9 @@ switch char(mode)
         [q_values, traces, source_counts] = local_traces_from_q_groups( ...
             qe, energy_mask, groups, false);
     case 'absq_combined'
-        [q_values, traces, source_counts] = local_stack_trace_set(qe, extract, opts, ...
-            energy_mask, 'absq_combined');
+        error('run_b1_double_peak_binning_analysis:DeprecatedAbsQCombined', ...
+            ['absq_combined waterfall is obsolete because it averages ', ...
+            '+q and -q. Use signed_q instead.']);
     case 'combined_q_binning_3'
         combined = extract.binning_map(strcmp(extract.binning_map.source_mode, ...
             'combined_q_binning_3'), :);
@@ -580,7 +861,15 @@ source_counts = double(source_counts(:));
 end
 
 
-function normalized = local_visual_normalize_traces(energy_axis, traces)
+function normalized = local_visual_normalize_traces(energy_axis, traces, ...
+    norm_energy_axis, norm_traces, opts)
+if isfield(opts, 'waterfall_norm_mode') && strcmp(opts.waterfall_norm_mode, 'area')
+    normalized = local_area_normalize_traces(traces, norm_energy_axis, ...
+        norm_traces);
+    normalized = local_apply_waterfall_residual_and_gain(energy_axis, ...
+        normalized, opts);
+    return
+end
 normalized = zeros(size(traces));
 scale_mask = energy_axis >= 250;
 if ~any(scale_mask)
@@ -610,8 +899,102 @@ for i = 1:size(traces, 2)
         scale = 1;
     end
     z = z ./ scale;
-    z = min(max(z, -0.35), 1.65);
+    z = local_waterfall_soft_limit(z, -0.35, 1.65, 0.55);
     normalized(:, i) = z;
+end
+normalized = local_apply_waterfall_residual_and_gain(energy_axis, ...
+    normalized, opts);
+end
+
+
+function normalized = local_area_normalize_traces(traces, norm_energy_axis, ...
+    norm_traces)
+normalized = zeros(size(traces));
+for i = 1:size(traces, 2)
+    y_norm = double(norm_traces(:, i));
+    valid = isfinite(norm_energy_axis) & isfinite(y_norm);
+    area = NaN;
+    if nnz(valid) >= 2
+        area = trapz(norm_energy_axis(valid), y_norm(valid));
+    end
+    if ~isfinite(area) || abs(area) <= eps
+        if nnz(valid) >= 2
+            area = trapz(norm_energy_axis(valid), abs(y_norm(valid)));
+        end
+    end
+    if ~isfinite(area) || abs(area) <= eps
+        area = 1;
+    end
+    normalized(:, i) = double(traces(:, i)) ./ area;
+end
+scale_values = abs(normalized(isfinite(normalized)));
+if isempty(scale_values)
+    return
+end
+display_scale = prctile(scale_values, 95);
+if isfinite(display_scale) && display_scale > eps
+    normalized = normalized .* (0.85 ./ display_scale);
+end
+end
+
+
+function traces = local_apply_waterfall_residual_and_gain(energy_axis, ...
+    traces, opts)
+if isfield(opts, 'waterfall_residual') && opts.waterfall_residual
+    for i = 1:size(traces, 2)
+        y = double(traces(:, i));
+        baseline = local_waterfall_asls_baseline(y, 1e6, 0.01, 12);
+        traces(:, i) = y - baseline;
+    end
+    scale_values = abs(traces(isfinite(traces)));
+    if ~isempty(scale_values)
+        scale = prctile(scale_values, 95);
+        if isfinite(scale) && scale > eps
+            traces = traces .* (0.85 ./ scale);
+        end
+    end
+end
+
+if isfield(opts, 'waterfall_gain') && isfinite(opts.waterfall_gain) && ...
+        opts.waterfall_gain > 0
+    traces = traces .* opts.waterfall_gain;
+end
+end
+
+
+function baseline = local_waterfall_asls_baseline(y, lambda_value, ...
+    asymmetry, iterations)
+y = double(y(:));
+n = numel(y);
+if n < 3
+    baseline = y;
+    return
+end
+lambda_value = max(double(lambda_value), 1);
+asymmetry = min(max(double(asymmetry), 1e-4), 0.49);
+iterations = max(1, round(iterations));
+d = diff(speye(n), 2);
+penalty = lambda_value * (d' * d);
+weights = ones(n, 1);
+for iter = 1:iterations %#ok<NASGU>
+    w = spdiags(weights, 0, n, n);
+    baseline = (w + penalty) \ (weights .* y);
+    weights = asymmetry * (y > baseline) + (1 - asymmetry) * (y <= baseline);
+end
+end
+
+
+function z = local_waterfall_soft_limit(z, lower_limit, upper_knee, extra_span)
+z = max(z, lower_limit);
+over = z > upper_knee;
+if any(over)
+    excess = z(over) - upper_knee;
+    max_excess = max(excess, [], 'omitnan');
+    if isfinite(max_excess) && max_excess > eps
+        z(over) = upper_knee + extra_span .* log1p(excess) ./ log1p(max_excess);
+    else
+        z(over) = upper_knee;
+    end
 end
 end
 
@@ -657,10 +1040,14 @@ switch char(mode)
         groups = local_binning_map_q_groups(extract, q_axis, 'negative');
         [q_values, traces, source_counts] = local_traces_from_q_groups( ...
             qe, energy_mask, groups, false);
-    case 'absq_combined'
-        groups = local_absq_combined_noise_q_groups(extract, q_axis);
+    case 'signed_q'
+        groups = local_binning_map_q_groups(extract, q_axis, 'signed');
         [q_values, traces, source_counts] = local_traces_from_q_groups( ...
-            qe, energy_mask, groups, true);
+            qe, energy_mask, groups, false);
+    case 'absq_combined'
+        error('run_b1_double_peak_binning_analysis:DeprecatedAbsQCombined', ...
+            ['absq_combined stacked spectra are obsolete because they ', ...
+            'average +q and -q. Use signed_q instead.']);
     otherwise
         q_values = zeros(0, 1);
         traces = zeros(nnz(energy_mask), 0);
@@ -934,9 +1321,7 @@ end
 
 function plot_map = local_plot_q_binning_map(qe, extract, opts)
 q_axis = double(qe.q_Ainv(:));
-modes = {'stacked_positive_q', 'stacked_negative_q', ...
-    'stacked_absq_combined', 'waterfall_signed_q', ...
-    'waterfall_absq_combined', 'waterfall_combined_q'};
+modes = {'stacked_signed_q', 'waterfall_signed_q'};
 rows = {};
 
 for mode_idx = 1:numel(modes)
@@ -977,9 +1362,7 @@ switch char(mode)
         groups = local_binning_map_q_groups(extract, q_axis, 'positive');
     case 'stacked_negative_q'
         groups = local_binning_map_q_groups(extract, q_axis, 'negative');
-    case {'stacked_absq_combined', 'waterfall_absq_combined'}
-        groups = local_absq_combined_noise_q_groups(extract, q_axis);
-    case 'waterfall_signed_q'
+    case {'stacked_signed_q', 'waterfall_signed_q'}
         groups = local_binning_map_q_groups(extract, q_axis, 'signed');
     case 'waterfall_combined_q'
         groups = local_binning_map_q_groups(extract, q_axis, 'combined_only');
