@@ -145,3 +145,15 @@ moving them or changing script output paths.
 - Trend rule: small-q rapid rise allowed, isolated jumps and high-q wandering penalized.
 
 <!-- B1_UPPER_RAPIDRISE_PLATEAU_260510_END -->
+
+<!-- B1_PEAK_EVIDENCE_AUDIT_260511_START -->
+## 2026-05-11 B1 Lorentz peak evidence audit
+
+- Summary: `paper_results\b1_lorentz_tracking_peak_evidence_audit_260511`
+- Source tag: `260510_lorentz_tracking_v15_upper_rapidrise_plateau`
+- Energy window: `300-1800 meV`
+- Peak model: `lorentz`
+- Physical fit: no physical fit was run in this evidence audit.
+- Total audited points: `252`; supported `77`; assisted `24`; suspicious `151`
+
+<!-- B1_PEAK_EVIDENCE_AUDIT_260511_END -->
