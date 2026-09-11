@@ -1,5 +1,5 @@
 function output = run_epsilon_bg_sensitivity()
-%RUN_EPSILON_BG_SENSITIVITY Refit B1/B3 with different dielectric backgrounds.
+%RUN_EPSILON_BG_SENSITIVITY Refit B1 with different dielectric backgrounds.
 %
 % This workflow uses exported branch point CSV files from the current
 % Area-normalized Fano analysis. It directly fits
@@ -23,7 +23,7 @@ end
 
 epsilon_bg_values = [1, 4.5, 10, 15];
 datasets = local_dataset_config(results_root);
-branches = [1, 3];
+branches = 1;
 
 rows = local_empty_rows();
 
@@ -336,17 +336,17 @@ end
 cleanup = onCleanup(@() fclose(fid));
 
 fprintf(fid, '# Epsilon Background Sensitivity Report\n\n');
-fprintf(fid, 'This report refits B1 and B3 branch points from the current ');
+fprintf(fid, 'This report refits B1 branch points from the current ');
 fprintf(fid, 'Area-normalized Fano-apex pipeline with a direct quasi-2D model:\n\n');
 fprintf(fid, '`E(q) = sqrt(A |q| / (epsilon_bg + rho0 |q|))`.\n\n');
-fprintf(fid, 'B2 is not refit here because the previous model comparison selected ');
-fprintf(fid, '`optical_constant` for B2 in all three data sets.\n\n');
+fprintf(fid, 'B2 and B3 are not refit here because the current model comparison selected ');
+fprintf(fid, '`optical_constant` for both branches in all three data sets.\n\n');
 fprintf(fid, '## Sweep setup\n\n');
 fprintf(fid, '- epsilon_bg values: 1, 4.5, 10, 15\n');
 fprintf(fid, '- equivalent code epsilon_s: `epsilon_s = 2 * epsilon_bg - 1`\n');
 fprintf(fid, '- rho0 upper bound: 5000 A\n');
 fprintf(fid, '- branch weights: exported per-point R2, normalized by median R2\n');
-fprintf(fid, '- source data: branch1_points.csv and branch3_points.csv\n\n');
+fprintf(fid, '- source data: branch1_points.csv\n\n');
 
 fprintf(fid, '## Key numeric summary\n\n');
 fprintf(fid, '| Session | Branch | rho0 at eps=1 (A) | rho0 at eps=10 (A) | ');

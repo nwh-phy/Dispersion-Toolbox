@@ -2,7 +2,8 @@ function result = qe_assign_peak_branches_by_windows(peaks, specs, opts)
 %QE_ASSIGN_PEAK_BRANCHES_BY_WINDOWS Assign auto-fit peaks to editable branches.
 %   RESULT = QE_ASSIGN_PEAK_BRANCHES_BY_WINDOWS(PEAKS, SPECS) assigns each
 %   qe_auto_fit peak to at most one branch according to SPECS(i).energy_window_meV.
-%   Overlapping windows are resolved by nearest window center.
+%   Explicit branch ids are honored first; untagged overlapping windows are
+%   resolved by later, higher-energy branch specs.
 %
 %   PEAKS follows the qe_auto_fit convention:
 %   [q, E, Gamma, R2, A, E_lo, E_hi, G_lo, G_hi, A_lo, A_hi, raw_height]
@@ -145,7 +146,7 @@ function [assignment, candidate_n] = local_assign_to_nearest_window(peaks, specs
 n_peaks = size(peaks, 1);
 n_specs = numel(specs);
 assignment = zeros(n_peaks, 1);
-best_score = inf(n_peaks, 1);
+explicit_assignment = false(n_peaks, 1);
 candidate_n = zeros(n_specs, 1);
 
 energy = peaks(:,2);
@@ -156,12 +157,24 @@ for i = 1:n_specs
     win = specs(i).energy_window_meV;
     in_window = energy >= win(1) & energy <= win(2);
     candidate_n(i) = sum(in_window);
-    center = mean(win);
-    half_width = max(diff(win) / 2, eps);
-    score = abs(energy - center) ./ half_width;
-    better = in_window & score < best_score;
-    assignment(better) = i;
-    best_score(better) = score(better);
+    if size(peaks, 2) >= 13
+        explicit_branch = peaks(:,13);
+        explicit_id = local_branch_spec_id(specs(i), i);
+        explicit_match = explicit_branch == explicit_id & in_window;
+        assignment(explicit_match) = i;
+        explicit_assignment(explicit_match) = true;
+    end
+    fallback = ~explicit_assignment & in_window;
+    assignment(fallback) = i;
+end
+end
+
+
+function branch_id = local_branch_spec_id(spec, fallback_id)
+if isfield(spec, 'branch_index') && isfinite(double(spec.branch_index))
+    branch_id = double(spec.branch_index);
+else
+    branch_id = fallback_id;
 end
 end
 

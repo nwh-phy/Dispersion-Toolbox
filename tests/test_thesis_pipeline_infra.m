@@ -49,7 +49,7 @@ end
 function testAssignQeBranchesKeepsBestCandidatePerSignedQ(testCase)
 peaks = makePeakMatrix();
 % Add a weaker low-energy candidate at the same q. It is inside the low window
-% but should lose against the higher-confidence candidate at q = 0.02.
+% but should lose against the higher-confidence candidate at q = 0.002.
 weak = peaks(4,:);
 weak(2) = 1180;
 weak(3) = 900;
@@ -59,11 +59,65 @@ weak(12) = 4;
 peaks = [peaks; weak];
 
 branches = assign_qe_branches(peaks, thesis_config().branch);
-q002 = abs(branches.low.accepted(:,1) - 0.02) < 1e-12;
+q002 = abs(branches.low.accepted(:,1) - 0.002) < 1e-12;
 
 verifyEqual(testCase, sum(q002), 1);
 verifyEqual(testCase, branches.low.accepted(q002, 2), 1010, 'AbsTol', 1e-12);
 verifyTrue(testCase, any(strcmp(branches.rejected.reason, 'duplicate_signed_q')));
+end
+
+
+function testAssignQeBranchesHonorsExplicitBranchIdsInOverlap(testCase)
+peaks = makePeakMatrix();
+explicit_mid = peaks(10,:);
+explicit_mid(1) = 0.006;
+explicit_mid(2) = 1850;
+explicit_mid(13) = 2;
+explicit_low = peaks(4,:);
+explicit_low(1) = 0.006;
+explicit_low(2) = 1000;
+explicit_low(13) = 1;
+peak_rows = [explicit_mid; explicit_low];
+
+specs = [
+    struct('name', 'Branch 1', 'energy_window_meV', [500 2100], 'enabled', true)
+    struct('name', 'Branch 2', 'energy_window_meV', [1800 2500], 'enabled', true)
+    struct('name', 'Branch 3', 'energy_window_meV', [2800 3800], 'enabled', true)
+    ];
+assignment = qe_assign_peak_branches_by_windows(peak_rows, specs, ...
+    struct('min_R2', 0, 'max_gamma_ratio', Inf));
+
+verifyEqual(testCase, size(assignment.branches{1}, 1), 1);
+verifyEqual(testCase, size(assignment.branches{2}, 1), 1);
+verifyEqual(testCase, assignment.branches{1}(1, 2), 1000);
+verifyEqual(testCase, assignment.branches{2}(1, 2), 1850);
+end
+
+
+function testAssignQeBranchesGivesWindowOverlapToHigherBranch(testCase)
+peaks = makePeakMatrix();
+overlap_mid = peaks(10,:);
+overlap_mid(1) = 0.006;
+overlap_mid(2) = 1850;
+overlap_mid(13) = NaN;
+low = peaks(4,:);
+low(1) = 0.006;
+low(2) = 1000;
+low(13) = NaN;
+peak_rows = [overlap_mid; low];
+
+specs = [
+    struct('name', 'Branch 1', 'energy_window_meV', [500 2100], 'enabled', true)
+    struct('name', 'Branch 2', 'energy_window_meV', [1800 2500], 'enabled', true)
+    struct('name', 'Branch 3', 'energy_window_meV', [2800 3800], 'enabled', true)
+    ];
+assignment = qe_assign_peak_branches_by_windows(peak_rows, specs, ...
+    struct('min_R2', 0, 'max_gamma_ratio', Inf));
+
+verifyEqual(testCase, size(assignment.branches{1}, 1), 1);
+verifyEqual(testCase, size(assignment.branches{2}, 1), 1);
+verifyEqual(testCase, assignment.branches{1}(1, 2), 1000);
+verifyEqual(testCase, assignment.branches{2}(1, 2), 1850);
 end
 
 
@@ -73,7 +127,7 @@ sym = symmetrize_qe_branches(branches, thesis_config().symmetry);
 
 verifyEqual(testCase, size(sym.low.symmetrized, 1), 2);
 verifyEqual(testCase, size(sym.high.symmetrized, 1), 2);
-verifyEqual(testCase, sym.low.symmetrized(:,1), [0.01; 0.02], 'AbsTol', 1e-12);
+verifyEqual(testCase, sym.low.symmetrized(:,1), [0.001; 0.002], 'AbsTol', 1e-12);
 verifyGreaterThan(testCase, sym.low.symmetrized(2,2), 990);
 verifyLessThan(testCase, sym.low.symmetrized(2,2), 1010);
 verifyTrue(testCase, all(sym.low.symmetrized(:,4) > 0));
@@ -124,7 +178,7 @@ result = struct();
 result.session_name = 'synthetic';
 result.session_role = 'unit_test';
 result.data_path = 'synthetic/path';
-result.dq_Ainv = 0.005;
+result.dq_Ainv = 0.0005;
 result.success = true;
 result.error = '';
 result.dataset_label = 'synthetic dataset';
@@ -184,11 +238,43 @@ verifyEqual(testCase, summary.high_constant_meV(1), 3400);
 end
 
 
+function testEpsilonSensitivityScriptKeepsOnlyB1(testCase)
+project_root = fileparts(fileparts(mfilename('fullpath')));
+src = fileread(fullfile(project_root, 'case_studies', 'bisb2026', ...
+    'scripts', 'run_epsilon_bg_sensitivity.m'));
+
+verifyTrue(testCase, contains(src, 'Refit B1 with different dielectric backgrounds'));
+verifyTrue(testCase, contains(src, 'branches = 1;'));
+verifyFalse(testCase, contains(src, 'branches = [1, 3];'));
+end
+
+
+function testGuiHistoryDispersionPlotsFitLineOnlyForB1(testCase)
+project_root = fileparts(fileparts(mfilename('fullpath')));
+src = fileread(fullfile(project_root, 'case_studies', 'bisb2026', ...
+    'scripts', 'run_590_gui_history_area_analysis.m'));
+
+verifyTrue(testCase, contains(src, 'if b == 1'));
+verifyTrue(testCase, contains(src, 'local_plot_supported_fit_curve(ax, best.fit, col, b);'));
+end
+
+
+function testGuiHistorySupportsLegacyB2PointOverride(testCase)
+project_root = fileparts(fileparts(mfilename('fullpath')));
+src = fileread(fullfile(project_root, 'case_studies', 'bisb2026', ...
+    'scripts', 'run_590_gui_history_area_analysis.m'));
+
+verifyTrue(testCase, contains(src, 'local_apply_branch_point_overrides'));
+verifyTrue(testCase, contains(src, 'legacy_branch_points_260521'));
+verifyTrue(testCase, contains(src, 'branch_point_override_log.csv'));
+end
+
+
 function peaks = makePeakMatrix()
 % Columns follow qe_auto_fit blind output convention:
 % [q, E, Gamma, R2, A, E_ci_lo, E_ci_hi, G_ci_lo, G_ci_hi, A_ci_lo, A_ci_hi, raw_h]
 peaks = nan(11, 12);
-peaks(:,1) = [-0.02; -0.01; 0.01; 0.02; -0.02; -0.01; 0.01; 0.02; 0.03; 0.04; -0.04];
+peaks(:,1) = [-0.002; -0.001; 0.001; 0.002; -0.002; -0.001; 0.001; 0.002; 0.003; 0.004; -0.004];
 peaks(:,2) = [980; 820; 830; 1010; 3200; 3100; 3120; 3210; 2500; 1800; 900];
 peaks(:,3) = [120; 110; 115; 125; 350; 340; 360; 355; 300; 120; 100];
 peaks(:,4) = [0.90; 0.88; 0.87; 0.91; 0.85; 0.86; 0.84; 0.87; 0.80; 0.95; 0.90];

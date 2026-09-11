@@ -9,7 +9,7 @@ function output = run_590_gui_history_area_analysis(sessionRequest, options)
 
 arguments
     sessionRequest {mustBeTextScalar} = "590_PL2_10w"
-    options.qRangeOverride_Ainv (1,2) double = [-0.15 0.15]
+    options.qRangeOverride_Ainv (1,2) double = [-0.015 0.015]
     options.outputTagSuffix {mustBeTextScalar} = ""
     options.peakModelOverride {mustBeTextScalar} = ""
 end
@@ -74,7 +74,7 @@ auto_opts = local_auto_fit_opts_from_snapshot(snap, branch_specs, ...
 fit_res = qe_auto_fit(qe_pp, qe_raw, auto_opts);
 
 branch_filter_opts = struct();
-branch_filter_opts.q_skip_Ainv = 0.005;
+branch_filter_opts.q_skip_Ainv = 0.0005;
 branch_filter_opts.min_R2 = 0.3;
 branch_filter_opts.max_gamma_ratio = 2.0;
 branch_filter_opts.score_column = 12;
@@ -83,6 +83,8 @@ assignment = qe_assign_peak_branches_by_windows( ...
 branches = assignment.branches;
 [branches, refinement_log] = local_apply_session_refinement( ...
     qe_pp, qe_raw, branches, snap, session.refinement_profile, auto_opts);
+[branches, override_log] = local_apply_branch_point_overrides( ...
+    branches, session, project_root);
 assignment = local_update_assignment_summary_from_branches(assignment, branches);
 
 model_results = local_fit_model_suite(branches);
@@ -96,6 +98,7 @@ if ~isempty(assignment.rejected)
     writetable(assignment.rejected, fullfile(out_dir, 'rejected_peaks.csv'));
 end
 writetable(refinement_log, fullfile(out_dir, 'branch_refinement_log.csv'));
+writetable(override_log, fullfile(out_dir, 'branch_point_override_log.csv'));
 writetable(branch_summary, fullfile(out_dir, 'branch_summary.csv'));
 writetable(model_summary, fullfile(out_dir, 'dispersion_model_summary.csv'));
 writetable(single_summary, fullfile(out_dir, 'single_spectrum_fit_summary.csv'));
@@ -119,6 +122,7 @@ output.fit_res = fit_res;
 output.assignment = assignment;
 output.branches = branches;
 output.refinement_log = refinement_log;
+output.override_log = override_log;
 output.refinement_profile = session.refinement_profile;
 output.model_results = model_results;
 output.branch_summary = branch_summary;
@@ -132,7 +136,7 @@ save(fullfile(out_dir, 'analysis_results.mat'), 'output', ...
     'dataset', 'snap', 'pp_opts', 'fit_res', 'assignment', ...
     'branches', 'model_results', 'branch_summary', 'model_summary', ...
     'single_summary', 'figure_paths', 'report_path', ...
-    'refinement_log', '-v7.3');
+    'refinement_log', 'override_log', '-v7.3');
 
 fprintf('Report: %s\n', report_path);
 fprintf('Output directory: %s\n', out_dir);
@@ -186,7 +190,7 @@ sessions = repmat(struct('key', '', 'display_name', '', 'data_dir', '', ...
 sessions(1).key = '590_PL2_10w';
 sessions(1).display_name = '590 PL2 10w';
 sessions(1).data_dir = fullfile(base_dir, '590 PL2 10w 0.004 10sx300');
-sessions(1).dq_Ainv = 0.005;
+sessions(1).dq_Ainv = 0.0005;
 sessions(1).history_path = template_history;
 sessions(1).output_tag = '590_gui_history_area_260506';
 sessions(1).refinement_profile = local_empty_refinement_profile();
@@ -194,7 +198,7 @@ sessions(1).refinement_profile = local_empty_refinement_profile();
 sessions(2).key = 'n0_PL2_10w_repeat';
 sessions(2).display_name = 'n0 PL2 10w repeat';
 sessions(2).data_dir = fullfile(base_dir, 'n0 pl2 10w 0.004 10s x300');
-sessions(2).dq_Ainv = 0.005;
+sessions(2).dq_Ainv = 0.0005;
 sessions(2).history_path = '';
 sessions(2).output_tag = 'n0_PL2_10w_gui_history_area_260506';
 sessions(2).refinement_profile = local_empty_refinement_profile();
@@ -202,7 +206,7 @@ sessions(2).refinement_profile = local_empty_refinement_profile();
 sessions(3).key = 'no_PL2_20w_2film';
 sessions(3).display_name = 'no PL2 20w 2film';
 sessions(3).data_dir = fullfile(base_dir, 'no pl2 20w 0.004 10sx300 2film');
-sessions(3).dq_Ainv = 0.0025;
+sessions(3).dq_Ainv = 0.00025;
 % The local 20w history is from an older GUI state and enables background
 % subtraction. Use the current 590 saved history as the cross-session
 % template, while preserving this dataset's dq calibration.
@@ -237,7 +241,7 @@ profile = local_empty_refinement_profile();
 profile.enabled = true;
 profile.label = '20w_B1_highq_refit';
 profile.branch_index = 1;
-profile.q_min_Ainv = 0.10;
+profile.q_min_Ainv = 0.010;
 profile.ci_half_max_meV = 200;
 profile.gamma_ratio_max = 1.25;
 profile.refit_window_meV = [1000 1700];
@@ -358,10 +362,10 @@ end
 
 function snap = local_apply_snapshot_defaults(snap)
 defaults = struct( ...
-    'qStart', -0.15, ...
-    'qEnd', 0.15, ...
-    'qStep', 0.005, ...
-    'dqOverride', 0.005, ...
+    'qStart', -0.015, ...
+    'qEnd', 0.015, ...
+    'qStep', 0.0005, ...
+    'dqOverride', 0.0005, ...
     'energyMin', 200, ...
     'energyMax', 3876, ...
     'refQMin', 0.010, ...
@@ -470,8 +474,8 @@ function opts = local_auto_fit_opts_from_snapshot(snap, branch_specs, ...
 opts = struct();
 opts.E_min = max(local_snap_value(snap, 'energyMin', 200), 50);
 opts.E_max = local_snap_value(snap, 'energyMax', 3876);
-q_start = local_snap_value(snap, 'qStart', -0.15);
-q_end = local_snap_value(snap, 'qEnd', 0.15);
+q_start = local_snap_value(snap, 'qStart', -0.015);
+q_end = local_snap_value(snap, 'qEnd', 0.015);
 opts.q_start = min(q_start, q_end);
 opts.q_end = max(q_start, q_end);
 opts.prominence = local_snap_value(snap, 'prominence', 0.10);
@@ -487,7 +491,7 @@ opts.max_shift = local_snap_value(snap, 'maxShift', 80);
 opts.energy_mask = energy_mask;
 opts.energy_axis = energy_axis;
 opts.R2_threshold = 0.3;
-opts.window_seed_branch_indices = 2;
+opts.window_seed_branch_indices = [2 3];
 opts.verbose = true;
 opts.progress_fn = [];
 end
@@ -576,7 +580,7 @@ detail = '';
 
 q_axis = double(qe_pp.q_Ainv(:));
 [q_delta, q_idx] = min(abs(q_axis - old_row(1)));
-dq_tol = max(local_snap_value(snap, 'dqOverride', 0.005), 1e-6);
+dq_tol = max(local_snap_value(snap, 'dqOverride', 0.0005), 1e-6);
 if ~isfinite(q_delta) || q_delta > dq_tol
     status = 'missing_q_channel';
     detail = sprintf('nearest q delta %.4g exceeds tolerance %.4g', q_delta, dq_tol);
@@ -804,6 +808,48 @@ end
 end
 
 
+function [branches, override_log] = local_apply_branch_point_overrides( ...
+    branches, session, project_root)
+override_log = local_empty_branch_point_override_log();
+if numel(branches) < 2
+    return
+end
+
+override_path = fullfile(project_root, 'paper_results', ...
+    'legacy_branch_points_260521', session.output_tag, 'branch2_points.csv');
+if ~isfile(override_path)
+    return
+end
+
+old_rows = local_read_branch_points_csv(override_path);
+branches{2} = old_rows;
+override_log = table({session.key}, 2, {override_path}, size(old_rows, 1), ...
+    {'legacy_b2_scatter_points'}, ...
+    'VariableNames', {'session', 'branch', 'source_path', 'n_points', 'reason'});
+end
+
+
+function rows = local_read_branch_points_csv(path)
+tbl = readtable(path);
+cols = {'q_Ainv', 'energy_meV', 'gamma_meV', 'R2', 'amplitude_fit', ...
+    'E_ci_lo', 'E_ci_hi', 'gamma_ci_lo', 'gamma_ci_hi', ...
+    'A_ci_lo', 'A_ci_hi', 'raw_height'};
+rows = NaN(height(tbl), numel(cols));
+for i = 1:numel(cols)
+    if ismember(cols{i}, tbl.Properties.VariableNames)
+        rows(:, i) = tbl.(cols{i});
+    end
+end
+rows = sortrows(rows, 1);
+end
+
+
+function override_log = local_empty_branch_point_override_log()
+override_log = table(cell(0,1), zeros(0,1), cell(0,1), zeros(0,1), cell(0,1), ...
+    'VariableNames', {'session', 'branch', 'source_path', 'n_points', 'reason'});
+end
+
+
 function model_results = local_fit_model_suite(branches)
 models = {'quasi2d_plasmon', 'optical_constant', 'optical_quadratic'};
 model_results = cell(numel(branches), 1);
@@ -908,9 +954,9 @@ stats.q_abs_min = min(q_abs);
 stats.q_abs_max = max(q_abs);
 stats.energy_min = min(E);
 stats.energy_max = max(E);
-center_mask = abs(q) <= 0.02;
-edge_mask = abs(q) >= 0.12 & abs(q) <= 0.15;
-inner_mask = q_abs <= stats.q_abs_min + max(dq_Ainv, 0.005);
+center_mask = abs(q) <= 0.002;
+edge_mask = abs(q) >= 0.012 & abs(q) <= 0.015;
+inner_mask = q_abs <= stats.q_abs_min + max(dq_Ainv, 0.0005);
 stats.energy_center_mean = mean(E(center_mask), 'omitnan');
 stats.energy_inner_mean = mean(E(inner_mask), 'omitnan');
 stats.energy_edge_mean = mean(E(edge_mask), 'omitnan');
@@ -1023,7 +1069,7 @@ end
 
 
 function tbl = local_single_spectrum_summary(qe_pp, fit_res, snap)
-q_targets = unique([snap.selectedQ_Ainv, 0.0, 0.05, 0.10, 0.145], 'stable');
+q_targets = unique([snap.selectedQ_Ainv, 0.0, 0.005, 0.010, 0.0145], 'stable');
 rows = {};
 for i = 1:numel(q_targets)
     [~, qi] = min(abs(qe_pp.q_Ainv - q_targets(i)));
@@ -1103,7 +1149,7 @@ local_plot_qe_map(qe_pp, branches, snap, figure_paths.qe_map, ...
 local_plot_dispersion(branches, model_results, figure_paths.dispersion);
 local_plot_single_spectrum(qe_pp, fit_res, snap.selectedQ_Ainv, snap, ...
     figure_paths.single_spectrum_selected);
-local_plot_single_spectrum(qe_pp, fit_res, 0.145, snap, ...
+local_plot_single_spectrum(qe_pp, fit_res, 0.0145, snap, ...
     figure_paths.single_spectrum_highq);
 end
 
@@ -1114,7 +1160,7 @@ q_mask = qe.q_Ainv >= min(snap.qStart, snap.qEnd) & ...
 e_mask = qe.energy_meV >= min(snap.energyMin, snap.energyMax) & ...
     qe.energy_meV <= max(snap.energyMin, snap.energyMax);
 map = double(qe.intensity(e_mask, q_mask));
-fig = figure('Visible', 'off', 'Color', 'w', 'Position', [100 100 1100 520]);
+fig = figure('Visible', 'off', 'Color', 'w', 'Position', [100 100 1200 900]);
 ax = axes(fig);
 imagesc(ax, qe.q_Ainv(q_mask), qe.energy_meV(e_mask), map);
 axis(ax, 'xy');
@@ -1139,8 +1185,7 @@ ylabel(ax, 'Energy relative to ZLP (meV)');
 title(ax, title_text);
 legend(ax, 'Location', 'best', 'FontSize', 7);
 grid(ax, 'on');
-exportgraphics(fig, out_path, 'Resolution', 300);
-close(fig);
+local_export_figure(fig, out_path, 300);
 end
 
 
@@ -1179,7 +1224,7 @@ end
 
 
 function local_plot_dispersion(branches, model_results, out_path)
-fig = figure('Visible', 'off', 'Color', 'w', 'Position', [100 100 900 560]);
+fig = figure('Visible', 'off', 'Color', 'w', 'Position', [100 100 1200 900]);
 ax = axes(fig);
 hold(ax, 'on');
 for b = 1:numel(branches)
@@ -1189,9 +1234,11 @@ for b = 1:numel(branches)
     end
     col = qe_plot_helpers.branch_color(b);
     qe_plot_helpers.plot_branch_scatter(ax, br, col, sprintf('Branch %d', b));
-    best = local_best_model_entry(model_results{b});
-    if ~isempty(best)
-        local_plot_supported_fit_curve(ax, best.fit, col, b);
+    if b == 1
+        best = local_best_model_entry(model_results{b});
+        if ~isempty(best)
+            local_plot_supported_fit_curve(ax, best.fit, col, b);
+        end
     end
 end
 hold(ax, 'off');
@@ -1201,8 +1248,7 @@ xlabel(ax, 'q (1/A)');
 ylabel(ax, 'Energy (meV)');
 title(ax, 'Area-normalized Fano apex dispersion');
 legend(ax, 'Location', 'best', 'FontSize', 8);
-exportgraphics(fig, out_path, 'Resolution', 300);
-close(fig);
+local_export_figure(fig, out_path, 300);
 end
 
 
@@ -1239,6 +1285,13 @@ for side = [-1, 1]
         plotted_label = true;
     end
 end
+end
+
+
+function local_export_figure(fig, out_path, resolution)
+set(fig, 'PaperPositionMode', 'auto');
+print(fig, out_path, '-dpng', sprintf('-r%d', resolution));
+close(fig);
 end
 
 
@@ -1328,7 +1381,7 @@ fprintf(fid, '## Main quantitative results\n\n');
 fprintf(fid, '- Auto-fit produced `%d` fitted peaks after R2 filtering; branch assignment kept `%d` points across `%d` GUI branches.\n', ...
     size(fit_res.all_peaks, 1), sum(branch_summary.n_points), height(branch_summary));
 fprintf(fid, '- Heatmap evidence uses the GUI top-left physical q-E map. The lower-left comparison map is not used or exported in this report.\n');
-fprintf(fid, '- The extraction uses old blind-window logic for B1/B3 and window-seeded propagation for B2, matching the current GUI hybrid logic.\n');
+fprintf(fid, '- The extraction uses old blind-window logic for B1 and window-seeded propagation for B2/B3, matching the current GUI hybrid logic.\n');
 fprintf(fid, '- Energy CIs in the branch tables are apex-energy CIs when available; otherwise the GUI fallback floor is used.\n\n');
 
 if isstruct(refinement_profile) && isfield(refinement_profile, 'enabled') ...

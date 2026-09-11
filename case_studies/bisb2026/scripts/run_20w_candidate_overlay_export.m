@@ -143,7 +143,7 @@ e_mask = qe.energy_meV >= min(snap.energyMin, snap.energyMax) & ...
     qe.energy_meV <= max(snap.energyMin, snap.energyMax);
 map = double(qe.intensity(e_mask, q_mask));
 
-fig = figure('Visible', 'off', 'Color', 'w', 'Position', [100 100 1120 540]);
+fig = figure('Visible', 'off', 'Color', 'w', 'Position', [100 100 1200 900]);
 ax = axes(fig);
 imagesc(ax, qe.q_Ainv(q_mask), qe.energy_meV(e_mask), map);
 axis(ax, 'xy');
@@ -194,7 +194,7 @@ end
 
 
 function local_plot_dispersion_overlay(branches, candidate_tbl, fit_model, out_path, show_candidates)
-fig = figure('Visible', 'off', 'Color', 'w', 'Position', [100 100 960 560]);
+fig = figure('Visible', 'off', 'Color', 'w', 'Position', [100 100 1200 900]);
 ax = axes(fig);
 hold(ax, 'on');
 
@@ -211,7 +211,7 @@ for b = 1:numel(branches)
         'DisplayName', sprintf('Branch %d current', b));
 end
 
-q_fit = linspace(-0.15, 0.15, 301)';
+q_fit = linspace(-0.015, 0.015, 301)';
 E_fit = local_predict_quasi2d(fit_model, abs(q_fit));
 plot(ax, q_fit, E_fit, 'k-', 'LineWidth', 1.6, ...
     'DisplayName', sprintf('Current B1 fit R^2=%.3f', fit_model.R_squared));
@@ -354,10 +354,7 @@ end
 
 
 function local_export_figure(fig, out_path)
-if exist('exportgraphics', 'file')
-    exportgraphics(fig, out_path, 'Resolution', 300);
-else
-    saveas(fig, out_path);
-end
+set(fig, 'PaperPositionMode', 'auto');
+print(fig, out_path, '-dpng', '-r300');
 close(fig);
 end

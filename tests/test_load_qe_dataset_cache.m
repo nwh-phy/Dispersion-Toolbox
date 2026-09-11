@@ -17,13 +17,13 @@ cleanup = onCleanup(@() local_remove_dir(work_dir));
 raw_path = fullfile(work_dir, 'synthetic_10w_raw.mat');
 local_write_synthetic_raw_mat(raw_path);
 
-first = load_qe_dataset(raw_path, 0.005, q_crop=[20 70]);
+first = load_qe_dataset(raw_path, 0.0005, q_crop=[20 70]);
 verifyEqual(testCase, size(first.qe.intensity, 2), 51);
 
 cache_path = fullfile(work_dir, 'eq3D_processed.mat');
 verifyEqual(testCase, exist(cache_path, 'file'), 2);
 
-second = load_qe_dataset(raw_path, 0.005, q_crop=[30 50]);
+second = load_qe_dataset(raw_path, 0.0005, q_crop=[30 50]);
 verifyEqual(testCase, size(second.qe.intensity, 2), 21);
 verifyEqual(testCase, second.qe.q_channel, 1:21);
 end

@@ -48,6 +48,7 @@ tracked_files.txt
 toolbox_config.m
 .hermes/
 output/
+outputs/
 paper_results/
 
 # Experimental data directories (CONFIDENTIAL — never commit)

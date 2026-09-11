@@ -19,7 +19,7 @@ if ~exist(output_dir, 'dir'), mkdir(output_dir); end
 
 %% Select dataset — use the 10w defocus (better signal)
 data_path = fullfile(project_dir, '20260120 BiSb', '590 PL2 10w 0.004 10sx300');
-dq_Ainv = 0.005;
+dq_Ainv = 0.0005;
 
 fprintf('\n══════════════════════════════════════════════\n');
 fprintf('  Bosman/Do et al. Pipeline — BiSb thin film\n');

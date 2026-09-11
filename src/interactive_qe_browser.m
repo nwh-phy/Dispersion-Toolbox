@@ -190,14 +190,11 @@ end
             drawnow;
 
             try
-                lower_path = lower(char(full_path));
-                dq_val = NaN;  % default: let load_raw_session prompt
-                if contains(lower_path, "20w")
-                    dq_val = 0.0025;
-                    ui.DqOverrideField.Value = 0.0025;
-                elseif contains(lower_path, "10w")
-                    dq_val = 0.005;
-                    ui.DqOverrideField.Value = 0.005;
+                dq_val = infer_qe_dq_Ainv(full_path);
+                if isfinite(dq_val) && dq_val > 0
+                    ui.DqOverrideField.Value = dq_val;
+                else
+                    dq_val = NaN;  % default: let load_raw_session prompt
                 end
                 dataset = load_qe_dataset(full_path, dq_val, ...
                     q_crop=[q_lo q_hi]);
@@ -232,11 +229,9 @@ end
     function local_load_dataset(path_to_load, throw_on_error)
         try
             % Auto-detect dq from path and update the override field
-            lower_path = lower(char(path_to_load));
-            if contains(lower_path, "20w")
-                ui.DqOverrideField.Value = 0.0025;
-            elseif contains(lower_path, "10w")
-                ui.DqOverrideField.Value = 0.005;
+            inferred_dq_Ainv = infer_qe_dq_Ainv(path_to_load);
+            if isfinite(inferred_dq_Ainv) && inferred_dq_Ainv > 0
+                ui.DqOverrideField.Value = inferred_dq_Ainv;
             end
             dataset = load_qe_dataset(path_to_load, ui.DqOverrideField.Value);
             state.dataset = dataset;
@@ -3594,7 +3589,7 @@ end
             if ~isempty(state.dataset) && isfield(state.dataset, "dq_Ainv")
                 dq_Ainv = double(state.dataset.dq_Ainv);
             else
-                dq_Ainv = 0.005;
+                dq_Ainv = 0.0005;
             end
         end
     end

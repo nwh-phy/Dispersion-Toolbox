@@ -21,15 +21,15 @@ sessions = repmat(struct( ...
 sessions(1).name = '590_PL2_10w';
 sessions(1).role = 'primary_10w_defocus';
 sessions(1).path = fullfile(base_dir, '590 PL2 10w 0.004 10sx300');
-sessions(1).dq_Ainv = 0.005;
+sessions(1).dq_Ainv = 0.0005;
 
 sessions(2).name = 'no_PL2_20w_2film';
 sessions(2).role = 'primary_20w_defocus';
 sessions(2).path = fullfile(base_dir, 'no pl2 20w 0.004 10sx300 2film');
-sessions(2).dq_Ainv = 0.0025;
+sessions(2).dq_Ainv = 0.00025;
 
 sessions(3).name = 'n0_PL2_10w_repeat';
 sessions(3).role = 'repeat_10w_defocus_sanity_check';
 sessions(3).path = fullfile(base_dir, 'n0 pl2 10w 0.004 10s x300');
-sessions(3).dq_Ainv = 0.005;
+sessions(3).dq_Ainv = 0.0005;
 end

@@ -49,7 +49,7 @@ if ~isfield(opts, 'R2_threshold'), opts.R2_threshold = 0.3; end
 if ~isfield(opts, 'verbose'), opts.verbose = false; end
 if ~isfield(opts, 'progress_fn'), opts.progress_fn = []; end
 if ~isfield(opts, 'pre_subtracted'), opts.pre_subtracted = false; end
-if ~isfield(opts, 'window_seed_branch_indices'), opts.window_seed_branch_indices = 2; end
+if ~isfield(opts, 'window_seed_branch_indices'), opts.window_seed_branch_indices = [2 3]; end
 if ~isfield(opts, 'bootstrap_ci_samples')
     opts.bootstrap_ci_samples = local_default_bootstrap_ci_samples();
 end
@@ -188,16 +188,17 @@ if used_seed && size(peaks, 2) >= 6
     % Seed mode: use branch_id column
     branch_id_col = local_branch_id_column(peaks);
     output_width = min(12, branch_id_col - 1);
-    unique_branches = unique(peaks(:, branch_id_col));
+    branch_ids = peaks(:, branch_id_col);
+    valid_branch_ids = isfinite(branch_ids) & branch_ids > 0;
+    unique_branches = unique(branch_ids(valid_branch_ids));
     n_branches = numel(unique_branches);
     branches = cell(n_branches, 1);
     for b = 1:n_branches
         b_id = unique_branches(b);
-        branches{b} = peaks(peaks(:, branch_id_col) == b_id, 1:output_width);
+        branches{b} = peaks(branch_ids == b_id, 1:output_width);
         [~, si] = sort(branches{b}(:,1));
         branches{b} = branches{b}(si, :);
     end
-    peaks = peaks(:, 1:output_width);
 else
     % Blind mode: 1D gap-based clustering
     unique_q = unique(peaks(:,1));
@@ -375,7 +376,7 @@ function [all_peaks, fit_details] = local_fit_blind_window_branches( ...
                 result.gamma_ci(p, 1), result.gamma_ci(p, 2), ...
                 result.amplitude_ci(p, 1), result.amplitude_ci(p, 2), ...
                 raw_peak_height, ...
-                branch_id]; %#ok<AGROW>
+                NaN]; %#ok<AGROW>
         end
 
         if mod(k, 10) == 0
@@ -437,6 +438,7 @@ function [all_peaks, fit_details, n_success] = local_fit_window_seeded_branches(
 
     fit_intensity = intensity(:, q_indices);
     fit_q_axis = q_axis(q_indices);
+    q_groups = local_window_seed_q_groups(fit_q_axis);
     n_specs = max(numel(specs), 1);
 
     for b = 1:numel(specs)
@@ -450,63 +452,98 @@ function [all_peaks, fit_details, n_success] = local_fit_window_seeded_branches(
             sprintf("New logic B%d window seed [%.0f-%.0f meV]...", ...
             branch_id, win(1), win(2)));
 
-        [seed_idx, seed_guess] = local_window_seed_guess( ...
-            fit_intensity, energy_axis, fit_q_axis, ...
-            fit_q_axis(1), fit_q_axis(end), win, opts.smooth_width);
-        if ~isfinite(seed_idx) || ~isfinite(seed_guess)
-            report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
-                sprintf("New logic B%d: no seed found", branch_id));
-            continue
-        end
+        branch_row_count = 0;
+        found_seed = false;
+        fit_failed = false;
 
-        try
-            prop = propagate_seed_peaks(fit_intensity, energy_axis, fit_q_axis(:), ...
-                'seed_guesses', seed_guess, ...
-                'seed_idx', seed_idx, ...
-                'direction', 'both', ...
-                'max_shift', opts.max_shift, ...
-                'min_R2', opts.R2_threshold, ...
-                'peak_model', opts.peak_model, ...
-                'pre_subtracted', opts.pre_subtracted, ...
-                'E_min', win(1), 'E_max', win(2), ...
-                'smooth_width', opts.smooth_width, ...
-                'bootstrap_ci_samples', opts.bootstrap_ci_samples, ...
-                'verbose', false);
-        catch
-            report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
-                sprintf("New logic B%d: fit failed", branch_id));
-            continue
-        end
+        for g = 1:numel(q_groups)
+            group_local_indices = q_groups(g).indices(:);
+            group_intensity = fit_intensity(:, group_local_indices);
+            group_q_axis = fit_q_axis(group_local_indices);
 
-        rows = prop.peaks;
-        if isempty(rows)
-            report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
-                sprintf("New logic B%d: no peaks", branch_id));
-            continue
-        end
-        rows = rows(rows(:,2) >= win(1) & rows(:,2) <= win(2), :);
-        if isempty(rows)
-            report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
-                sprintf("New logic B%d: no in-window peaks", branch_id));
-            continue
-        end
-        rows(:, 13) = branch_id;
-        all_peaks = [all_peaks; rows]; %#ok<AGROW>
+            [seed_idx, seed_guess] = local_window_seed_guess( ...
+                group_intensity, energy_axis, group_q_axis, ...
+                group_q_axis(1), group_q_axis(end), win, opts.smooth_width);
+            if ~isfinite(seed_idx) || ~isfinite(seed_guess)
+                continue
+            end
+            found_seed = true;
 
-        has_detail = ~cellfun(@isempty, prop.fit_details);
-        for local_k = find(has_detail(:)).'
-            full_k = q_indices(local_k);
-            fitted_channels(full_k) = true;
-            if isempty(fit_details{full_k})
-                fit_details{full_k} = prop.fit_details{local_k};
+            try
+                prop = propagate_seed_peaks(group_intensity, energy_axis, group_q_axis(:), ...
+                    'seed_guesses', seed_guess, ...
+                    'seed_idx', seed_idx, ...
+                    'direction', 'both', ...
+                    'max_shift', opts.max_shift, ...
+                    'min_R2', opts.R2_threshold, ...
+                    'peak_model', opts.peak_model, ...
+                    'pre_subtracted', opts.pre_subtracted, ...
+                    'E_min', win(1), 'E_max', win(2), ...
+                    'smooth_width', opts.smooth_width, ...
+                    'bootstrap_ci_samples', opts.bootstrap_ci_samples, ...
+                    'verbose', false);
+            catch
+                fit_failed = true;
+                continue
+            end
+
+            rows = prop.peaks;
+            if isempty(rows)
+                continue
+            end
+            rows = rows(rows(:,2) >= win(1) & rows(:,2) <= win(2), :);
+            if isempty(rows)
+                continue
+            end
+            rows(:, 13) = branch_id;
+            all_peaks = [all_peaks; rows]; %#ok<AGROW>
+            branch_row_count = branch_row_count + size(rows, 1);
+
+            has_detail = ~cellfun(@isempty, prop.fit_details);
+            for local_k = find(has_detail(:)).'
+                full_k = q_indices(group_local_indices(local_k));
+                fitted_channels(full_k) = true;
+                if isempty(fit_details{full_k})
+                    fit_details{full_k} = prop.fit_details{local_k};
+                end
             end
         end
 
+        if branch_row_count == 0
+            if ~found_seed
+                detail = "no seed found";
+            elseif fit_failed
+                detail = "fit failed";
+            else
+                detail = "no in-window peaks";
+            end
+            report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
+                sprintf("New logic B%d: %s", branch_id, detail));
+            continue
+        end
+
         report_progress(opts, 0.05 + 0.85 * b / n_specs, ...
-            sprintf("New logic B%d: %d points", branch_id, size(rows, 1)));
+            sprintf("New logic B%d: %d points", branch_id, branch_row_count));
     end
 
     n_success = sum(fitted_channels);
+end
+
+
+function groups = local_window_seed_q_groups(q_axis)
+    q_axis = q_axis(:);
+    if any(q_axis < 0) && any(q_axis > 0)
+        raw_groups = {find(q_axis <= 0), find(q_axis >= 0)};
+    else
+        raw_groups = {find(true(size(q_axis)))};
+    end
+
+    keep = ~cellfun(@isempty, raw_groups);
+    raw_groups = raw_groups(keep);
+    groups = repmat(struct('indices', []), numel(raw_groups), 1);
+    for i = 1:numel(raw_groups)
+        groups(i).indices = raw_groups{i};
+    end
 end
 
 
@@ -565,7 +602,8 @@ function [seed_idx, seed_guess] = local_window_seed_guess( ...
 
     seed_idx = NaN;
     seed_guess = NaN;
-    q_mask = q_axis >= q_start & q_axis <= q_end;
+    q_bounds = sort([q_start, q_end]);
+    q_mask = q_axis >= q_bounds(1) & q_axis <= q_bounds(2);
     e_mask = energy_axis >= win(1) & energy_axis <= win(2);
     q_indices = find(q_mask(:));
     E_win = energy_axis(e_mask);

@@ -269,13 +269,9 @@ if isfinite(dqOverride) && dqOverride > 0
     return
 end
 
-lower_path = lower(char(source_path));
-if contains(lower_path, "20w")
-    dq_Ainv = 0.0025;
-    return
-end
-if contains(lower_path, "10w")
-    dq_Ainv = 0.005;
+inferred_dq_Ainv = infer_qe_dq_Ainv(source_path);
+if isfinite(inferred_dq_Ainv) && inferred_dq_Ainv > 0
+    dq_Ainv = inferred_dq_Ainv;
     return
 end
 
@@ -293,7 +289,7 @@ answer = inputdlg( ...
     {"Enter dq in 1/A per pixel:"}, ...
     "Set Momentum Step", ...
     [1 40], ...
-    {"0.005"});
+    {"0.0005"});
 
 if isempty(answer)
     error("load_qe_dataset:DqCancelled", ...

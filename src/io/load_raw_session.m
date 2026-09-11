@@ -213,14 +213,12 @@ end
 %% 6. Resolve dq
 dq_Ainv = options.dq_Ainv;
 if ~isfinite(dq_Ainv)
-    lower_path = lower(file_path);
-    if contains(lower_path, '20w')
-        dq_Ainv = 0.0025;
-    elseif contains(lower_path, '10w')
-        dq_Ainv = 0.005;
+    inferred_dq_Ainv = infer_qe_dq_Ainv(file_path);
+    if isfinite(inferred_dq_Ainv) && inferred_dq_Ainv > 0
+        dq_Ainv = inferred_dq_Ainv;
     else
         answer = inputdlg({'Enter dq in 1/Å per pixel:'}, ...
-            'Momentum Step', [1 40], {'0.005'});
+            'Momentum Step', [1 40], {'0.0005'});
         if isempty(answer)
             error('load_raw_session:DqCancelled', 'dq entry was cancelled.');
         end
@@ -253,7 +251,7 @@ a3 = aligned; %#ok<NASGU>
 e = energy_meV(:).'; %#ok<NASGU>
 q = q_channel; %#ok<NASGU>
 import_provenance = local_build_import_provenance( ...
-    file_path, source_kind, options, [q_lo, q_hi], size(aligned)); %#ok<NASGU>
+    file_path, source_kind, options, [q_lo, q_hi], size(aligned), dq_Ainv); %#ok<NASGU>
 save(eq3d_path, 'a3', 'e', 'q', 'import_provenance', '-v7.3');
 fprintf('  Saved processed data to: %s\n', eq3d_path);
 end
@@ -261,7 +259,7 @@ end
 
 %% ====================================================================
 function import_provenance = local_build_import_provenance( ...
-        file_path, source_kind, options, q_crop_resolved, output_size)
+        file_path, source_kind, options, q_crop_resolved, output_size, dq_Ainv)
 source_info = dir(file_path);
 if isempty(source_info)
     source_bytes = NaN;
@@ -283,7 +281,8 @@ import_provenance.q_crop_resolved = double(q_crop_resolved);
 import_provenance.align_sigma = double(options.align_sigma);
 import_provenance.align_target = double(options.align_target);
 import_provenance.max_iter = double(options.max_iter);
-import_provenance.dq_Ainv = double(options.dq_Ainv);
+import_provenance.dq_option_Ainv = double(options.dq_Ainv);
+import_provenance.dq_Ainv = double(dq_Ainv);
 import_provenance.output_size = double(output_size);
 end
 

@@ -154,15 +154,13 @@ fprintf('  Energy axis: [%.1f, %.1f] meV, dE = %.1f meV, ZLP at pixel %d\n', ...
 dq_Ainv = options.dq_Ainv;
 if ~isfinite(dq_Ainv)
     % Try to infer from path
-    lower_path = lower(npy_path);
-    if contains(lower_path, '20w')
-        dq_Ainv = 0.0025;
-    elseif contains(lower_path, '10w')
-        dq_Ainv = 0.005;
+    inferred_dq_Ainv = infer_qe_dq_Ainv(npy_path);
+    if isfinite(inferred_dq_Ainv) && inferred_dq_Ainv > 0
+        dq_Ainv = inferred_dq_Ainv;
     else
         % Prompt user
         answer = inputdlg({'Enter dq in 1/Å per pixel:'}, ...
-            'Momentum Step', [1 40], {'0.005'});
+            'Momentum Step', [1 40], {'0.0005'});
         if isempty(answer)
             error('load_npy_session:DqCancelled', 'dq entry was cancelled.');
         end

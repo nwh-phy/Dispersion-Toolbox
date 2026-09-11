@@ -118,7 +118,7 @@ end
 
 
 function audit_tbl = local_build_highq_audit(branch_tbl, refinement_tbl, fit_model)
-q_min = 0.10;
+q_min = 0.010;
 q_values = [branch_tbl.q_Ainv(abs(branch_tbl.q_Ainv) >= q_min); ...
     refinement_tbl.q_Ainv(abs(refinement_tbl.q_Ainv) >= q_min)];
 q_values = unique(round(q_values(:) * 1e6) / 1e6);
@@ -460,7 +460,7 @@ end
 
 
 function local_plot_highq_dispersion(branch_tbl, audit_tbl, rescue_tbl, fit_model, out_path)
-fig = figure('Visible', 'off', 'Color', 'w', 'Position', [100, 100, 980, 560]);
+fig = figure('Visible', 'off', 'Color', 'w', 'Position', [100, 100, 1200, 900]);
 ax = axes(fig);
 hold(ax, 'on');
 grid(ax, 'on');
@@ -484,13 +484,13 @@ if ~isempty(rescue_tbl)
         'LineWidth', 1.2, 'DisplayName', 'candidate only');
 end
 
-q_fit = linspace(-0.15, 0.15, 301)';
+q_fit = linspace(-0.015, 0.015, 301)';
 E_fit = local_predict_quasi2d(fit_model, abs(q_fit));
 plot(ax, q_fit, E_fit, 'k-', 'LineWidth', 1.4, ...
     'DisplayName', 'current B1 quasi2D guide');
 
-xline(ax, -0.10, ':', 'Color', [0.35 0.35 0.35], 'HandleVisibility', 'off');
-xline(ax, 0.10, ':', 'Color', [0.35 0.35 0.35], 'HandleVisibility', 'off');
+xline(ax, -0.010, ':', 'Color', [0.35 0.35 0.35], 'HandleVisibility', 'off');
+xline(ax, 0.010, ':', 'Color', [0.35 0.35 0.35], 'HandleVisibility', 'off');
 xlabel(ax, 'q (1/A)');
 ylabel(ax, 'B1 energy (meV)');
 title(ax, '20w B1 high-q audit');
@@ -537,7 +537,7 @@ end
 
 
 function local_plot_highq_diagnostic_grid(qe_pp, fit_res, audit_tbl, out_path)
-target_q = [-0.145, -0.135, -0.125, -0.115, 0.115, 0.125, 0.135, 0.145];
+target_q = [-0.0145, -0.0135, -0.0125, -0.0115, 0.0115, 0.0125, 0.0135, 0.0145];
 fig = figure('Visible', 'off', 'Color', 'w', 'Position', [80, 80, 1120, 720]);
 tiledlayout(fig, 2, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
 
@@ -711,10 +711,7 @@ end
 
 
 function local_export_figure(fig, out_path)
-if exist('exportgraphics', 'file')
-    exportgraphics(fig, out_path, 'Resolution', 200);
-else
-    saveas(fig, out_path);
-end
+set(fig, 'PaperPositionMode', 'auto');
+print(fig, out_path, '-dpng', '-r200');
 close(fig);
 end
