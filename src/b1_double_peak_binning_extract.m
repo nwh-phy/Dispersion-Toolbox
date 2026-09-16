@@ -33,6 +33,11 @@ q_candidates = find(q_axis >= q_bounds(1) & q_axis <= q_bounds(2) & ...
 noise_profile = local_noise_profile(energy_axis, intensity, ...
     q_axis, q_candidates, energy_mask, opts);
 units = local_extraction_units(q_axis, noise_profile, opts);
+if strcmp(opts.binning_policy, 'fixed_nonoverlapping')
+    fixed_bins = qe_prepare_count_bins(qe_pp, opts.bin_size, ...
+        q_range_Ainv=opts.q_range_Ainv, q_skip_Ainv=opts.q_skip_Ainv);
+    units = fixed_bins.units;
+end
 unit_data = local_prepare_unit_data(energy_axis, q_axis, intensity, ...
     raw_intensity, units, energy_mask, opts);
 
@@ -933,6 +938,9 @@ opts = local_set_default(opts, 'energy_window_meV', [300 2100]);
 opts = local_set_default(opts, 'q_range_Ainv', [-0.15 0.15]);
 opts = local_set_default(opts, 'q_skip_Ainv', 0.005);
 opts = local_set_default(opts, 'bin_size', 3);
+opts = local_set_default(opts, 'binning_policy', 'legacy_adaptive');
+assert(ismember(opts.binning_policy, {'legacy_adaptive','fixed_nonoverlapping'}), ...
+    'b1_double_peak_binning_extract:BinningPolicy', 'Unknown binning policy');
 opts = local_set_default(opts, 'noise_threshold', NaN);
 opts = local_set_default(opts, 'low_q_no_bin_abs_Ainv', 0.05);
 opts = local_set_default(opts, 'high_q_force_bin_abs_Ainv', Inf);

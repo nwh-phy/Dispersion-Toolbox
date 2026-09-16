@@ -21,12 +21,14 @@ function model = peak_models(name)
 
 arguments
     name (1,:) char {mustBeMember(name, ...
-        {'lorentz', 'gaussian', 'voigt', 'damped_ho', 'fano'})} = 'lorentz'
+        {'lorentz', 'lorentz_symmetric', 'gaussian', 'voigt', 'damped_ho', 'fano'})} = 'lorentz'
 end
 
 switch name
     case 'lorentz'
         model = lorentz_model();
+    case 'lorentz_symmetric'
+        model = symmetric_model();
     case 'gaussian'
         model = gaussian_model();
     case 'voigt'
@@ -37,6 +39,15 @@ switch name
         model = fano_model();
 end
 
+end
+
+function m = symmetric_model()
+m.name = 'Symmetric Lorentzian (unit-area template)';
+m.n_params = 3;
+m.param_names = {'center (meV)', 'FWHM (meV)', 'area'};
+m.model_fn = @(E0,Gamma,A,E) A/pi .* (Gamma/2) ./ ((E-E0).^2+(Gamma/2).^2);
+m.guess_fn = @(E0,width,height) [E0,width,height*pi*width/2];
+m.bounds_fn = @(E0,width,Emin,Emax) struct('lb',[Emin,1,0],'ub',[Emax,5000,Inf]);
 end
 
 

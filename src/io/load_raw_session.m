@@ -36,7 +36,13 @@ arguments
     options.max_iter (1,1) double {mustBePositive, mustBeInteger} = 10
     options.dq_Ainv (1,1) double = NaN
     options.show_progress (1,1) logical = true
+    options.write_cache (1,1) logical = true
+    options.align_zlp (1,1) logical = true
+    options.invalid_count_threshold (1,1) double = Inf
 end
+assert(~options.write_cache || (options.align_zlp && isinf(options.invalid_count_threshold)), ...
+    'load_raw_session:AlternateProcessingCache', ...
+    'Alternate alignment/masking requires write_cache=false to protect the legacy source cache.');
 
 [fdir, fname, ext] = fileparts(file_path);
 
@@ -88,6 +94,24 @@ else
 end
 
 %% 2. Frame summation
+% Opt-in detector-sentinel policy: exclude the entire native q channel if
+% any frame/energy sample is invalid. Never average a variable frame count.
+invalid_native_q = [];
+if strcmpi(ext,'.npy') && ndims(raw_data)==3 && isfinite(options.invalid_count_threshold)
+    invalid_samples = ~isfinite(raw_data) | raw_data>=options.invalid_count_threshold;
+    invalid_native_q = find(squeeze(any(any(invalid_samples,1),3))).';
+    raw_data(:,invalid_native_q,:) = 0; % temporary calibration exclusion only
+    clear invalid_samples
+end
+frame_diagnostics = struct('status','not_available');
+if strcmpi(ext,'.npy') && ndims(raw_data)==3 && ~isempty(json) && ...
+        isfield(json,'is_sequence') && json.is_sequence
+    profiles = squeeze(sum(raw_data,2));
+    [~, zlp_pixels] = max(profiles,[],2);
+    frame_diagnostics = struct('status','unaligned_frame_summed_q_ZLP', ...
+        'zlp_energy_pixel',zlp_pixels,'integrated_signal',sum(profiles,2), ...
+        'n_frames',size(raw_data,1),'raw_shape',size(raw_data));
+end
 ndims_data = ndims(raw_data);
 fprintf('  Original dimensions: %dD, shape = [%s]\n', ndims_data, num2str(size(raw_data)));
 
@@ -157,9 +181,14 @@ summed = summed(:, q_lo:q_hi);
 
 %% 4. ZLP alignment
 fprintf('  ZLP alignment...\n');
+if options.align_zlp
 aligned = local_align_zlp(summed, ...
     options.align_sigma, options.align_target, options.max_iter, ...
     options.show_progress);
+else
+    aligned = summed;
+    fprintf('  Alignment explicitly disabled; frame sum only.\n');
+end
 
 %% 5. Build energy axis
 if ~isempty(energy_meV_from_file)
@@ -225,7 +254,7 @@ if ~isfinite(dq_Ainv)
         dq_Ainv = str2double(answer{1});
     end
 end
-fprintf('  dq = %.4f Å⁻¹/pixel\n', dq_Ainv);
+fprintf('  dq = %.8g Å⁻¹/pixel\n', dq_Ainv);
 
 %% 7. Build output struct
 q_channel = 1:size(aligned, 2);  % re-index from 1 (data is already cropped)
@@ -252,8 +281,19 @@ e = energy_meV(:).'; %#ok<NASGU>
 q = q_channel; %#ok<NASGU>
 import_provenance = local_build_import_provenance( ...
     file_path, source_kind, options, [q_lo, q_hi], size(aligned), dq_Ainv); %#ok<NASGU>
+dataset.import_provenance = import_provenance;
+dataset.frame_diagnostics = frame_diagnostics;
+dataset.qe.source_channel = q_lo:q_hi;
+dataset.invalid_native_q = invalid_native_q;
+if ~isempty(invalid_native_q)
+    local_invalid = ismember(q_lo:q_hi,invalid_native_q);
+    dataset.qe.intensity(:,local_invalid) = NaN;
+    a3(:,local_invalid) = NaN;
+end
+if options.write_cache
 save(eq3d_path, 'a3', 'e', 'q', 'import_provenance', '-v7.3');
 fprintf('  Saved processed data to: %s\n', eq3d_path);
+end
 end
 
 
@@ -284,6 +324,9 @@ import_provenance.max_iter = double(options.max_iter);
 import_provenance.dq_option_Ainv = double(options.dq_Ainv);
 import_provenance.dq_Ainv = double(dq_Ainv);
 import_provenance.output_size = double(output_size);
+import_provenance.align_zlp = options.align_zlp;
+import_provenance.write_cache = options.write_cache;
+import_provenance.invalid_count_threshold = options.invalid_count_threshold;
 end
 
 

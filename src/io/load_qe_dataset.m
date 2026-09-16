@@ -18,6 +18,8 @@ arguments
     path {mustBeTextScalar}
     dqOverride (1,1) double = NaN
     options.q_crop (1,2) double = [NaN NaN]
+    options.use_cache (1,1) logical = true
+    options.write_cache (1,1) logical = true
 end
 
 [source_path, file_type] = local_resolve_source(string(path), options.q_crop);
@@ -26,7 +28,7 @@ if strcmp(file_type, 'npy') || strcmp(file_type, 'mat_raw')
     % Check for cached processed result first
     [raw_dir, ~, ~] = fileparts(char(source_path));
     cache_path = fullfile(raw_dir, 'eq3D_processed.mat');
-    if exist(cache_path, 'file') == 2
+    if options.use_cache && exist(cache_path, 'file') == 2
         cache_info = dir(cache_path);
         raw_info = dir(char(source_path));
         if cache_info.datenum >= raw_info.datenum && ...
@@ -40,7 +42,7 @@ if strcmp(file_type, 'npy') || strcmp(file_type, 'mat_raw')
     end
     % No cache or stale — process raw data
     dataset = load_raw_session(char(source_path), ...
-        q_crop=options.q_crop, dq_Ainv=dqOverride);
+        q_crop=options.q_crop, dq_Ainv=dqOverride, write_cache=options.write_cache);
     return
 end
 
