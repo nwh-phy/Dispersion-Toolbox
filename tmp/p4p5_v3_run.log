@@ -1,0 +1,9 @@
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS���ݴ���toolbox)
+{�ڲ�ͬ�ṹ��֮������±긳ֵ��
+
+���� run_b1_p4p5_diagnostics_v3 (�� 22 ��)
+ if ok, b=struct('target_q',q0,'N',cfg.N(ni),'q_Ainv',mean(qe.q_Ainv(idx)),'indices',idx,'source_channel',src(idx),'mean',mean(qe.intensity(:,idx),2)); B(end+1)=b; ch=string(mat2str(src(idx))); aq=b.q_Ainv; else, ch=""; aq=NaN; end
+                                                                                                                                                        ^^^^^^^^
+} 
+ERROR: MATLAB error Exit Status: 0x00000001

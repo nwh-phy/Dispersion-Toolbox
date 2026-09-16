@@ -1,0 +1,46 @@
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+RUN_DIR=C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\paper_results\b1_components_v2\20260912T021424517Z_e5ece6f0_18af79b6
+Loading NPY file: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\590 PL2 10w 0.004 10sx300\Sequence EELS Image 274.npy
+  Loaded in 1.0 s, shape = [300   512  1028], 1263 MB
+  JSON metadata loaded.
+  Original dimensions: 3D, shape = [300   512  1028]
+  Frames summed: 300 frames → 2D [512  1028]
+  Transposed to [E × q] = [1028 × 512]
+  Data matrix: 1028 energy × 512 momentum channels
+  Q crop (manual): channels 1 : 512
+  ZLP alignment...
+  Alignment explicitly disabled; frame sum only.
+  Energy axis from JSON: [-688.0, 3420.0] meV, dE = 4.0 meV
+  dq = 0.0005 Å⁻¹/pixel
+  Done. qeData struct created: 1028 E × 512 q
+P0-P2 input audited: 590_PL2_10w; 92 bins
+Loading NPY file: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\no pl2 20w 0.004 10sx300 2film\Sequence EELS Image 273.npy
+  Loaded in 1.2 s, shape = [300   512  1028], 1263 MB
+  JSON metadata loaded.
+  Original dimensions: 3D, shape = [300   512  1028]
+  Frames summed: 300 frames → 2D [512  1028]
+  Transposed to [E × q] = [1028 × 512]
+  Data matrix: 1028 energy × 512 momentum channels
+  Q crop (manual): channels 1 : 512
+  ZLP alignment...
+  Alignment explicitly disabled; frame sum only.
+  Energy axis from JSON: [-688.0, 3420.0] meV, dE = 4.0 meV
+  dq = 0.0003 Å⁻¹/pixel
+  Done. qeData struct created: 1028 E × 512 q
+P0-P2 input audited: no_PL2_20w_2film; 198 bins
+Loading NPY file: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\n0 pl2 10w 0.004 10s x300\Sequence EELS Image 272.npy
+  Loaded in 1.2 s, shape = [300   512  1028], 1263 MB
+  JSON metadata loaded.
+  Original dimensions: 3D, shape = [300   512  1028]
+  Frames summed: 300 frames → 2D [512  1028]
+  Transposed to [E × q] = [1028 × 512]
+  Data matrix: 1028 energy × 512 momentum channels
+  Q crop (manual): channels 1 : 512
+  ZLP alignment...
+  Alignment explicitly disabled; frame sum only.
+  Energy axis from JSON: [-688.0, 3420.0] meV, dE = 4.0 meV
+  dq = 0.0005 Å⁻¹/pixel
+  Done. qeData struct created: 1028 E × 512 q
+P0-P2 input audited: n0_PL2_10w_repeat; 92 bins
+FIT N1_R1_W1800_lorentz_symmetric n1=boundary n2=boundary

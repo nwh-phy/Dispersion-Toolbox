@@ -1,0 +1,8 @@
+Name,Passed,Failed,Incomplete,Duration,Details
+test_b1_component_pilot_v2/testConservationRealDq,1,0,0,2.4149798,
+test_b1_component_pilot_v2/testGapsInvalidAndPartial,1,0,0,0.032251,
+test_b1_component_pilot_v2/testMatchedWidths,1,0,0,0.0353389,
+test_b1_component_pilot_v2/testExistingExtractorFixedBinCompatibility,1,0,0,2.5668172,
+test_b1_component_pilot_v2/testModelsAndContracts,1,0,0,2.097162,
+test_b1_component_pilot_v2/testNoCacheReadOrWriteAndExplicitIdentity,1,0,0,17.3617653,
+test_b1_component_pilot_v2/testRawSentinelCannotSetCalibration,1,0,0,0.1138571,

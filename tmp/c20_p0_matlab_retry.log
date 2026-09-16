@@ -1,0 +1,659 @@
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+25.2.0.3055257 (R2025b) Update 2
+  包含以下字段的 1×6 struct 数组:
+
+    Name
+    Version
+    Release
+    Date
+
+C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\src\io\load_qe_dataset.m
+C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\src\thesis\run_thesis_pipeline.m
+              name: '590_PL2_10w'
+              role: 'primary_10w_defocus'
+              path: 'C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\590 PL2 10w 0.004 10sx300'
+           dq_Ainv: 5.0000e-04
+           enabled: 1
+      sample_label: 'encapsulated two-dimensional BiSb alloy sample'
+    naming_caution: 'Some data folders retain the historical "Bi" label; the thesis interpretation should use BiSb alloy wording when supported by sample context.'
+
+
+FILE C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\590 PL2 10w 0.004 10sx300\eq3D.mat
+  包含以下字段的 3×1 struct 数组:
+
+    name
+    size
+    bytes
+    class
+    global
+    sparse
+    complex
+    nesting
+    persistent
+
+    {'a3'}
+    {'e' }
+    {'q' }
+
+a3 [1015 362] e [-180 3876] de 4
+q [1 362] dq 1
+
+FILE C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\590 PL2 10w 0.004 10sx300\op_history_260506.mat
+          name: 'opHistory'
+          size: [1 18]
+         bytes: 165590
+         class: 'cell'
+        global: 0
+        sparse: 0
+       complex: 0
+       nesting: [1×1 struct]
+    persistent: 0
+
+    {'opHistory'}
+
+        label: 'Saved current GUI state'
+    timestamp: '11:10:38'
+     snapshot: [1×1 struct]
+        stage: 'eq3d'
+
+
+HISTORICAL C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\paper_results\590_gui_history_area_260506\analysis_results.mat
+    {'assignment'    }
+    {'branch_summary'}
+    {'branches'      }
+    {'dataset'       }
+    {'figure_paths'  }
+    {'fit_res'       }
+    {'model_results' }
+    {'model_summary' }
+    {'output'        }
+    {'override_log'  }
+    {'pp_opts'       }
+    {'refinement_log'}
+    {'report_path'   }
+    {'single_summary'}
+    {'snap'          }
+
+    {'dataset'           }
+    {'history_path'      }
+    {'session'           }
+    {'history_entry'     }
+    {'snap'              }
+    {'preprocess_opts'   }
+    {'qe_pp'             }
+    {'bg_diag'           }
+    {'fit_res'           }
+    {'assignment'        }
+    {'branches'          }
+    {'refinement_log'    }
+    {'override_log'      }
+    {'refinement_profile'}
+    {'model_results'     }
+    {'branch_summary'    }
+    {'model_summary'     }
+    {'single_summary'    }
+    {'figure_paths'      }
+    {'report_path'       }
+    {'output_dir'        }
+
+   5.0000e-04
+
+   192
+
+saved q [-0.0955 0.085] step 0.0005
+  列 1 至 11
+
+    {'q_Ainv'}    {'energy_meV'}    {'gamma_meV'}    {'R2'}    {'amplitude_fit'}    {'E_ci_lo'}    {'E_ci_hi'}    {'gamma_ci_lo'}    {'gamma_ci_hi'}    {'A_ci_lo'}    {'A_ci_hi'}
+
+  列 12 至 14
+
+    {'raw_height'}    {'branch'}    {'E_ci_half_meV'}
+
+    q_Ainv     energy_meV    gamma_meV      R2       amplitude_fit    E_ci_lo    E_ci_hi    gamma_ci_lo    gamma_ci_hi     A_ci_lo       A_ci_hi      raw_height    branch    E_ci_half_meV
+    _______    __________    _________    _______    _____________    _______    _______    ___________    ___________    __________    __________    __________    ______    _____________
+
+     -0.015      1334.5       2052.9      0.95005     0.00026387      1230.7     1438.3       1937.9           2168       0.00026033     0.0002674      59.36         1          103.79    
+    -0.0145      1341.8       2061.2      0.94996     0.00026584      1241.5     1442.2       1952.1         2170.3       0.00026234    0.00026934      50.47         1          100.39    
+     -0.014      1349.2       2102.7      0.95117     0.00026731      1249.6     1448.8       1996.6         2208.7       0.00026401    0.00027061      52.57         1          99.612    
+
+              name: 'no_PL2_20w_2film'
+              role: 'primary_20w_defocus'
+              path: 'C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\no pl2 20w 0.004 10sx300 2film'
+           dq_Ainv: 2.5000e-04
+           enabled: 1
+      sample_label: 'encapsulated two-dimensional BiSb alloy sample'
+    naming_caution: 'Some data folders retain the historical "Bi" label; the thesis interpretation should use BiSb alloy wording when supported by sample context.'
+
+
+FILE C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\no pl2 20w 0.004 10sx300 2film\eq3D.mat
+  包含以下字段的 3×1 struct 数组:
+
+    name
+    size
+    bytes
+    class
+    global
+    sparse
+    complex
+    nesting
+    persistent
+
+    {'a3'}
+    {'e' }
+    {'q' }
+
+a3 [1016 358] e [-224 3836] de 4
+q [1 358] dq 1
+
+FILE C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\no pl2 20w 0.004 10sx300 2film\eq3D_processed.mat
+  包含以下字段的 3×1 struct 数组:
+
+    name
+    size
+    bytes
+    class
+    global
+    sparse
+    complex
+    nesting
+    persistent
+
+    {'a3'}
+    {'e' }
+    {'q' }
+
+a3 [1028 358] e [-236 3872] de 4
+q [1 358] dq 1
+
+HISTORICAL C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\paper_results\no_PL2_20w_2film_gui_history_area_260506_highq_refined\analysis_results.mat
+    {'assignment'    }
+    {'branch_summary'}
+    {'branches'      }
+    {'dataset'       }
+    {'figure_paths'  }
+    {'fit_res'       }
+    {'model_results' }
+    {'model_summary' }
+    {'output'        }
+    {'override_log'  }
+    {'pp_opts'       }
+    {'refinement_log'}
+    {'report_path'   }
+    {'single_summary'}
+    {'snap'          }
+
+    {'dataset'           }
+    {'history_path'      }
+    {'session'           }
+    {'history_entry'     }
+    {'snap'              }
+    {'preprocess_opts'   }
+    {'qe_pp'             }
+    {'bg_diag'           }
+    {'fit_res'           }
+    {'assignment'        }
+    {'branches'          }
+    {'refinement_log'    }
+    {'override_log'      }
+    {'refinement_profile'}
+    {'model_results'     }
+    {'branch_summary'    }
+    {'model_summary'     }
+    {'single_summary'    }
+    {'figure_paths'      }
+    {'report_path'       }
+    {'output_dir'        }
+
+   2.5000e-04
+
+   186
+
+saved q [-0.04625 0.043] step 0.00025
+  列 1 至 11
+
+    {'q_Ainv'}    {'energy_meV'}    {'gamma_meV'}    {'R2'}    {'amplitude_fit'}    {'E_ci_lo'}    {'E_ci_hi'}    {'gamma_ci_lo'}    {'gamma_ci_hi'}    {'A_ci_lo'}    {'A_ci_hi'}
+
+  列 12 至 14
+
+    {'raw_height'}    {'branch'}    {'E_ci_half_meV'}
+
+     q_Ainv     energy_meV    gamma_meV      R2       amplitude_fit    E_ci_lo    E_ci_hi    gamma_ci_lo    gamma_ci_hi     A_ci_lo       A_ci_hi      raw_height    branch    E_ci_half_meV
+    ________    __________    _________    _______    _____________    _______    _______    ___________    ___________    __________    __________    __________    ______    _____________
+
+     -0.0105      1210.4       130.62      0.30372     5.4277e-05      1156.9     1263.9       52.877         208.37       3.5676e-05    7.2878e-05        15.9        1          53.504    
+    -0.00975      1205.5       1783.3      0.90865     0.00027947      1129.2     1281.9       1673.9         1892.8       0.00027529    0.00028365      23.006        1          76.338    
+     -0.0095      1183.7       1677.7      0.92167     0.00028038      1116.6     1250.7       1542.8         1812.6       0.00027657     0.0002842      22.812        1          67.048    
+
+              name: 'n0_PL2_10w_repeat'
+              role: 'repeat_10w_defocus_sanity_check'
+              path: 'C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\n0 pl2 10w 0.004 10s x300'
+           dq_Ainv: 5.0000e-04
+           enabled: 1
+      sample_label: 'encapsulated two-dimensional BiSb alloy sample'
+    naming_caution: 'Some data folders retain the historical "Bi" label; the thesis interpretation should use BiSb alloy wording when supported by sample context.'
+
+
+FILE C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\n0 pl2 10w 0.004 10s x300\eq3D.mat
+  包含以下字段的 3×1 struct 数组:
+
+    name
+    size
+    bytes
+    class
+    global
+    sparse
+    complex
+    nesting
+    persistent
+
+    {'a3'}
+    {'e' }
+    {'q' }
+
+a3 [1011 351] e [-172 3868] de 4
+q [1 351] dq 1
+
+FILE C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\n0 pl2 10w 0.004 10s x300\eq3D_processed.mat
+  包含以下字段的 3×1 struct 数组:
+
+    name
+    size
+    bytes
+    class
+    global
+    sparse
+    complex
+    nesting
+    persistent
+
+    {'a3'}
+    {'e' }
+    {'q' }
+
+a3 [1011 351] e [-172 3868] de 4
+q [1 351] dq 1
+
+HISTORICAL C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\paper_results\n0_PL2_10w_gui_history_area_260506\analysis_results.mat
+    {'assignment'    }
+    {'branch_summary'}
+    {'branches'      }
+    {'dataset'       }
+    {'figure_paths'  }
+    {'fit_res'       }
+    {'model_results' }
+    {'model_summary' }
+    {'output'        }
+    {'override_log'  }
+    {'pp_opts'       }
+    {'refinement_log'}
+    {'report_path'   }
+    {'single_summary'}
+    {'snap'          }
+
+    {'dataset'           }
+    {'history_path'      }
+    {'session'           }
+    {'history_entry'     }
+    {'snap'              }
+    {'preprocess_opts'   }
+    {'qe_pp'             }
+    {'bg_diag'           }
+    {'fit_res'           }
+    {'assignment'        }
+    {'branches'          }
+    {'refinement_log'    }
+    {'override_log'      }
+    {'refinement_profile'}
+    {'model_results'     }
+    {'branch_summary'    }
+    {'model_summary'     }
+    {'single_summary'    }
+    {'figure_paths'      }
+    {'report_path'       }
+    {'output_dir'        }
+
+   5.0000e-04
+
+   180
+
+saved q [-0.0895 0.0855] step 0.0005
+  列 1 至 11
+
+    {'q_Ainv'}    {'energy_meV'}    {'gamma_meV'}    {'R2'}    {'amplitude_fit'}    {'E_ci_lo'}    {'E_ci_hi'}    {'gamma_ci_lo'}    {'gamma_ci_hi'}    {'A_ci_lo'}    {'A_ci_hi'}
+
+  列 12 至 14
+
+    {'raw_height'}    {'branch'}    {'E_ci_half_meV'}
+
+    q_Ainv     energy_meV    gamma_meV      R2       amplitude_fit    E_ci_lo    E_ci_hi    gamma_ci_lo    gamma_ci_hi     A_ci_lo       A_ci_hi      raw_height    branch    E_ci_half_meV
+    _______    __________    _________    _______    _____________    _______    _______    ___________    ___________    __________    __________    __________    ______    _____________
+
+     -0.015      1390.8       1901.2      0.96195     0.00024056      1187.2     1594.4         1528         2274.3       0.00015754    0.00032359       37.54        1           203.6    
+    -0.0145      1376.1       2068.2       0.9623     0.00026696      1280.7     1471.5       1985.4           2151       0.00026314    0.00027078      44.148        1          95.367    
+     -0.014      1346.7       1762.1      0.96103      0.0002298      1185.4       1508       1463.6         2060.5        0.0001668    0.00029281      43.331        1          161.28    
+
+正在运行 PeakFwhmMeasurementTest
+..
+已完成 PeakFwhmMeasurementTest
+__________
+
+正在运行 QeAssignPeakBranchesByWindowsTest
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+.
+================================================================================
+QeAssignPeakBranchesByWindowsTest/testOverlappingWindowsAssignEachPeakOnlyOnce 中验证失败。
+    --------
+    框架诊断:
+    --------
+    verifyEqual 失败。
+    --> 使用 "isequaln" 确定数值不相等。
+    --> 失败表:
+            Actual    Expected    Error    RelativeError
+            ______    ________    _____    _____________
+                                                        
+              0          1         -1           -1      
+    
+    实际值:
+         0
+    预期值:
+         1
+    --------
+    堆栈信息:
+    --------
+    位置: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\tests\QeAssignPeakBranchesByWindowsTest.m (QeAssignPeakBranchesByWindowsTest.testOverlappingWindowsAssignEachPeakOnlyOnce)，位置: 41
+================================================================================
+
+================================================================================
+QeAssignPeakBranchesByWindowsTest/testOverlappingWindowsAssignEachPeakOnlyOnce 中验证失败。
+    --------
+    框架诊断:
+    --------
+    verifyEqual 失败。
+    --> 使用 "isequaln" 确定数值不相等。
+    --> 失败表:
+            Actual    Expected    Error    RelativeError
+            ______    ________    _____    _____________
+                                                        
+              2          1          1            1      
+    
+    实际值:
+         2
+    预期值:
+         1
+    --------
+    堆栈信息:
+    --------
+    位置: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\tests\QeAssignPeakBranchesByWindowsTest.m (QeAssignPeakBranchesByWindowsTest.testOverlappingWindowsAssignEachPeakOnlyOnce)，位置: 42
+================================================================================
+
+================================================================================
+QeAssignPeakBranchesByWindowsTest/testOverlappingWindowsAssignEachPeakOnlyOnce 中出现错误并且未运行完毕。
+    --------
+    错误 ID:
+    --------
+    'MATLAB:badsubscript'
+    -----------
+    错误详细信息:
+    -----------
+    位置 1 处的索引超出数组边界。
+    
+    出错 QeAssignPeakBranchesByWindowsTest/testOverlappingWindowsAssignEachPeakOnlyOnce (第 44 行)
+                testCase.verifyEqual(result.branches{1}(1,2), 1720);
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+================================================================================
+..
+已完成 QeAssignPeakBranchesByWindowsTest
+__________
+
+正在运行 QeBrowserCuratedWorkflowTest
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+..........
+已完成 QeBrowserCuratedWorkflowTest
+__________
+
+正在运行 QeHeatmapBranchOverlayWorkflowTest
+...
+已完成 QeHeatmapBranchOverlayWorkflowTest
+__________
+
+正在运行 QeSelectLowEnergyBranchTest
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+..
+已完成 QeSelectLowEnergyBranchTest
+__________
+
+正在运行 QeSelectedBranchFitWorkflowTest
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+....
+已完成 QeSelectedBranchFitWorkflowTest
+__________
+
+正在运行 QeViewModeNamingTest
+...
+已完成 QeViewModeNamingTest
+__________
+
+正在运行 test_fit_dispersion_generic
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+  Dispersion fit [Quasi-2D Plasmon]:
+    A (meV²·Å) = 2.4e+07  [2.4e+07, 2.4e+07]
+    ρ₀ (Å) = 30  [30, 30]
+    R²   = 1.0000
+    RMSE = 0.0 meV
+.
+已完成 test_fit_dispersion_generic
+__________
+
+正在运行 test_gui_history_snapshot_coverage
+....
+已完成 test_gui_history_snapshot_coverage
+__________
+
+正在运行 test_interactive_qe_browser_fast_selection
+....
+已完成 test_interactive_qe_browser_fast_selection
+__________
+
+正在运行 test_load_qe_dataset_cache
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+Loading MAT file: C:\Users\HP\AppData\Local\Temp\tp8f0f147a_6e49_4bf9_8bc3_c982631381a3\synthetic_10w_raw.mat
+  Auto-added Nion 4D toolbox: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox\4D-EELS TOOLBOX
+  Loaded in 0.0 s
+  Using largest numeric field "raw", size = [3  512  128]
+  Found energy axis in field "energy", 512 points
+  Original dimensions: 3D, shape = [3  512  128]
+  Frames summed: 3 frames → 2D [512  128]
+  Data matrix: 512 energy × 128 momentum channels
+  Q crop (manual): channels 20 : 70
+  ZLP alignment...
+    Phase 1: Sequential cross-correlation done (center = 1)
+    Iteration #1: residual = 0
+    Phase 2: Converged (residual 0 < target 0.5)
+  Energy axis from file: [-80.0, 1964.0] meV, 512 points
+  dq = 0.0005 Å⁻¹/pixel
+  Done. qeData struct created: 512 E × 51 q
+  Saved processed data to: C:\Users\HP\AppData\Local\Temp\tp8f0f147a_6e49_4bf9_8bc3_c982631381a3\eq3D_processed.mat
+  Cache eq3D_processed.mat does not match raw import options; rebuilding.
+Loading MAT file: C:\Users\HP\AppData\Local\Temp\tp8f0f147a_6e49_4bf9_8bc3_c982631381a3\synthetic_10w_raw.mat
+  Loaded in 0.0 s
+  Using largest numeric field "raw", size = [3  512  128]
+  Found energy axis in field "energy", 512 points
+  Original dimensions: 3D, shape = [3  512  128]
+  Frames summed: 3 frames → 2D [512  128]
+  Data matrix: 512 energy × 128 momentum channels
+  Q crop (manual): channels 30 : 50
+  ZLP alignment...
+    Phase 1: Sequential cross-correlation done (center = 1)
+    Iteration #1: residual = 0
+    Phase 2: Converged (residual 0 < target 0.5)
+  Energy axis from file: [-80.0, 1964.0] meV, 512 points
+  dq = 0.0005 Å⁻¹/pixel
+  Done. qeData struct created: 512 E × 21 q
+  Saved processed data to: C:\Users\HP\AppData\Local\Temp\tp8f0f147a_6e49_4bf9_8bc3_c982631381a3\eq3D_processed.mat
+.
+已完成 test_load_qe_dataset_cache
+__________
+
+正在运行 test_measure_peak_height
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+..
+已完成 test_measure_peak_height
+__________
+
+正在运行 test_pre_subtracted_auto_fit
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+.......... ....
+已完成 test_pre_subtracted_auto_fit
+__________
+
+正在运行 test_qe_adaptive_stack_offsets
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+...
+已完成 test_qe_adaptive_stack_offsets
+__________
+
+正在运行 test_qe_auto_stack_offset
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+...
+已完成 test_qe_auto_stack_offset
+__________
+
+正在运行 test_qe_background_subtraction
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+..........
+已完成 test_qe_background_subtraction
+__________
+
+正在运行 test_qe_branch_manual_corrections
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+.......
+已完成 test_qe_branch_manual_corrections
+__________
+
+正在运行 test_qe_dq_calibration
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+...
+已完成 test_qe_dq_calibration
+__________
+
+正在运行 test_qe_loss_map_display_mode
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+.
+已完成 test_qe_loss_map_display_mode
+__________
+
+正在运行 test_qe_physics_extract
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+  Quasi-2D plasmon fit:
+    A          = 1800000.00  meV^2·Å
+    rho0       = 25.00  Å
+    E_flat     = 268.3  meV
+    q_c        = 0.0400  Å^{-1}
+    R²         = 1.0000
+    RMSE       = 0.0  meV
+  Screening extraction: A = 1.8e+06 meV^2*A, rho0 = 25.00 A, eps_bg = 1.00
+  Symmetry averaging: merged 14 signed points into 7 |q| bins
+  I_kin global slope: q^{-2.55}
+  I_kin low-q slope:  q^{-2.67}  (expect ~ -3 for 2D)
+  I_kin high-q slope: q^{-2.34}  (expect ~ -2 for 3D)
+  Dimensional crossover: q* ~= 0.0426 A^-1
+  Physics extraction complete: 7 q bins
+.  Quasi-2D plasmon fit:
+    A          = 1500000.00  meV^2·Å
+    rho0       = 22.00  Å
+    E_flat     = 261.1  meV
+    q_c        = 0.0455  Å^{-1}
+    R²         = 1.0000
+    RMSE       = 0.0  meV
+  Screening extraction: A = 1.5e+06 meV^2*A, rho0 = 22.00 A, eps_bg = 1.00
+  Symmetry averaging: merged 16 signed points into 8 |q| bins
+  I_kin global slope: q^{0.00}
+  I_kin low-q slope:  q^{-0.00}  (expect ~ -3 for 2D)
+  I_kin high-q slope: q^{0.00}  (expect ~ -2 for 3D)
+  Physics extraction complete: 8 q bins
+  Quasi-2D plasmon fit:
+    A          = 1500000.00  meV^2·Å
+    rho0       = 22.00  Å
+    E_flat     = 261.1  meV
+    q_c        = 0.0455  Å^{-1}
+    R²         = 1.0000
+    RMSE       = 0.0  meV
+  Screening extraction: A = 1.5e+06 meV^2*A, rho0 = 22.00 A, eps_bg = 1.00
+  Symmetry averaging: merged 16 signed points into 8 |q| bins
+  I_kin global slope: q^{-0.00}
+  I_kin low-q slope:  q^{-0.00}  (expect ~ -3 for 2D)
+  I_kin high-q slope: q^{-0.00}  (expect ~ -2 for 3D)
+  Physics extraction complete: 8 q bins
+.  Quasi-2D plasmon fit:
+    A          = 900000.00  meV^2·Å
+    rho0       = 18.00  Å
+    E_flat     = 223.6  meV
+    q_c        = 0.0556  Å^{-1}
+    R²         = 1.0000
+    RMSE       = 0.0  meV
+  Screening extraction: A = 9e+05 meV^2*A, rho0 = 18.00 A, eps_bg = 1.00
+  Candidate cleanup: removed 6 duplicate peak candidates at fixed signed q
+  Symmetry averaging: merged 6 signed points into 3 |q| bins
+  I_kin global slope: q^{-0.00}
+  Physics extraction complete: 3 q bins
+.
+已完成 test_qe_physics_extract
+__________
+
+正在运行 test_qe_prepare_stacked_spectra
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+....
+已完成 test_qe_prepare_stacked_spectra
+__________
+
+正在运行 test_qe_preprocess_preset
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+..
+已完成 test_qe_preprocess_preset
+__________
+
+正在运行 test_qe_windowed_denoise
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+....
+已完成 test_qe_windowed_denoise
+__________
+
+正在运行 test_thesis_pipeline_infra
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+.......... ...
+已完成 test_thesis_pipeline_infra
+__________
+
+失败摘要:
+
+     Name                                                                            Failed  Incomplete  原因
+    ===============================================================================================================
+     QeAssignPeakBranchesByWindowsTest/testOverlappingWindowsAssignEachPeakOnlyOnce    X         X       验证失败。
+                                                                                                         出错。
+正在运行 test_b1_double_peak_binning_workflow
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+.......... .......... .........
+已完成 test_b1_double_peak_binning_workflow
+__________
+

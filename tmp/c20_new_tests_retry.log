@@ -1,0 +1,38 @@
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+正在运行 test_b1_component_pilot_v2
+....Loading MAT file: C:\Users\HP\AppData\Local\Temp\tp376288cd_4e00_4b6f_8d10_f3745f7a84d9\synthetic_10w_raw.mat
+  Auto-added Nion 4D toolbox: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox\4D-EELS TOOLBOX
+  Loaded in 0.0 s
+  Using largest numeric field "raw", size = [16  512   20]
+  Found energy axis in field "energy", 512 points
+  Original dimensions: 3D, shape = [16  512   20]
+  Frames summed: 16 frames → 2D [512   20]
+  Data matrix: 512 energy × 20 momentum channels
+  Q crop (manual): channels 1 : 20
+  ZLP alignment...
+    Phase 1: Sequential cross-correlation done (center = 1)
+    Iteration #1: residual = 0
+    Phase 2: Converged (residual 0 < target 0.5)
+  Energy axis from file: [-36.0, 2008.0] meV, 512 points
+  dq = 0.0005 Å⁻¹/pixel
+  Done. qeData struct created: 512 E × 20 q
+Loading MAT file: C:\Users\HP\AppData\Local\Temp\tp376288cd_4e00_4b6f_8d10_f3745f7a84d9\synthetic_10w_raw.mat
+  Loaded in 0.0 s
+  Using largest numeric field "raw", size = [16  512   20]
+  Found energy axis in field "energy", 512 points
+  Original dimensions: 3D, shape = [16  512   20]
+  Frames summed: 16 frames → 2D [512   20]
+  Data matrix: 512 energy × 20 momentum channels
+  Q crop (manual): channels 1 : 20
+  ZLP alignment...
+    Phase 1: Sequential cross-correlation done (center = 1)
+    Iteration #1: residual = 0
+    Phase 2: Converged (residual 0 < target 0.5)
+  Energy axis from file: [-36.0, 2008.0] meV, 512 points
+  dq = 0.0005 Å⁻¹/pixel
+  Done. qeData struct created: 512 E × 20 q
+.
+已完成 test_b1_component_pilot_v2
+__________
+

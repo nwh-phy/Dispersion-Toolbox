@@ -1,0 +1,6 @@
+Name,Passed,Failed,Incomplete,Duration,Details
+test_b1_component_pilot_v2/testConservationRealDq,1,0,0,3.4504753,
+test_b1_component_pilot_v2/testGapsInvalidAndPartial,1,0,0,0.0406634,
+test_b1_component_pilot_v2/testMatchedWidths,1,0,0,0.0441714,
+test_b1_component_pilot_v2/testModelsAndContracts,1,0,0,3.5066517,
+test_b1_component_pilot_v2/testNoCacheReadOrWriteAndExplicitIdentity,1,0,0,54.4016995,

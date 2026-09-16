@@ -1,0 +1,69 @@
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+25.2.0.3055257 (R2025b) Update 2
+  包含以下字段的 1×6 struct 数组:
+
+    Name
+    Version
+    Release
+    Date
+
+C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\src\io\load_qe_dataset.m
+C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\src\thesis\run_thesis_pipeline.m
+              name: '590_PL2_10w'
+              role: 'primary_10w_defocus'
+              path: 'C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\590 PL2 10w 0.004 10sx300'
+           dq_Ainv: 5.0000e-04
+           enabled: 1
+      sample_label: 'encapsulated two-dimensional BiSb alloy sample'
+    naming_caution: 'Some data folders retain the historical "Bi" label; the thesis interpretation should use BiSb alloy wording when supported by sample context.'
+
+
+FILE C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\590 PL2 10w 0.004 10sx300\eq3D.mat
+  包含以下字段的 3×1 struct 数组:
+
+    name
+    size
+    bytes
+    class
+    global
+    sparse
+    complex
+    nesting
+    persistent
+
+    {'a3'}
+    {'e' }
+    {'q' }
+
+a3 [1015 362] e [-180 3876] de 4
+q [1 362] dq 1
+
+FILE C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\20260120 BiSb\590 PL2 10w 0.004 10sx300\op_history_260506.mat
+          name: 'opHistory'
+          size: [1 18]
+         bytes: 165590
+         class: 'cell'
+        global: 0
+        sparse: 0
+       complex: 0
+       nesting: [1×1 struct]
+    persistent: 0
+
+    {'opHistory'}
+
+        label: 'Saved current GUI state'
+    timestamp: '11:10:38'
+     snapshot: [1×1 struct]
+        stage: 'eq3d'
+
+{错误使用 load
+找不到文件或目录 'C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon\tmp\paper_results\590_gui_history_area_260506\analysis_results.mat'。
+
+出错 c20_p0_audit (第 21 行)
+ p=fullfile(pwd,'paper_results',tags{i},'analysis_results.mat'); a=load(p); fprintf('\nHISTORICAL %s\n',p); disp(fieldnames(a)); disp(fieldnames(a.output));
+                                                                   ^^^^^^^
+出错 run (第 112 行)
+evalin('caller', strcat(scriptStem, ';'));
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

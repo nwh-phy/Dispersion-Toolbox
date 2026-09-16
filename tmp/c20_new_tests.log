@@ -1,0 +1,116 @@
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+正在运行 test_b1_component_pilot_v2
+
+================================================================================
+test_b1_component_pilot_v2/testConservationRealDq 中出现错误并且未运行完毕。
+    --------
+    错误 ID:
+    --------
+    'MATLAB:heterogeneousStrucAssignment'
+    -----------
+    错误详细信息:
+    -----------
+    在不同结构体之间进行下标赋值。
+    
+    出错 qe_prepare_count_bins (第 55 行)
+     bins.units(k)=u;
+     ^^^^^^^^^^^^^^^^
+    出错 test_b1_component_pilot_v2>testConservationRealDq (第 15 行)
+      b=qe_prepare_count_bins(q,N,variance=2*ones(size(q.intensity)),variance_source="synthetic independent");
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+================================================================================
+.
+================================================================================
+test_b1_component_pilot_v2/testGapsInvalidAndPartial 中出现错误并且未运行完毕。
+    --------
+    错误 ID:
+    --------
+    'MATLAB:heterogeneousStrucAssignment'
+    -----------
+    错误详细信息:
+    -----------
+    在不同结构体之间进行下标赋值。
+    
+    出错 qe_prepare_count_bins (第 55 行)
+     bins.units(k)=u;
+     ^^^^^^^^^^^^^^^^
+    出错 test_b1_component_pilot_v2>testGapsInvalidAndPartial (第 35 行)
+    b=qe_prepare_count_bins(q,5,invalid_q=invalid);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+================================================================================
+.
+================================================================================
+test_b1_component_pilot_v2/testMatchedWidths 中出现错误并且未运行完毕。
+    --------
+    错误 ID:
+    --------
+    'MATLAB:heterogeneousStrucAssignment'
+    -----------
+    错误详细信息:
+    -----------
+    在不同结构体之间进行下标赋值。
+    
+    出错 qe_prepare_count_bins (第 55 行)
+     bins.units(k)=u;
+     ^^^^^^^^^^^^^^^^
+    出错 test_b1_component_pilot_v2>testMatchedWidths (第 44 行)
+    a=qe_prepare_count_bins(fixture(.0005),3); b=qe_prepare_count_bins(fixture(.00025),6);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+================================================================================
+.
+================================================================================
+test_b1_component_pilot_v2/testModelsAndContracts 中出现错误并且未运行完毕。
+    --------
+    错误 ID:
+    --------
+    'MATLAB:heterogeneousStrucAssignment'
+    -----------
+    错误详细信息:
+    -----------
+    在不同结构体之间进行下标赋值。
+    
+    出错 qe_compare_component_models (第 48 行)
+      candidates(k)=row;
+      ^^^^^^^^^^^^^^^^^^
+    出错 test_b1_component_pilot_v2>testModelsAndContracts (第 54 行)
+    a=qe_compare_component_models(E,Y,n_starts=12);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+================================================================================
+.
+================================================================================
+test_b1_component_pilot_v2/testNoCacheReadOrWriteAndExplicitIdentity 中出现错误并且未运行完毕。
+    --------
+    错误 ID:
+    --------
+    'load_qe_dataset:InvalidEq3D'
+    -----------
+    错误详细信息:
+    -----------
+    错误使用 load_qe_dataset (第 54 行)
+    File C:\Users\HP\AppData\Local\Temp\tp1382ccf0_2bc7_40b1_8e2a_096aa0f5beb7\synthetic_10w_raw.mat must contain variables 'a3' and 'e'.
+    
+    出错 test_b1_component_pilot_v2>testNoCacheReadOrWriteAndExplicitIdentity (第 78 行)
+    d=load_qe_dataset(p,.0005,q_crop=[1 20],use_cache=false,write_cache=false);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+================================================================================
+.
+已完成 test_b1_component_pilot_v2
+__________
+
+失败摘要:
+
+     Name                                                                  Failed  Incomplete  原因
+    =================================================================================================
+     test_b1_component_pilot_v2/testConservationRealDq                       X         X       出错。
+    -------------------------------------------------------------------------------------------------
+     test_b1_component_pilot_v2/testGapsInvalidAndPartial                    X         X       出错。
+    -------------------------------------------------------------------------------------------------
+     test_b1_component_pilot_v2/testMatchedWidths                            X         X       出错。
+    -------------------------------------------------------------------------------------------------
+     test_b1_component_pilot_v2/testModelsAndContracts                       X         X       出错。
+    -------------------------------------------------------------------------------------------------
+     test_b1_component_pilot_v2/testNoCacheReadOrWriteAndExplicitIdentity    X         X       出错。
+{错误使用 assert
+断言失败。
+} 

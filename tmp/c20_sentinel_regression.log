@@ -1,0 +1,51 @@
+  q-EELS Toolbox loaded (root: C:\Users\HP\Desktop\vibecoding\2D-metal-plasmon)
+  Nion EELS Toolbox loaded (root: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox)
+正在运行 test_b1_component_pilot_v2
+.....Loading MAT file: C:\Users\HP\AppData\Local\Temp\tp626454e0_adba_4280_a3ae_4d80de31645c\synthetic_10w_raw.mat
+  Auto-added Nion 4D toolbox: C:\Users\HP\Desktop\Nion-EELS数据处理toolbox\4D-EELS TOOLBOX
+  Loaded in 0.0 s
+  Using largest numeric field "raw", size = [16  512   20]
+  Found energy axis in field "energy", 512 points
+  Original dimensions: 3D, shape = [16  512   20]
+  Frames summed: 16 frames → 2D [512   20]
+  Data matrix: 512 energy × 20 momentum channels
+  Q crop (manual): channels 1 : 20
+  ZLP alignment...
+    Phase 1: Sequential cross-correlation done (center = 1)
+    Iteration #1: residual = 0
+    Phase 2: Converged (residual 0 < target 0.5)
+  Energy axis from file: [-36.0, 2008.0] meV, 512 points
+  dq = 0.0005 Å⁻¹/pixel
+  Done. qeData struct created: 512 E × 20 q
+Loading MAT file: C:\Users\HP\AppData\Local\Temp\tp626454e0_adba_4280_a3ae_4d80de31645c\synthetic_10w_raw.mat
+  Loaded in 0.0 s
+  Using largest numeric field "raw", size = [16  512   20]
+  Found energy axis in field "energy", 512 points
+  Original dimensions: 3D, shape = [16  512   20]
+  Frames summed: 16 frames → 2D [512   20]
+  Data matrix: 512 energy × 20 momentum channels
+  Q crop (manual): channels 1 : 20
+  ZLP alignment...
+    Phase 1: Sequential cross-correlation done (center = 1)
+    Iteration #1: residual = 0
+    Phase 2: Converged (residual 0 < target 0.5)
+  Energy axis from file: [-36.0, 2008.0] meV, 512 points
+  dq = 0.0005 Å⁻¹/pixel
+  Done. qeData struct created: 512 E × 20 q
+.Loading NPY file: C:\Users\HP\AppData\Local\Temp\tp25595ca8_5c60_48af_b545_9e69d6b05c94\sentinel_10w.npy
+  Loaded in 0.0 s, shape = [3  20  64], 0 MB
+  JSON metadata loaded.
+  Original dimensions: 3D, shape = [3  20  64]
+  Frames summed: 3 frames → 2D [20  64]
+  Transposed to [E × q] = [64 × 20]
+  Data matrix: 64 energy × 20 momentum channels
+  Q crop (manual): channels 1 : 20
+  ZLP alignment...
+  Alignment explicitly disabled; frame sum only.
+  Energy axis from JSON: [-36.0, 216.0] meV, dE = 4.0 meV
+  dq = 0.0005 Å⁻¹/pixel
+  Done. qeData struct created: 64 E × 20 q
+.
+已完成 test_b1_component_pilot_v2
+__________
+
