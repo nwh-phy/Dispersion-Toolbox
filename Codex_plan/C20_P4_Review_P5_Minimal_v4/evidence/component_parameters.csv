@@ -1,0 +1,13 @@
+target_q,actual_q,peak_model,N_components,status,success,selected_start,normalized_sse,selected_boundary
+-0.0025,-0.0025,lorentz_symmetric,1,boundary,1,1,0.442613400310453,1
+-0.0025,-0.0025,lorentz_symmetric,2,boundary,1,21,0.137520127368234,1
+-0.0025,-0.0025,lorentz,1,boundary,1,6,0.201648623627873,1
+-0.0025,-0.0025,lorentz,2,boundary,1,16,0.112595139039396,1
+0.0075,0.0075,lorentz_symmetric,1,boundary,1,3,1.02103006272408,1
+0.0075,0.0075,lorentz_symmetric,2,boundary,1,7,0.746247283333917,1
+0.0075,0.0075,lorentz,1,converged,1,21,0.851292956024854,0
+0.0075,0.0075,lorentz,2,boundary,1,1,0.680041197459941,1
+0.0125,0.0125,lorentz_symmetric,1,boundary,1,10,2.09907787749215,1
+0.0125,0.0125,lorentz_symmetric,2,boundary,1,23,1.9035185626844,1
+0.0125,0.0125,lorentz,1,converged,1,6,2.03067752820018,0
+0.0125,0.0125,lorentz,2,boundary,1,14,1.88677982493744,1

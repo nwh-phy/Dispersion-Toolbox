@@ -1,0 +1,37 @@
+# C20 v5: data-constrained competing explanations
+## Scope and acquisition
+This run continues the verified v4 packet. No P0-P4 full rerun, whole-q scan, old-output replacement, or physical fit. The user confirmed on 2026-09-12 that all 300 frames are continuous acquisition from the same region, without scanning, changing region or adjusting the beam. This resolves the acquisition-history question, not stationarity or independence.
+The graduation-thesis baseline treats B1 as a broad low-energy candidate and leaves single broad response versus nearby components unresolved. This run tests limited spectral descriptions, not quasiparticle identity.
+## Area correction
+The 162 parent component rows are regenerated from saved selected parameters without refitting. 108 extended-window rows had full-fit-window areas mislabeled as Wref. New columns separate fit-window/reference-window areas, explicit integration support and full-observation flag. Corrected counts times meV are not electron numbers; DL native amplitude differs dimensionally from symmetric Lorentzian amplitude.
+## A1: can estimated common energy drift explain away the candidate decomposition?
+All 12 A1 models are saved with 360 candidates and H0 witnesses. A0 reconstructed inputs match existing mode2. Across the 12 n2 components the maximum native-center shift is 5.965 meV and maximum reference-area-fraction change is 0.0069. These changes compare the same frame data under a fixed ZLP-derived transformation; they are not independent-replicate errors.
+Interpretation: the tested common integer energy drift alone is not a sufficient explanation for the existing two-term envelopes: both line shapes retain similar conditional decomposition after A1. This does not exclude static energy-q tilt, subpixel response, time-varying single-mode states, or line-shape/background dependence.
+## M1 versus M2: actual member spectra, not repeated bin observations
+Observations are five native q channels per region, counted once. M1 has one local linearly dispersing center and shared width, per-member positive amplitude and background amplitude, regional power-law exponent. M2 adds a second such component with the identical background freedom. Energy endpoints are bounded to the observed window, widths 4-5000 meV. Slopes are fitted from members, not copied from the 160 meV/channel stress simulation. Ordering is defined at region center; crossing is not prohibited.
+One regional scalar rescales the solver; no member-wise area normalization or variance weighting. Per-model 12 starts include a saved A0 seed. All candidates, optimality, native centers/slopes/amplitudes, per-member background/components/total/residual, zero-amplitude M1 witness and derived N1/3/5 predictions are saved.
+| Region / line shape | M1 slope (meV per native channel) | M1 smoothed residual RMS | M2 smoothed residual RMS |
+|---|---:|---:|---:|
+| R1 / lorentz_symmetric | -93.677 | 43.47 | 20.06 |
+| R1 / lorentz | -75.011 | 31.99 | 17.28 |
+| R2 / lorentz_symmetric | 17.972 | 5.409 | 3.824 |
+| R2 / lorentz | 15.480 | 4.594 | 3.411 |
+| R3 / lorentz_symmetric | 4.043 | 1.951 | 1.692 |
+| R3 / lorentz | 4.580 | 1.833 | 1.661 |
+Smoothed residual RMS uses a fixed nine-sample moving mean only as a descriptive structure diagnostic, never as a calibrated statistic.
+R1: both line shapes show coherent residual structure across individual members under M1; M2 substantially reduces it, but structured low-energy residuals remain. This supports an effective two-component candidate relative to this restricted M1, not exclusion of every single-mode mixture. Shared-width or linear-center inadequacy is still a competing explanation.
+R2: the M2 advantage is smaller and line-shape dependent. It is suggestive of additional envelope structure, not decisive evidence against a flexible single mode. R3: member-wise differences are small relative to observed scatter; a single broad local mode remains a viable unresolved competitor.
+The linear M1 slopes correspond to only a limited observed center change across each five-member region. Their values are conditional on shape/shared width and unweighted fitting. Unknown intra-pixel q acceptance and possible q-center changes are not excluded by resolving five pixel centers.
+## Elastic q center and sequence evolution
+The fixed center +/-4-channel centroid spans 235.4244 to 236.3199 native channels, while argmax switches between 235 and 236. Raw and edge-subtracted centroids for several bands, and all 300 elastic q profiles, are saved. A whole-channel argmax switch must not be assigned as a measured one-channel physical q drift.
+Interpretation: there is sequence-dependent elastic-profile variation beyond merely reporting an integer peak label, but centroid band/background sensitivity and profile deformation prevent a unique q-zero translation estimate. No q re-alignment was performed.
+R1 A1 block-integral range is 3903.586 to 4716.482 counts*meV per frame; window spectral centroids span 923.541 to 952.256 meV. Scale-only block residuals are nonzero and saved. These are descriptive observations from the same continuous acquisition, not six independent experiments.
+A moving/shape-changing single mode over time has not yet been fitted block by block and cannot be excluded. User confirmation of no deliberate changes does not rule out instrumental drift or specimen evolution. No iid bootstrap or experimental CI was run.
+## Positive controls
+Correct-background B1 applied to the same 10 saved background-mismatch smoke datasets gives 0/10 legacy split flags (previous B0 smoke was 10/10). This directly demonstrates the artificial envelope can arise from omitted constant background in that known synthetic scenario; it is not a recalculation of the former 94/100 pilot.
+The known q-mixed single-mode case is recovered at member level in 10 fresh engineering trials. A further 10 trials use fitted R1 M1 member predictions as truth. Both are known-one-mode positive controls with hypothetical Gaussian member noise, not C20 false-positive calibration. Full truth, noise, observation, candidates and hashes are included. Real-data member search uses 12 starts; controls use 4 and cannot substitute for matched-budget inference.
+## Remaining checks and next decision
+Prioritize a named shared-width-release or center-curvature M1 comparison, and R1 time-block single-versus-double descriptions, before promoting two components to two simultaneous excitations. Treat q-profile change as a sensitivity, not an automatic lateral correction. Dark/elastic reference and correlated noise validation are still needed for statistical intervals or intrinsic linewidth.
+Tests: 23 passed, 0 failed (6 new v5, 10 v4 contracts, 7 legacy). No full-repository claim. Saved A1/member observations, candidates, curves and corrected areas independently recompute before packaging; the ZIP is then extracted for a second check.
+Visual inspection covered actual member residual plots and A0/A1 diagnostics. Numerical fit quality, model adequacy, parameter identifiability and physical origin are separate statuses.
+Recompute the extracted packet without native NPY: add the bundled src tree and case_studies/bisb2026/scripts to MATLAB path, then result=c20_v5_verify(packet_folder).

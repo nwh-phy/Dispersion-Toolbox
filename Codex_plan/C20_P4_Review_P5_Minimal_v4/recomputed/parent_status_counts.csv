@@ -1,0 +1,7 @@
+peak_model,n_components,status,count
+lorentz,1,boundary,23
+lorentz,1,converged,4
+lorentz,2,boundary,21
+lorentz,2,converged,6
+lorentz_symmetric,1,boundary,27
+lorentz_symmetric,2,boundary,27

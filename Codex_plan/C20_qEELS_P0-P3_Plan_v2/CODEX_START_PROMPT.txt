@@ -1,0 +1,18 @@
+任务：在用户授权的本地 nwh-phy/Dispersion-Toolbox 项目中，执行 C20 B1 两个重叠谱学分量的提取与验证。请先读 C20_qEELS_ExecPlan_v2.md、SOURCE_ALIGNMENT.md 和本地 AGENTS.md。计划源码基线是 18af79b66cd27365fd00bcf3de26658ddd7e7d53。若本地更晚，先查相关diff，不回滚用户修改。
+
+不要再从零设计整个程序。最新版已经有 thesis_sessions、GUI-history复现、B1分箱与四种追踪模式、候选/失败/repair日志和点级证据审计。保留并复用已验证部分。本轮优先在MATLAB中完成 P0–P3：输入与q口径审计、必要的局部修复、N=1/3/5分箱、三个代表位置的同窗单/双分量试拟合。随后按计划推进代表bin的验证，不把全部时间花在GUI、全仓库重构或物理模型上。
+
+先做这些具体工作：
+1. 记录git状态/HEAD/MATLAB依赖；读正式提交论文相关方法与结果；自动定位三组原始文件、E/q轴、op_history_260506.mat、analysis_results.mat、branch1_points.csv及其实际字段；填input_manifest.resolved.yaml。
+2. 以当前registry的10w=0.0005、20w=0.00025 Å^-1/pixel作项目配置，检查保存数组/CSV是否用旧轴。double wrapper/core仍有q_skip=0.005、lowQNoBin=0.05等，先输出q_rule_migration.csv并补真实dq尺度测试。不要全仓库除10，不把单位更新等同于旧数据已重算。
+3. 读/运行现有相关测试，新增固定非重叠分箱测试；真实源只读，所有新cache/result写唯一run目录。旧500meV参考、±q平均图、reference重建中心谱不得进新主结果。
+4. 用最小处理L1而非旧qe_pp作为新主输入；已有mean-binning保留兼容，同时保存sum/mean/方差/成员/边界。N=1/3/5分开分析；20w对照物理宽度时增加6/10。禁止跨±q、中心束掩码或无效通道。未知raw不能静默回退成processed而不标记。
+5. 三个代表位置先比较同窗n=1/n=2，300–1800meV起步，上界2000/2100作具名敏感性；保留旧Drude–Lorentz对照，标准对称Lorentzian使用新明确模型名，不能改旧lorentz公式。显式关闭Fano默认、弱峰硬删除、趋势预设、jump repair与下游物理拟合。
+6. 不预先扣背景，但拟合中联合建模背景。两次分窗口单峰只可作初值，最终必须同一完整能窗联合分解。加入多初值、边界/退出状态、模型总和与残差一致性检查；失败保留，不强制输出两条完整线。
+7. 所有旧图/论文/旧索引只读。已有wrapper默认runFits=true指下游物理拟合，不要默认调用。新入口run_b1_component_pilot_v2等是计划要求实现的接口，不是现有可调用函数；先检查等效helper，再最小化实现。
+
+用户目标是提取P1/P2并讨论可能激发，P1/P2属于原B1内部，不是B1/B2改名。C20用户最新口径Bi:Sb约70:30；研究对象完整MoS2–metal–MoS2，1film/2film不是自动受控厚度。不得把Fano、sqrt(q)、rapidrise-plateau、score<=300或固定窄宽度作为答案。
+
+数据无法找到时，先实现并运行合成/输入/分箱测试，报告具体缺失路径和影响；只剩二维处理谱时输出明确标记的探索结果；无ZLP/分辨信息时可报有效峰宽但不报本征寿命。不要伪造成功或声称未运行的测试通过。
+
+请实际执行而不是再返回一个新计划。每阶段更新进度与决策，结束给出：改动文件、真实输入与dq、测试passed/failed/skipped、实际跑过的bin/模型、诊断图/表位置、仍未解决问题以及下一条可执行命令。原始数据只读，不重置工作区，不自动push或上传实验数据。

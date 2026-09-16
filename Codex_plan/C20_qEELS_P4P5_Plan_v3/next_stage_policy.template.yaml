@@ -1,0 +1,97 @@
+# 设计规范模板；不是现有MATLAB入口已经支持的配置。Codex需映射到实际接口并保存effective config。
+schema: c20.next_stage_policy.proposed.v3
+status: design_spec_not_existing_MATLAB_configuration
+parent_run: paper_results/b1_components_v2/20260912T021813081Z_31fcc543_18af79b6
+output_root: paper_results/b1_components_v3
+scope: diagnose_then_refit
+primary_session: 590_PL2_10w
+input_policy:
+  parent_run_read_only: true
+  raw_read_only: true
+  use_parent_source_manifest: true
+  optional_historical_inputs: true
+  require_frame_axis_semantics_before_bootstrap: true
+  missing_measurement_variance: unknown_not_Poisson
+units:
+  energy: meV
+  momentum: Angstrom^-1
+  intensity: resolve_from_actual_metadata
+q_policy:
+  range_Ainv:
+  - -0.015
+  - 0.015
+  q_center_skip_Ainv: 0.0005
+  dq_registry:
+    590_PL2_10w: 0.0005
+    no_PL2_20w_2film: 0.00025
+    n0_PL2_10w_repeat: 0.0005
+  preserve_native_source_channel: true
+  centered_targets_Ainv:
+  - -0.0025
+  - 0.0075
+  - 0.0125
+  centered_N:
+  - 1
+  - 3
+  - 5
+  initial_fit_N: 3
+  mirror_N3_targets_Ainv:
+  - 0.0025
+  - -0.0075
+  - -0.0125
+  matched_20w_N:
+  - 6
+  - 10
+  allow_target_shift_to_fit_better: false
+  overlapping_variants_are_independent: false
+fit_policy:
+  main_window_meV:
+  - 300
+  - 1800
+  sensitivity_windows_meV:
+  - - 300
+    - 2000
+  - - 300
+    - 2100
+  common_area_window_meV:
+  - 300
+  - 1800
+  models:
+  - lorentz_symmetric
+  - lorentz
+  explicit_components:
+  - 1
+  - 2
+  initial_background: power_law
+  next_background: power_law_plus_constant
+  background_control_order: after_same_model_solver_check
+  initial_starts_legacy: 24
+  new_start_schedule: independent_by_model_and_saved
+  nested_null_witness: true
+  backend_crosscheck: profile_constrained_linear_coefficients_if_needed
+  new_bounds: only_named_sensitivity_after_boundary_audit
+  no_weak_peak_deletion: true
+  no_trend_or_repair: true
+  independent_instrument_response: null
+frame_policy:
+  first_session_only: true
+  unshifted_baseline: true
+  test_global_shift_per_frame_from_ZLP: true
+  per_q_loss_peak_alignment: false
+  circular_shift: false
+  initial_diagnostic_blocks: 6
+  bootstrap_block_length: determine_from_stationarity_and_dependence_not_equal_to_diagnostic_block_size
+validation_policy:
+  broad_bootstrap_enabled_initially: false
+  initial_simulations_per_named_case: 100
+  post_freeze_key_simulations: 500
+  calibration_and_evaluation_seeds_separate: true
+  bootstrap_original_frames_is_null_test: false
+  nominal_F_or_chi2_detection_test: false
+  drop_collapse_samples_for_CI: false
+  cross_session_fits_initially: false
+reports:
+  read_metadata_instead_of_hardcoding: true
+  parameter_level_status: true
+  new_entrypoint: to_be_implemented_if_no_equivalent_exists
+  light_review_packet: true

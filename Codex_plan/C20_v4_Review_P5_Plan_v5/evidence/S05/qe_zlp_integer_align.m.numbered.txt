@@ -1,0 +1,21 @@
+   1 | function a = qe_zlp_integer_align(E,reference_profiles,X,window)
+   2 | % X is E x sequence x member. Estimate only in fixed elastic window.
+   3 | assert(size(reference_profiles,1)==numel(E)&&size(X,1)==numel(E));
+   4 | idx=find(E>=window(1)&E<=window(2)); T=size(X,2);
+   5 | peak=nan(1,T); valid=false(1,T);
+   6 | for t=1:T
+   7 |  y=reference_profiles(idx,t);
+   8 |  if all(isfinite(y)) && max(y)>0 && max(y)>3*max(median(y),eps)
+   9 |   [~,k]=max(y); valid(t)=k>1&&k<numel(idx);
+  10 |   if valid(t), peak(t)=idx(k); end
+  11 |  end
+  12 | end
+  13 | assert(any(valid),'qe_zlp_integer_align:NoZLP','No valid elastic reference');
+  14 | ref=round(median(peak(valid))); offset=peak-ref;
+  15 | support=(1:numel(E))'; keep=all(support+offset(valid)>=1 & support+offset(valid)<=numel(E),2);
+  16 | support=support(keep); aligned=nan(numel(support),T,size(X,3));
+  17 | for t=find(valid), aligned(:,t,:)=X(support+offset(t),t,:); end
+  18 | a=struct('E',E(support),'support',support,'valid',valid,'reference_pixel',ref, ...
+  19 |  'measured_offset_pixels',offset,'correction_pixels',-offset,'aligned',aligned, ...
+  20 |  'window_meV',window,'interpolation','none; integer noncircular; common support','peak_pixel',peak);
+  21 | end

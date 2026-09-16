@@ -1,0 +1,100 @@
+   1 | function stats = c20_v4_export_fits(details,dest)
+   2 | % Reconstruct every selected curve and audit each candidate independently.
+   3 | if ~isfolder(dest), mkdir(dest); end
+   4 | br={}; cr={}; pr={}; mr={}; checks={}; wr={}; maps=cell(size(details));
+   5 | for di=1:numel(details)
+   6 |  d=details{di}; u=d.unit; maps{di}=cell(1,numel(d.fits));
+   7 |  for f=d.fits
+   8 |   n=f.n_components; selected_ok=f.success&&isfinite(f.selected_start)&&f.selected_start>=1&&f.selected_start<=numel(f.candidates);
+   9 |   cm=cell(1,numel(f.candidates)); any_selected=false;
+  10 |   for k=1:numel(f.candidates)
+  11 |    c=f.candidates(k); m=qe_component_mapping(c.p,f.lb,f.ub,n,f.scale,f.ampunit,f.peak_model); cm{k}=m;
+  12 |    selected=selected_ok&&k==f.selected_start;
+  13 |    hits=m.lower_hit|m.upper_hit;
+  14 |    if selected, any_selected=any(hits); end
+  15 |    cr(end+1,:)={string(d.key),u.bin_size_requested,u.source_q_count,n,k,selected,c.exitflag,c.objective,m.finite, ...
+  16 |     any(hits),string(mat2str(m.order)),string(mat2str(m.raw_to_order)),string(mat2str(m.parameters,17)), ...
+  17 |     m.equal_center,string(mat2str(c.p0,17)),string(mat2str(c.p,17))}; %#ok<AGROW>
+  18 |    for j=1:numel(c.p)
+  19 |     factor=m.native_scale(j);
+  20 |     br(end+1,:)={string(d.key),u.bin_size_requested,u.source_q_count,n,u.q_Ainv,u.q_left,u.q_right, ...
+  21 |      min(f.energy_meV),max(f.energy_meV),string(f.peak_model),k,selected,j,m.raw_component(j),m.ordered_component(j), ...
+  22 |      m.names(j),m.units(j),c.p(j),f.lb(j),f.ub(j),factor,c.p(j)*factor,f.lb(j)*factor,f.ub(j)*factor, ...
+  23 |      (c.p(j)-f.lb(j))*factor,(f.ub(j)-c.p(j))*factor,m.tol_lower(j),m.tol_upper(j), ...
+  24 |      c.boundary(j),m.lower_hit(j),m.upper_hit(j),m.boundary_type(j),m.finite,c.exitflag, ...
+  25 |      m.finite&&c.boundary(j)~=hits(j)}; %#ok<AGROW>
+  26 |    end
+  27 |   end
+  28 |   maps{di}{n}=cm;
+  29 |   mr(end+1,:)={string(d.key),u.bin_size_requested,n,u.q_Ainv,string(f.peak_model),f.success, ...
+  30 |    f.selected_start,f.normalized_sse,any_selected,string(f.numerical_status)}; %#ok<AGROW>
+  31 |   perr=NaN; cerr=NaN; rerr=NaN; qerr=NaN; parerr=NaN;
+  32 |   if selected_ok
+  33 |    c=f.candidates(f.selected_start); m=cm{f.selected_start};
+  34 |    model=peak_models(f.peak_model); curves=zeros(size(f.components));
+  35 |    for j=1:n
+  36 |     p=m.parameters(j,:); curves(:,j)=model.model_fn(p(1),p(2),p(3),f.energy_meV);
+  37 |    end
+  38 |    bg=c.p(1)*f.scale*(f.energy_meV/1000).^(-c.p(2));
+  39 |    if numel(c.p)>2+3*n, bg=bg+c.p(end)*f.scale; end
+  40 |    pred=bg+sum(curves,2);
+  41 |    parerr=max(abs(m.parameters-f.parameters),[],'all')/max(1,max(abs(f.parameters),[],'all'));
+  42 |    perr=max(abs(pred-f.prediction))/max(1,max(abs(f.observed)));
+  43 |    cerr=max(abs(curves-f.components),[],'all')/max(1,max(abs(f.observed)));
+  44 |    rerr=max(abs(f.observed-pred-f.residual))/max(1,max(abs(f.observed)));
+  45 |    qerr=abs(sum((f.observed-pred).^2)/f.scale^2-f.normalized_sse);
+  46 |    assert(max([parerr perr cerr rerr qerr])<1e-7,'Saved fit contract mismatch');
+  47 |   end
+  48 |   checks(end+1,:)={string(d.key),n,selected_ok,parerr,perr,cerr,rerr,qerr}; %#ok<AGROW>
+  49 |   for j=1:n
+  50 |    area=NaN; apex=NaN; width=NaN; bracketed=false; B=NaN; r=NaN; C=NaN;
+  51 |    pars=f.parameters(j,:);
+  52 |    if selected_ok
+  53 |     curve=f.components(:,j); [pk,ip]=max(curve); apex=f.energy_meV(ip);
+  54 |     left=find(curve(1:ip)<=pk/2,1,'last'); right=ip-1+find(curve(ip:end)<=pk/2,1,'first');
+  55 |     bracketed=pk>0&&~isempty(left)&&~isempty(right)&&left<ip&&right>ip;
+  56 |     if bracketed
+  57 |      xl=interp1(curve(left:left+1),f.energy_meV(left:left+1),pk/2);
+  58 |      xr=interp1(curve(right-1:right),f.energy_meV(right-1:right),pk/2); width=xr-xl;
+  59 |     end
+  60 |     area=trapz(f.energy_meV,curve); p=f.candidates(f.selected_start).p;
+  61 |     B=p(1)*f.scale; r=p(2); C=0; if numel(p)>2+3*n, C=p(end)*f.scale; end
+  62 |    end
+  63 |    pr(end+1,:)={string(d.key),n,j,u.q_Ainv,string(f.peak_model),pars(1),pars(2),pars(3), ...
+  64 |     B,r,C,area,apex,width,bracketed,string('not_assessed'),string('not_assessed'),string('not_assessed')}; %#ok<AGROW>
+  65 |   end
+  66 |   if isfield(f,'witness')&&f.witness.available
+  67 |    w=f.witness; assert(abs(w.objective-w.h0_objective)<1e-7*max(1,w.h0_objective));
+  68 |    wr(end+1,:)={string(d.key),w.h0_objective,f.normalized_sse,w.objective,w.best_feasible_objective, ...
+  69 |     w.optimized_nesting_violation,string(w.candidate_type)}; %#ok<AGROW>
+  70 |   end
+  71 |  end
+  72 | end
+  73 | b=cell2table(br,'VariableNames',{'key','bin_N_requested','source_q_count','n_components','q_Ainv','q_left','q_right', ...
+  74 |  'window_low','window_high','peak_model','start','selected','raw_parameter_index','raw_component','ordered_component', ...
+  75 |  'parameter','native_unit','raw_value','raw_lb','raw_ub','native_factor','native_value','native_lb','native_ub', ...
+  76 |  'native_distance_lower','native_distance_upper','legacy_tol_lower','legacy_tol_upper','raw_boundary','lower_hit','upper_hit', ...
+  77 |  'boundary_type','finite_candidate','exitflag','flag_mismatch'});
+  78 | c=cell2table(cr,'VariableNames',{'key','bin_N_requested','source_q_count','n_components','start','selected','exitflag','objective', ...
+  79 |  'finite','boundary','order','raw_to_order','ordered_native_parameters','equal_center','p0','p'});
+  80 | models=cell2table(mr,'VariableNames',{'key','bin_N_requested','n_components','q_Ainv','peak_model','success','selected_start','normalized_sse','boundary','numerical_status'});
+  81 | pars=cell2table(pr,'VariableNames',{'key','n_components','ordered_component','q_Ainv','peak_model','E0_meV','native_width_meV','native_A', ...
+  82 |  'background_B','background_r','background_C','area_Wref_300_1800','apex_meV','zero_baseline_FWHM_meV','width_bracketed', ...
+  83 |  'energy_identifiability','width_identifiability','area_identifiability'});
+  84 | writetable(b,fullfile(dest,'boundary_by_parameter_native.csv'));
+  85 | writetable(c,fullfile(dest,'candidate_solution_families.csv'));
+  86 | writetable(models,fullfile(dest,'model_comparison.csv')); writetable(pars,fullfile(dest,'component_parameters.csv'));
+  87 | writetable(cell2table(checks,'VariableNames',{'key','n_components','checked','parameter_error','prediction_error','component_error','residual_error','objective_error'}),fullfile(dest,'contract_checks.csv'));
+  88 | types=unique(b.boundary_type(b.selected&(b.lower_hit|b.upper_hit))); tr=cell(0,3);
+  89 | for t=types.'
+  90 |  ix=b.selected & b.boundary_type==t;
+  91 |  tr(end+1,:)={t,nnz(ix),numel(unique(b.key(ix)+"_n"+b.n_components(ix)))}; %#ok<AGROW>
+  92 | end
+  93 | writetable(cell2table(tr,'VariableNames',{'boundary_type','parameter_rows','distinct_models'}),fullfile(dest,'boundary_type_summary.csv'));
+  94 | if ~isempty(wr), writetable(cell2table(wr,'VariableNames',{'key','Q1_optimized','Q2_optimized','Q2_witness','Q2_best_feasible','optimized_violation','witness_type'}),fullfile(dest,'nested_objective_checks.csv')); end
+  95 | save(fullfile(dest,'component_mappings.mat'),'maps','-v7');
+  96 | stats=struct('models',height(models),'components',height(pars),'candidates',height(c), ...
+  97 |  'parameter_rows',height(b),'selected_parameter_rows',nnz(b.selected),'selected_boundary_models',nnz(models.boundary), ...
+  98 |  'boundary_flag_mismatches',nnz(b.flag_mismatch),'failed_models',nnz(~models.success));
+  99 | c20_v4_io('json',fullfile(dest,'inventory.json'),stats);
+ 100 | end

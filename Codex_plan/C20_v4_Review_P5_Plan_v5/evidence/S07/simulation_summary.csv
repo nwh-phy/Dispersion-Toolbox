@@ -1,0 +1,9 @@
+phase,scenario,trials,failures,engineering_splits,fraction,Wilson_low,Wilson_high,boundary,collapse
+1,static_single,10,0,0,0,2.77555756156289e-17,0.277532799862878,4,0
+1,q_mixed_single,10,0,10,1,0.722467200137122,1,0,0
+1,overlapping_double,10,0,10,1,0.722467200137122,1,0,0
+1,background_mismatch,10,0,10,1,0.722467200137122,1,9,0
+2,static_single,100,0,0,0,0,0.0369934982069837,24,2
+2,q_mixed_single,100,0,100,1,0.963006501793016,1,0,0
+2,overlapping_double,100,0,100,1,0.963006501793016,1,0,0
+2,background_mismatch,100,0,94,0.94,0.875231845541043,0.972213876036811,80,0

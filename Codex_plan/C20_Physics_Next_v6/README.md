@@ -1,0 +1,1 @@
+先读PHYSICS_READOUT.md。执行计划为PHYSICS_EXECUTION_PLAN.md，启动指令在CODEX_START_PROMPT.txt。整个目录放到现有工程的codex_plan/下；Codex仍打开完整工程。本包是下一阶段建议与本次有限复核，不包含尚未执行的完整色散或文献研究。CURRENT_PHYSICS_CANDIDATES.csv是由新交付A1 MAT提取的三个位置条件性参数，不是独立复测或统计置信区间。

@@ -1,0 +1,79 @@
+{
+  "method": "Independent Python array reconstruction; no MATLAB execution, no refit",
+  "source": "/mnt/data/C20_delivery_v4",
+  "manifest_files_verified": 144,
+  "parent_mapping": {
+    "candidates": 2592,
+    "parameter_rows": 16848,
+    "selected_rows": 702,
+    "boundary_types": {
+      "E0_upper": 2,
+      "background_B_lower": 52,
+      "background_r_lower": 96,
+      "background_r_upper": 1
+    },
+    "raw_order_swapped_candidates": 253,
+    "all_parent_objectives_independently_recomputed": false,
+    "reason": "Packet has all parent parameter rows/mappings but not every original parent observation array."
+  },
+  "real_reconstruction": {
+    "models": 36,
+    "components": 54,
+    "candidates": 1008,
+    "max_candidate_objective_error": 1.3322676295501878e-15,
+    "witnesses": 18,
+    "max_curve_relative_error": 3.5490167863147567e-16,
+    "candidate_exitflags": {
+      "3.0": 599,
+      "1.0": 406,
+      "0.0": 3
+    }
+  },
+  "area_scope_bug": {
+    "affected_parent_component_rows": 108,
+    "current_300_1800_fits_affected": false,
+    "max_percent": 1568.9924604851217
+  },
+  "frames": {
+    "A1_member_error": 0.0,
+    "L1_selected_members_recomputed": true,
+    "common_support_matlab_indices": [
+      4,
+      1024
+    ],
+    "blocks_recomputed": 18,
+    "q_center_channel_counts": {
+      "235": 91,
+      "236": 209
+    },
+    "raw_NPY_JSON_not_in_packet": true
+  },
+  "simulations": {
+    "trials": 440,
+    "candidates_recomputed": 5280,
+    "max_Q_error": 6.661338147750939e-16,
+    "all_flags_match": true,
+    "engineering_only": true,
+    "pilot_split_counts": {
+      "background_mismatch": 94,
+      "overlapping_double": 100,
+      "q_mixed_single": 100,
+      "static_single": 0
+    },
+    "double_95pct_abs_parameter_error": {
+      "err_E1": 19.201830829043264,
+      "err_width1": 73.13209603849214,
+      "err_A1": 168.82947669903996,
+      "err_E2": 36.52085959533554,
+      "err_width2": 93.33847417751782,
+      "err_A2": 174.25307072232656,
+      "err_P2_fraction": 0.060915156870497145
+    }
+  },
+  "profiles": {
+    "fixed_parameter_points": 27,
+    "trials": 81,
+    "failed_trials_retained": 1,
+    "not_confidence_intervals": true
+  }
+}

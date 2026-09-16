@@ -1,0 +1,359 @@
+# 输入台账：不是现有运行接口。不要把null填成猜测值。
+schema_version: '2.0'
+manifest_kind: input_inventory_template_not_existing_MATLAB_runtime_configuration
+prepared_date: '2026-09-11'
+repository:
+  name: nwh-phy/Dispersion-Toolbox
+  reviewed_commit: 18af79b66cd27365fd00bcf3de26658ddd7e7d53
+  actual_local_commit: null
+  actual_local_branch: null
+  local_dirty_state: null
+  local_diff_record: null
+instructions:
+- 由Codex在授权工程中自动定位并填写实际路径；用户不必预先填完。
+- 所有null是未知，不是零、无误差、未处理或不存在。
+- registry dq是当前代码口径；必须核对实际数组/表格，不等同本次重做仪器标定。
+- L0原生帧、L1已校准物理矩阵、L2历史处理谱、L3显示或参考重建不可互相冒名。
+- 原始源只读；cache和结果写独立run目录；无raw时不得静默回退processed而不标记。
+- 保留signed q，不做正负q平均；Ndq接受宽度与仪器分辨率、标定误差不同。
+- 现有MATLAB核心单位为meV和Angstrom^-1，本轮不迁移内部能量单位。
+actual_roots:
+  project_root: null
+  authorized_data_roots: []
+  thesis_root: null
+  new_output_root: null
+path_hints_not_mounted_files:
+  legacy_project_root: C:/Users/HP/Desktop/vibecoding/2D-metal-plasmon
+  raw_relative_root: 20260120 BiSb
+  thesis_root: C:/Users/HP/Desktop/vibecoding/本科毕业论文
+  submitted_pdf_relative: 终稿提交包_221240048聂文辉_20260605/221240048聂文辉终稿.pdf
+  submitted_source_relative: 终稿提交包_221240048聂文辉_20260605/221240048聂文辉终稿_LaTeX源码
+  history_template_relative: 20260120 BiSb/590 PL2 10w 0.004 10sx300/op_history_260506.mat
+sample_context:
+  sample_id: C20
+  sample_id_source: user_latest_project_correction
+  Bi_atomic_fraction_approx: 0.7
+  Sb_atomic_fraction_approx: 0.3
+  composition_scope: sample-level approximate; local region may vary
+  heterostructure: MoS2-metal-MoS2
+  labels_1film_2film_are_verified_layer_counts: false
+  automatic_thickness_factor_constraint_allowed: false
+thesis:
+  actual_pdf: null
+  actual_matching_sources: []
+  read_sections: []
+  verified_source_chain: []
+  version_consistency: null
+datasets:
+- session_id: 590_PL2_10w
+  planned_role: development_pilot
+  registry_source: https://github.com/nwh-phy/Dispersion-Toolbox/blob/18af79b66cd27365fd00bcf3de26658ddd7e7d53/src/thesis/thesis_sessions.m
+  directory_hint: 20260120 BiSb/590 PL2 10w 0.004 10sx300
+  raw_input:
+    actual_directory: null
+    actual_files: []
+    file_sha256: {}
+    format: null
+    native_shape: null
+    native_dtype: null
+    native_axis_order: null
+    frame_resolved: null
+    intensity_unit: null
+    processing_level: null
+    known_processing_steps: []
+    history_complete: null
+    actual_loaded_file: null
+    requested_file: null
+    cache_used: null
+    import_provenance_file_or_key: null
+  energy:
+    axis_file_or_metadata_key: null
+    original_unit: null
+    conversion_to_meV: null
+    centers: null
+    edges_source: null
+    step_meV: null
+    zero_reference: null
+    frame_drift_record: null
+    q_dependent_alignment_record: null
+    interpolation_or_shift_method: null
+    axis_verified: null
+  q:
+    registry_step_Ainv_per_pixel: 0.0005
+    actual_axis_source: null
+    actual_step_Ainv_per_pixel: null
+    actual_signed_range_Ainv: null
+    original_q_indices_source: null
+    zero_index_source: null
+    crop_bounds_native: null
+    direction_source: null
+    edges_source: null
+    saved_axis_matches_registry: null
+    calibration_evidence_path: null
+    independently_recalibrated_this_run: false
+    scale_uncertainty: null
+    zero_uncertainty_Ainv: null
+    legacy_axis_conversion_applied: false
+    legacy_axis_conversion_evidence: null
+  acquisition:
+    voltage_kV: null
+    exposure_s_per_frame: null
+    frame_count: null
+    timestamps_source: null
+    beam_current_or_dose_source: null
+    detector_gain_source: null
+    dark_readout_noise_source: null
+    saturation_badpixel_source: null
+    variance_or_covariance_model: null
+    variance_model_validation: null
+  instrument_response:
+    reference_zlp_files: []
+    same_conditions_verified: null
+    energy_response_source: null
+    momentum_response_source: null
+    pixel_aperture_already_in_q_kernel: null
+    intrinsic_width_inference_authorized_by_evidence: false
+  historical_inputs:
+    eq3D_path: null
+    eq3D_processed_path: null
+    gui_preprocessed_exports: []
+    history_files: []
+    history_template_rule: 590 op_history_260506 template per current script; record
+      actual source
+    curated_points_files: []
+    correction_log_paths: []
+    analysis_directory_hint: paper_results/590_gui_history_area_260506
+    wideq_directory_hint: paper_results/590_gui_history_area_260506_wideq030
+    analysis_results_mat: null
+    output_qe_pp_key: output.qe_pp
+    output_dataset_qe_key: output.dataset.qe
+    preprocess_options_key: output.preprocess_opts
+    snapshot_key: output.snap
+    branch1_points_csv: null
+    b1_double_peak_binning_results_mat: null
+    bin_candidate_path_failure_repair_csvs: []
+    actual_historical_settings_verified: false
+    use_as_new_quantitative_input: false
+    reason_if_overridden: null
+  new_analysis_input:
+    selected_data_source: null
+    selected_processing_level: null
+    count_domain_justified: null
+    exploratory_only: null
+    masks: []
+    minimum_q_abs_Ainv: 0.0005
+    requested_q_range_Ainv:
+    - -0.015
+    - 0.015
+    actual_q_range_Ainv: null
+    acceptance_kernel_source: null
+    known_limitations: []
+  missing_items_and_consequences: []
+- session_id: n0_PL2_10w_repeat
+  planned_role: frozen_config_repeat_consistency_not_pristine_blind_holdout
+  registry_source: https://github.com/nwh-phy/Dispersion-Toolbox/blob/18af79b66cd27365fd00bcf3de26658ddd7e7d53/src/thesis/thesis_sessions.m
+  directory_hint: 20260120 BiSb/n0 pl2 10w 0.004 10s x300
+  raw_input:
+    actual_directory: null
+    actual_files: []
+    file_sha256: {}
+    format: null
+    native_shape: null
+    native_dtype: null
+    native_axis_order: null
+    frame_resolved: null
+    intensity_unit: null
+    processing_level: null
+    known_processing_steps: []
+    history_complete: null
+    actual_loaded_file: null
+    requested_file: null
+    cache_used: null
+    import_provenance_file_or_key: null
+  energy:
+    axis_file_or_metadata_key: null
+    original_unit: null
+    conversion_to_meV: null
+    centers: null
+    edges_source: null
+    step_meV: null
+    zero_reference: null
+    frame_drift_record: null
+    q_dependent_alignment_record: null
+    interpolation_or_shift_method: null
+    axis_verified: null
+  q:
+    registry_step_Ainv_per_pixel: 0.0005
+    actual_axis_source: null
+    actual_step_Ainv_per_pixel: null
+    actual_signed_range_Ainv: null
+    original_q_indices_source: null
+    zero_index_source: null
+    crop_bounds_native: null
+    direction_source: null
+    edges_source: null
+    saved_axis_matches_registry: null
+    calibration_evidence_path: null
+    independently_recalibrated_this_run: false
+    scale_uncertainty: null
+    zero_uncertainty_Ainv: null
+    legacy_axis_conversion_applied: false
+    legacy_axis_conversion_evidence: null
+  acquisition:
+    voltage_kV: null
+    exposure_s_per_frame: null
+    frame_count: null
+    timestamps_source: null
+    beam_current_or_dose_source: null
+    detector_gain_source: null
+    dark_readout_noise_source: null
+    saturation_badpixel_source: null
+    variance_or_covariance_model: null
+    variance_model_validation: null
+  instrument_response:
+    reference_zlp_files: []
+    same_conditions_verified: null
+    energy_response_source: null
+    momentum_response_source: null
+    pixel_aperture_already_in_q_kernel: null
+    intrinsic_width_inference_authorized_by_evidence: false
+  historical_inputs:
+    eq3D_path: null
+    eq3D_processed_path: null
+    gui_preprocessed_exports: []
+    history_files: []
+    history_template_rule: 590 op_history_260506 template per current script; record
+      actual source
+    curated_points_files: []
+    correction_log_paths: []
+    analysis_directory_hint: paper_results/n0_PL2_10w_gui_history_area_260506
+    wideq_directory_hint: paper_results/n0_PL2_10w_gui_history_area_260506_wideq030
+    analysis_results_mat: null
+    output_qe_pp_key: output.qe_pp
+    output_dataset_qe_key: output.dataset.qe
+    preprocess_options_key: output.preprocess_opts
+    snapshot_key: output.snap
+    branch1_points_csv: null
+    b1_double_peak_binning_results_mat: null
+    bin_candidate_path_failure_repair_csvs: []
+    actual_historical_settings_verified: false
+    use_as_new_quantitative_input: false
+    reason_if_overridden: null
+  new_analysis_input:
+    selected_data_source: null
+    selected_processing_level: null
+    count_domain_justified: null
+    exploratory_only: null
+    masks: []
+    minimum_q_abs_Ainv: 0.0005
+    requested_q_range_Ainv:
+    - -0.015
+    - 0.015
+    actual_q_range_Ainv: null
+    acceptance_kernel_source: null
+    known_limitations: []
+  missing_items_and_consequences: []
+- session_id: no_PL2_20w_2film
+  planned_role: fine_q_sampling_region_comparison
+  registry_source: https://github.com/nwh-phy/Dispersion-Toolbox/blob/18af79b66cd27365fd00bcf3de26658ddd7e7d53/src/thesis/thesis_sessions.m
+  directory_hint: 20260120 BiSb/no pl2 20w 0.004 10sx300 2film
+  raw_input:
+    actual_directory: null
+    actual_files: []
+    file_sha256: {}
+    format: null
+    native_shape: null
+    native_dtype: null
+    native_axis_order: null
+    frame_resolved: null
+    intensity_unit: null
+    processing_level: null
+    known_processing_steps: []
+    history_complete: null
+    actual_loaded_file: null
+    requested_file: null
+    cache_used: null
+    import_provenance_file_or_key: null
+  energy:
+    axis_file_or_metadata_key: null
+    original_unit: null
+    conversion_to_meV: null
+    centers: null
+    edges_source: null
+    step_meV: null
+    zero_reference: null
+    frame_drift_record: null
+    q_dependent_alignment_record: null
+    interpolation_or_shift_method: null
+    axis_verified: null
+  q:
+    registry_step_Ainv_per_pixel: 0.00025
+    actual_axis_source: null
+    actual_step_Ainv_per_pixel: null
+    actual_signed_range_Ainv: null
+    original_q_indices_source: null
+    zero_index_source: null
+    crop_bounds_native: null
+    direction_source: null
+    edges_source: null
+    saved_axis_matches_registry: null
+    calibration_evidence_path: null
+    independently_recalibrated_this_run: false
+    scale_uncertainty: null
+    zero_uncertainty_Ainv: null
+    legacy_axis_conversion_applied: false
+    legacy_axis_conversion_evidence: null
+  acquisition:
+    voltage_kV: null
+    exposure_s_per_frame: null
+    frame_count: null
+    timestamps_source: null
+    beam_current_or_dose_source: null
+    detector_gain_source: null
+    dark_readout_noise_source: null
+    saturation_badpixel_source: null
+    variance_or_covariance_model: null
+    variance_model_validation: null
+  instrument_response:
+    reference_zlp_files: []
+    same_conditions_verified: null
+    energy_response_source: null
+    momentum_response_source: null
+    pixel_aperture_already_in_q_kernel: null
+    intrinsic_width_inference_authorized_by_evidence: false
+  historical_inputs:
+    eq3D_path: null
+    eq3D_processed_path: null
+    gui_preprocessed_exports: []
+    history_files: []
+    history_template_rule: 590 op_history_260506 template per current script; record
+      actual source
+    curated_points_files: []
+    correction_log_paths: []
+    analysis_directory_hint: paper_results/no_PL2_20w_2film_gui_history_area_260506_highq_refined
+    wideq_directory_hint: paper_results/no_PL2_20w_2film_gui_history_area_260506_highq_refined_wideq030
+    analysis_results_mat: null
+    output_qe_pp_key: output.qe_pp
+    output_dataset_qe_key: output.dataset.qe
+    preprocess_options_key: output.preprocess_opts
+    snapshot_key: output.snap
+    branch1_points_csv: null
+    b1_double_peak_binning_results_mat: null
+    bin_candidate_path_failure_repair_csvs: []
+    actual_historical_settings_verified: false
+    use_as_new_quantitative_input: false
+    reason_if_overridden: null
+  new_analysis_input:
+    selected_data_source: null
+    selected_processing_level: null
+    count_domain_justified: null
+    exploratory_only: null
+    masks: []
+    minimum_q_abs_Ainv: 0.0005
+    requested_q_range_Ainv:
+    - -0.015
+    - 0.015
+    actual_q_range_Ainv: null
+    acceptance_kernel_source: null
+    known_limitations: []
+  missing_items_and_consequences: []

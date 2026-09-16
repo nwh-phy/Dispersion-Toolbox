@@ -1,0 +1,21 @@
+先读同目录 REVIEW_P4_ACTUAL.md、NEXT_EXECUTION_PLAN.md 和 SOURCE_EVIDENCE_INDEX.md，然后在当前MATLAB工程实际实施和运行。
+
+此次v3真实交付未完成raw→P1/P2边界映射，新的component_parameters.csv也没有参数；A1只是估计偏移，七项测试都是旧pilot测试。不要再无条件标P4A complete。
+
+只读父目录：
+paper_results/b1_components_v2/20260912T021813081Z_31fcc543_18af79b6/
+paper_results/b1_components_v3/20260912T035735540Z/
+新输出：paper_results/b1_components_v4/<UTC>_<configHash>_<codeHash>/
+
+本轮优先：
+1. 从v2实际fit_details.mat审计全部候选，分清bin_N与n_components；逐候选计算raw→ordered映射、上下界与native单位，回读验证选中参数/曲线，解释98项的真实边界类型。不能只再导出raw槽位。
+2. 查v3是否有可验证的完整新MAT；没有就只重跑三个同中心N3×两峰形×n1/n2这12任务，并实际save全部参数/候选/曲线。保存12模型、18分量和实际候选数，失败也保留。
+3. 补H0零幅度嵌入H1见证，分别保存优化目标与witness目标；记录firstorderopt、独立起点表。修复NaN selected_start失败索引，图例按obs/bg/P1/P2/total绑定句柄。
+4. 保持九组成功的同中心成员，扩展实际helper保存q边界/sum/mean/mask，并测试新路径。不要把不同N当独立重复。
+5. 按session_id核对590 raw/JSON/hash与父mask，验证帧语义。输出三个N3位置的六块真实B1谱；ZLP共同偏移只从固定零损区估计，测试正负补偿符号和非循环共同支持后才应用A1。无法核实则标unknown，不从目录名猜。
+6. 先在相同模型下排查数值，再对H0/H1同时增加一个具名幂律+非负常数背景对照。不要缩小width上限、强制间距、去掉弱峰或接物理拟合。
+7. 跑新路径测试与少量H0静态/单模式q混合/真双峰smoke，之后按计划开始关键场景100次试点。原始帧参数bootstrap和H0模拟分开；帧语义或噪声未验证的模拟仅标engineering smoke。
+
+不要全q扫描、GUI重构、全窗口组合或大规模bootstrap。保留用户未提交代码和父输出，不reset/clean/push。每阶段持久化checkpoint。计划中的建议函数名须先实现和测试再给命令。
+
+最重要的交付是 review_packet.zip 内实际带有小MAT：完整拟合数组、全部候选、正确分量映射、真实块谱、q成员和校正诊断，以及参数级边界/测试/阶段CSV。打包后独立解压回读并重算契约。没有的产物写not_run，不造空表凑完成。不只返回文字、图片、SSE或收敛数量。

@@ -1,0 +1,10 @@
+target_q,N_q,center_native,q_left,q_right,width,center_check,basis
+-0.0025,1,231,-0.00275,-0.0022500000000000003,0.0005,True,conditional on dq=0.0005 and native qzero=236; not instrumental response
+-0.0025,3,231,-0.0032500000000000003,-0.00175,0.0015,True,conditional on dq=0.0005 and native qzero=236; not instrumental response
+-0.0025,5,231,-0.00375,-0.00125,0.0025,True,conditional on dq=0.0005 and native qzero=236; not instrumental response
+0.0075,1,251,0.0072499999999999995,0.00775,0.0005,True,conditional on dq=0.0005 and native qzero=236; not instrumental response
+0.0075,3,251,0.00675,0.00825,0.0015,True,conditional on dq=0.0005 and native qzero=236; not instrumental response
+0.0075,5,251,0.00625,0.00875,0.0025,True,conditional on dq=0.0005 and native qzero=236; not instrumental response
+0.0125,1,261,0.01225,0.012750000000000001,0.0005,True,conditional on dq=0.0005 and native qzero=236; not instrumental response
+0.0125,3,261,0.01175,0.013250000000000001,0.0015,True,conditional on dq=0.0005 and native qzero=236; not instrumental response
+0.0125,5,261,0.01125,0.01375,0.0025,True,conditional on dq=0.0005 and native qzero=236; not instrumental response

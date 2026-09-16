@@ -1,0 +1,25 @@
+   1 | function s = c20_v4_simulate(E,q_members,scenario,seed)
+   2 | % Named hypothetical means, independent Gaussian engineering noise only.
+   3 | stream=RandStream('mt19937ar','Seed',seed); m=peak_models('lorentz_symmetric');
+   4 | bg=.12*(E/1000).^-1.3; truth=[900 600 900];
+   5 | members=repmat(bg,1,numel(q_members));
+   6 | switch scenario
+   7 |  case 'static_single'
+   8 |   members=members+repmat(m.model_fn(900,600,900,E),1,numel(q_members));
+   9 |  case 'q_mixed_single'
+  10 |   shift=160*(q_members-mean(q_members))/.0005;
+  11 |   for j=1:numel(q_members), members(:,j)=members(:,j)+m.model_fn(900+shift(j),280,900,E); end
+  12 |   truth=[900 280 900];
+  13 |  case 'overlapping_double'
+  14 |   truth=[620 800 800;1140 1260 900];
+  15 |   members=members+repmat(m.model_fn(620,800,800,E)+m.model_fn(1140,1260,900,E),1,numel(q_members));
+  16 |  case 'background_mismatch'
+  17 |   members=members+repmat(m.model_fn(900,600,900,E)+.16,1,numel(q_members));
+  18 |  otherwise, error('Unknown simulation scenario');
+  19 | end
+  20 | mu=mean(members,2); sigma=.01*max(mu); noise=sigma*randn(stream,size(mu));
+  21 | s=struct('scenario',scenario,'seed',seed,'E',E,'q_members',q_members,'member_truth',members, ...
+  22 |  'truth_parameters',truth,'mean',mu,'noise',noise,'observed',mu+noise,'sigma',sigma, ...
+  23 |  'noise_provenance','hypothetical independent Gaussian, 1 percent max ordinate; not measured noise', ...
+  24 |  'role','engineering_smoke_or_pilot_not_experimental_false_positive_rate');
+  25 | end

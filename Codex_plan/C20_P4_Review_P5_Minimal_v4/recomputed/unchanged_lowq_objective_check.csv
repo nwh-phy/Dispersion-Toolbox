@@ -1,0 +1,5 @@
+peak_model,n_components,parent_Q,new_Q,absolute_difference,parameter_stability
+lorentz_symmetric,1,0.442613400310479,0.442613400310453,2.603472992745992e-14,not_assessed_parameters_missing
+lorentz_symmetric,2,0.137520127368234,0.137520127368234,0.0,not_assessed_parameters_missing
+lorentz,1,0.201648623627873,0.201648623627873,0.0,not_assessed_parameters_missing
+lorentz,2,0.112595139039389,0.112595139039396,6.994405055138486e-15,not_assessed_parameters_missing

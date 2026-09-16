@@ -1,0 +1,13 @@
+region,q_Ainv,domain,model,component,native_E0_meV,model_apex_on_4meV_grid_meV,native_width_meV,area_W300_1800,fraction_W300_1800,status
+1,-0.0025,"A1, mean q N3, sum 300 frames",lorentz_symmetric,1,599.84685083977,600.0,811.0527656866053,687897.2660909235,0.520705774102216,conditional effective spectral component; no CI or quasiparticle assignment
+1,-0.0025,"A1, mean q N3, sum 300 frames",lorentz_symmetric,2,1129.7359450700758,1128.0,1255.2322572270036,633189.0369695211,0.47929422589778403,conditional effective spectral component; no CI or quasiparticle assignment
+1,-0.0025,"A1, mean q N3, sum 300 frames",lorentz,1,789.0029042656627,604.0,1101.9063255996182,910518.9613103629,0.689239801754621,conditional effective spectral component; no CI or quasiparticle assignment
+1,-0.0025,"A1, mean q N3, sum 300 frames",lorentz,2,1362.1174392569108,1228.0,1217.3790909128745,410529.18331567897,0.31076019824537904,conditional effective spectral component; no CI or quasiparticle assignment
+2,0.0075,"A1, mean q N3, sum 300 frames",lorentz_symmetric,1,701.0878175287774,700.0,560.4168132927788,17755.14089585646,0.1258385070594334,conditional effective spectral component; no CI or quasiparticle assignment
+2,0.0075,"A1, mean q N3, sum 300 frames",lorentz_symmetric,2,1323.278499182424,1324.0,1367.016309467057,123339.51534852132,0.8741614929405667,conditional effective spectral component; no CI or quasiparticle assignment
+2,0.0075,"A1, mean q N3, sum 300 frames",lorentz,1,721.671773680205,624.0,760.3251763488477,22727.914016162285,0.1611684365134446,conditional effective spectral component; no CI or quasiparticle assignment
+2,0.0075,"A1, mean q N3, sum 300 frames",lorentz,2,1506.7143160486135,1320.0,1508.5590590684096,118291.72052168555,0.8388315634865554,conditional effective spectral component; no CI or quasiparticle assignment
+3,0.012500000000000002,"A1, mean q N3, sum 300 frames",lorentz_symmetric,1,720.7217179921581,720.0,539.2529733297953,4196.528449996189,0.11345372983036867,conditional effective spectral component; no CI or quasiparticle assignment
+3,0.012500000000000002,"A1, mean q N3, sum 300 frames",lorentz_symmetric,2,1414.9981466084728,1416.0,1363.7639741967992,32792.36963445343,0.8865462701696313,conditional effective spectral component; no CI or quasiparticle assignment
+3,0.012500000000000002,"A1, mean q N3, sum 300 frames",lorentz,1,755.1478113712251,664.0,743.4683554447347,6202.7518945921565,0.16829499712823798,conditional effective spectral component; no CI or quasiparticle assignment
+3,0.012500000000000002,"A1, mean q N3, sum 300 frames",lorentz,2,1586.3818353056738,1424.0,1435.26013708758,30653.67283837696,0.8317050028717621,conditional effective spectral component; no CI or quasiparticle assignment
