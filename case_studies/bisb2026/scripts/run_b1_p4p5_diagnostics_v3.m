@@ -1,0 +1,38 @@
+function out = run_b1_p4p5_diagnostics_v3(options)
+arguments
+ options.parent_run string = "paper_results/b1_components_v2/20260912T021813081Z_31fcc543_18af79b6"
+ options.output_root string = ""
+end
+root=bisb_find_project_root(fileparts(mfilename('fullpath'))); parent=fullfile(root,char(options.parent_run)); assert(isfolder(parent));
+cfg=struct('scope','diagnose_then_refit','energy_window_meV',[300 1800],'q_targets',[-.0025 .0075 .0125], 'q_mirror_targets',[.0025 -.0075 -.0125],'N',[1 3 5],'n_starts',24,'seed',20260912,'frame_blocks',6);
+if strlength(options.output_root)==0, out=fullfile(root,'paper_results','b1_components_v3',char(datetime('now','TimeZone','UTC','Format','yyyyMMdd''T''HHmmssSSS''Z'''))); else, out=char(options.output_root); end
+assert(~isfolder(out)); mkdir(out); mkdir(fullfile(out,'audit')); mkdir(fullfile(out,'590_PL2_10w')); mkdir(fullfile(out,'590_PL2_10w','figures')); mkdir(fullfile(out,'review_packet'));
+writejson(fullfile(out,'parent_run.json'),struct('path',parent)); writejson(fullfile(out,'config_resolved.json'),cfg);
+% P4A boundary audit of all saved candidates, preserving raw parameter order.
+s=load(fullfile(parent,'590_PL2_10w','fit_details.mat')); details=s.details; rows=table(); fam=table();
+for ii=1:numel(details), d=details{ii}; u=d.unit; for fi=1:numel(d.fits), f=d.fits(fi); c=f.candidates; for k=1:numel(c)
+ p=c(k).p; b=c(k).boundary; names={'background_amplitude','background_exponent'}; vals=p(1:2); lbs=f.lb(1:2); ubs=f.ub(1:2);
+ for j=1:f.n_components, names(end+1:end+3)={sprintf('raw_component_%d_E0',j),sprintf('raw_component_%d_width',j),sprintf('raw_component_%d_amplitude',j)}; vals(end+1:end+3)=p(2+3*(j-1)+(1:3)); lbs(end+1:end+3)=f.lb(2+3*(j-1)+(1:3)); ubs(end+1:end+3)=f.ub(2+3*(j-1)+(1:3)); end
+ for j=1:numel(vals), rows=[rows;table(string(d.key),f.n_components,string(f.peak_model),u.q_Ainv,k,j,string(names{j}),vals(j),lbs(j),ubs(j),vals(j)-lbs(j),ubs(j)-vals(j),b(j),k==f.selected_start,'VariableNames',{'key','N','peak_model','q_Ainv','start','raw_parameter_index','parameter','value','lb','ub','distance_to_lb','distance_to_ub','raw_boundary','selected'})]; end
+ end, fam=[fam;table(string(d.key),f.n_components,string(f.peak_model),f.selected_start,string(f.numerical_status),f.normalized_sse,'VariableNames',{'key','N','peak_model','selected_start','status','normalized_sse'})]; end, end
+writetable(rows,fullfile(out,'audit','boundary_by_parameter.csv')); writetable(fam,fullfile(out,'audit','boundary_summary.csv'));
+% Same-center bins from parent L1, no parent writes.
+l=load(fullfile(parent,'590_PL2_10w','L1_minimal.mat')); qe=l.d.qe; src=qe.source_channel; targets=cfg.q_targets; binrows=table(); B=struct('target_q',{},'N',{},'q_Ainv',{},'indices',{},'source_channel',{},'mean',{});
+for ti=1:numel(targets), for ni=1:numel(cfg.N), q0=targets(ti); center=round(q0/qe.dq_Ainv)+qe.q_zero_index; idx=(center-floor((cfg.N(ni)-1)/2)):(center+ceil((cfg.N(ni)-1)/2)); ok=all(idx>=1)&&idx(end)<=numel(src)&&all(diff(src(idx))==1)&&all(isfinite(qe.intensity(:,idx)),'all')&&all(sign(qe.q_Ainv(idx))==sign(q0));
+ if ok, b=struct('target_q',q0,'N',cfg.N(ni),'q_Ainv',mean(qe.q_Ainv(idx)),'indices',idx,'source_channel',src(idx),'mean',mean(qe.intensity(:,idx),2)); B(end+1)=b; ch=string(mat2str(src(idx))); aq=b.q_Ainv; else, ch=""; aq=NaN; end
+ binrows=[binrows;table(q0,cfg.N(ni),aq,ch,ok,'VariableNames',{'target_q','N','actual_q','source_channel','valid'})]; end, end
+writetable(binrows,fullfile(out,'590_PL2_10w','centered_bins.csv')); save(fullfile(out,'590_PL2_10w','centered_binned_spectra.mat'),'B','-v7.3');
+% Frame diagnostics from registered raw NPY.
+m=jsondecode(fileread(fullfile(parent,'input_manifest.resolved.yaml'))); rawpath=m.sessions(1).files(1).path; raw=double(read_npy(rawpath)); raw(:,461,:)=0; profiles=squeeze(sum(raw,2)); [~,zlp]=max(profiles,[],2); n=size(raw,1); block=floor((0:n-1)/(n/cfg.frame_blocks))+1; fq=table(); for bi=1:cfg.frame_blocks, ii=find(block==bi); fq=[fq;table(bi,min(ii),max(ii),median(zlp(ii)),min(zlp(ii)),max(zlp(ii)),mean(sum(profiles(ii,:),2)),'VariableNames',{'block','first_frame','last_frame','zlp_median_pixel','zlp_min_pixel','zlp_max_pixel','integrated_signal_mean'})]; end
+writetable(fq,fullfile(out,'590_PL2_10w','frame_block_summary.csv')); writetable(table((1:n)',zlp,sum(profiles,2),'VariableNames',{'frame','zlp_pixel','integrated_signal'}),fullfile(out,'590_PL2_10w','frame_qc.csv')); writetable(table((1:n)',zlp-median(zlp),'VariableNames',{'frame','A1_common_shift_pixels'}),fullfile(out,'590_PL2_10w','alignment_shifts.csv'));
+% P4B: three same-center N=3 positions, both models and n=1/2.
+fits=table(); for ti=1:3, bi=find([B.N]==3 & abs([B.target_q]-targets(ti))<1e-12,1); if isempty(bi), continue, end; for model={"lorentz_symmetric","lorentz"}, model_name=char(model{1}); z=qe_compare_component_models(qe.energy_meV,B(bi).mean,energy_window=cfg.energy_window_meV,peak_model=model_name,n_starts=cfg.n_starts,seed=cfg.seed+ti); for nn=1:2, f=z(nn); fits=[fits;table(targets(ti),B(bi).q_Ainv,string(model),nn,string(f.numerical_status),f.success,f.selected_start,f.normalized_sse,any(f.candidates(f.selected_start).boundary),'VariableNames',{'target_q','actual_q','peak_model','N_components','status','success','selected_start','normalized_sse','selected_boundary'})]; if f.success, plotfit(f,out,ti,model_name); end, end, end, end
+writetable(fits,fullfile(out,'590_PL2_10w','component_parameters.csv')); writejson(fullfile(out,'stage_status.json'),struct('P4A','complete','P4B','complete_limited_three_same_center_N3','P5','not_run','physical_fit','not_run')); writefile(fullfile(out,'run_report.md'),sprintf('# C20 P4A/P4B\n\nParent: %s\n\nP4A boundary audit, same-center bins, and 590 frame QC completed. P4B refit covers three same-center N=3 targets with both peak models and n=1/2. A1 is diagnostic only; no corrected refit. P5 and physical fitting not run.\n',parent));
+copyfile(fullfile(out,'audit','boundary_by_parameter.csv'),fullfile(out,'review_packet')); copyfile(fullfile(out,'audit','boundary_summary.csv'),fullfile(out,'review_packet')); copyfile(fullfile(out,'590_PL2_10w','centered_bins.csv'),fullfile(out,'review_packet')); copyfile(fullfile(out,'590_PL2_10w','frame_block_summary.csv'),fullfile(out,'review_packet')); copyfile(fullfile(out,'590_PL2_10w','alignment_shifts.csv'),fullfile(out,'review_packet')); copyfile(fullfile(out,'590_PL2_10w','component_parameters.csv'),fullfile(out,'review_packet')); copyfile(fullfile(out,'run_report.md'),fullfile(out,'review_packet')); copyfile(fullfile(out,'stage_status.json'),fullfile(out,'review_packet')); figs=dir(fullfile(out,'590_PL2_10w','figures','*.png')); for k=1:numel(figs), copyfile(fullfile(figs(k).folder,figs(k).name),fullfile(out,'review_packet')); end; zip(fullfile(out,'review_packet.zip'),fullfile(out,'review_packet','*')); fprintf('RUN_DIR=%s\n',out);
+end
+function plotfit(f,out,ti,model), fig=figure('Visible','off'); tiledlayout(2,1); nexttile; plot(f.energy_meV,f.observed,'k'); hold on; plot(f.energy_meV,f.background,'--'); plot(f.energy_meV,f.components); plot(f.energy_meV,f.prediction,'LineWidth',1.2); legend('obs','bg','components','total'); title(sprintf('target %d | %s | n=%d | %s',ti,model,f.n_components,f.numerical_status)); nexttile; plot(f.energy_meV,f.residual); yline(0,'k:'); xlabel('meV'); ylabel('residual'); exportgraphics(fig,fullfile(out,'590_PL2_10w','figures',sprintf('target%d_%s_n%d.png',ti,model,f.n_components))); close(fig); end
+function writejson(p,x), writefile(p,jsonencode(x,PrettyPrint=true)); end
+function writefile(p,x), fid=fopen(p,'w','n','UTF-8'); assert(fid>0); c=onCleanup(@()fclose(fid)); fprintf(fid,'%s',x); end
+
+
+
