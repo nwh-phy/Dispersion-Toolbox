@@ -42,8 +42,9 @@ A=cell2table(ALL,'VariableNames',{'session','q','key','model','n','aux','form','
  'chi2_signal','chi2_gain','chi2_low','E0_1','W_1','A_1','E0_2','W_2','A_2','area_1','area_2','background_fraction'});
 writetable(A,fullfile(out,'b1_all_fits.csv'));
 
-% Dispersion fits on usable bins (main fit converged, no peak at a bound).
-use=strcmp(T.status,'converged')&~T.any_boundary;
+% Dispersion fits on usable bins: main fit converged, no peak at a bound,
+% two components required (dchi2 >= 11.3, p = 0.01 for 3 parameters), |q| <= 0.03.
+use=strcmp(T.status,'converged')&~T.any_boundary&T.dchi2_n1_n2>=11.3&T.abs_q<=0.03;
 eT=@(a,b)sqrt(a.^2+b.^2);
 fits=struct([]);
 for si=0:numel(sessions)
@@ -52,7 +53,9 @@ for si=0:numel(sessions)
  q=T.abs_q(sel); sq=sqrt((3*D.q_axis(2)-3*D.q_axis(1))^2/12+D.sigma_probe^2)*ones(size(q));
  hi=fit_branch(q,T.E0_high(sel),eT(T.stat_E0_high(sel),T.sys_E0_high(sel)),sq,'quasi2d');
  lo=fit_branch(q,T.E0_low(sel),eT(T.stat_E0_low(sel),T.sys_E0_low(sel)),sq,'gapped');
- f=struct('name',name,'n_bins',nnz(sel),'high',hi,'low',lo);
+ ll=fit_branch(q,T.E0_low(sel),eT(T.stat_E0_low(sel),T.sys_E0_low(sel)),sq,'linear');
+ hl=fit_branch(q,T.E0_high(sel),eT(T.stat_E0_high(sel),T.sys_E0_high(sel)),sq,'linear');
+ f=struct('name',name,'n_bins',nnz(sel),'q_max',max(q),'high',hi,'low',lo,'low_linear',ll,'high_linear',hl);
  if isempty(fits), fits=f; else, fits(end+1)=f; end %#ok<AGROW>
 end
 save(fullfile(out,'b1_fullq_summary.mat'),'T','A','fits','cfg');
@@ -114,13 +117,15 @@ ok=isfinite(q)&isfinite(E)&isfinite(sE); q=q(ok); E=E(ok); sE=max(sE(ok),1); sq=
 switch kind
  case 'quasi2d', fun=@(p,x)sqrt(max(p(1)*x./(1+p(2)*x),0)); p0=[max(E)^2/max(q) 10]; lb=[0 0]; ub=[Inf Inf];
  case 'gapped', fun=@(p,x)sqrt(max(p(1)^2+p(2)*x,0)); p0=[min(E) 1e5]; lb=[0 -Inf]; ub=[Inf Inf];
+ case 'linear', fun=@(p,x)p(1)+p(2)*x; p0=[mean(E) 0]; lb=[-Inf -Inf]; ub=[Inf Inf];
 end
 o=optimoptions('lsqnonlin','Display','off'); s=sE;
 for pass=1:2
  [p,~,res,~,~,~,J]=lsqnonlin(@(p)(fun(p,q)-E)./s,p0,lb,ub,o);
  dq=1e-5; slope=(fun(p,q+dq)-fun(p,q-dq))/(2*dq); s=sqrt(sE.^2+(slope.*sq).^2); p0=p;
 end
-J=full(J); C=inv(J'*J); dof=max(numel(q)-numel(p),1); chi2=sum(res.^2)/dof;
+J=full(J); ps=max(abs(p),1); Js=J.*ps; C=(Js'*Js)\eye(numel(p)).*(ps'*ps);
+dof=max(numel(q)-numel(p),1); chi2=sum(res.^2)/dof;
 r=struct('kind',kind,'p',p,'p_sd',sqrt(diag(C))'*sqrt(max(chi2,1)),'chi2_red',chi2,'n',numel(q), ...
  'q',q,'E',E,'sE',s,'fun',fun);
 end
@@ -131,16 +136,16 @@ end
 
 function plots(T,fits,S,cfg,figd)
 ses=fieldnames(S); col=lines(2); cb=[0 0.447 0.741]; co=[0.85 0.325 0.098];
-use=strcmp(T.status,'converged')&~T.any_boundary&T.abs_q<=0.03;
+use=strcmp(T.status,'converged')&~T.any_boundary&T.dchi2_n1_n2>=11.3&T.abs_q<=0.03;
 % 1. E(q) with both branches, both sessions and signs.
 f=newfig([100 100 900 650]); hold on;
 mk={'o','s'};
 for si=1:numel(ses)
- t=T(strcmp(matlab.lang.makeValidName(T.session),ses{si})&use,:);
+ t=T(strcmp(matlab.lang.makeValidName(T.session),ses{si})&use,:); nm=S.(ses{si}).name;
  for sg=[-1 1]
   u=t(t.sign==sg,:); face=col(si,:); if sg<0, face='none'; end
-  errorbar(u.abs_q,u.E0_low,hypot(u.stat_E0_low,u.sys_E0_low),mk{si},'Color',col(si,:),'MarkerFaceColor',face,'DisplayName',sprintf('%s low, q%s0',ses{si},char(61+sg)));
-  errorbar(u.abs_q,u.E0_high,hypot(u.stat_E0_high,u.sys_E0_high),mk{si},'Color',col(si,:)*0.6,'MarkerFaceColor',face,'DisplayName',sprintf('%s high, q%s0',ses{si},char(61+sg)));
+  errorbar(u.abs_q,u.E0_low,hypot(u.stat_E0_low,u.sys_E0_low),mk{si},'Color',col(si,:),'MarkerFaceColor',face,'DisplayName',sprintf('%s low, q%s0',nm,char(61+sg)));
+  errorbar(u.abs_q,u.E0_high,hypot(u.stat_E0_high,u.sys_E0_high),mk{si},'Color',col(si,:)*0.6,'MarkerFaceColor',face,'DisplayName',sprintf('%s high, q%s0',nm,char(61+sg)));
  end
 end
 for k=1:numel(fits)
@@ -158,10 +163,10 @@ nexttile; hold on; for si=1:numel(ses), t=T(strcmp(matlab.lang.makeValidName(T.s
  errorbar(t.abs_q,t.W_low,hypot(t.stat_W_low,t.sys_W_low),'o','Color',col(si,:)); errorbar(t.abs_q,t.W_high,hypot(t.stat_W_high,t.sys_W_high),'s','Color',col(si,:)*0.6); end
 xlabel('|q| (Å^{-1})'); ylabel('\Gamma (meV)'); title('widths (o low, s high)'); grid on;
 nexttile; hold on; for si=1:numel(ses), t=T(strcmp(matlab.lang.makeValidName(T.session),ses{si})&use,:);
- errorbar(t.abs_q,t.weight_low,hypot(t.stat_weight_low,t.sys_weight_low),'o','Color',col(si,:),'DisplayName',ses{si}); end
+ errorbar(t.abs_q,t.weight_low,hypot(t.stat_weight_low,t.sys_weight_low),'o','Color',col(si,:),'DisplayName',S.(ses{si}).name); end
 xlabel('|q| (Å^{-1})'); ylabel('low-branch share of loss-function area'); grid on; legend('Interpreter','none');
 nexttile; hold on; for si=1:numel(ses), t=T(strcmp(matlab.lang.makeValidName(T.session),ses{si}),:);
- semilogy(t.abs_q,max(t.dchi2_n1_n2_corr,1),'o','Color',col(si,:),'DisplayName',ses{si}); end
+ semilogy(t.abs_q,max(t.dchi2_n1_n2_corr,1),'o','Color',col(si,:),'DisplayName',S.(ses{si}).name); end
 set(gca,'YScale','log'); yline(11.3,'k--','p=0.01 (3 par.)'); xlabel('|q| (Å^{-1})'); ylabel('\Delta\chi^2 n=1\rightarrow2 (corr.)'); grid on;
 exportgraphics(f,fullfile(figd,'widths_weight_dchi2.png'),'Resolution',140); close(f);
 % 3. Stacked spectra and 4. loss-function maps per session.
@@ -213,5 +218,7 @@ for k=1:numel(fits)
   f.name,f.n_bins,f.high.p(1),f.high.p_sd(1),f.high.p(2),f.high.p_sd(2),f.high.chi2_red,sqrt(f.high.p(1)/max(f.high.p(2),eps)));
  fprintf(fid,'  low E^2 = D^2 + s q: D = %.0f ± %.0f meV, s = %.4g ± %.2g meV^2 A (chi2_red %.2f)\n', ...
   f.low.p(1),f.low.p_sd(1),f.low.p(2),f.low.p_sd(2),f.low.chi2_red);
+ fprintf(fid,'  linear slopes (|q| <= %.4f): low %.0f ± %.0f meV/A^-1 (E0 at q=0: %.0f ± %.0f), high %.0f ± %.0f meV/A^-1\n', ...
+  f.q_max,f.low_linear.p(2),f.low_linear.p_sd(2),f.low_linear.p(1),f.low_linear.p_sd(1),f.high_linear.p(2),f.high_linear.p_sd(2));
 end
 end

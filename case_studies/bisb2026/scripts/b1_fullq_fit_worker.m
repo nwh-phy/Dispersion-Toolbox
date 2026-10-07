@@ -29,8 +29,8 @@ for b=bin_idx(:).'
    'peak_model',C(c).model,'n_peaks',C(c).n,'n_starts',cfg.n_starts_other+(cfg.n_starts-cfg.n_starts_other)*C(c).main,'seed',cfg.seed+b, ...
    'aux_windows',C(c).aux,'n_zlp',cfg.n_zlp,'prefactor',Kfun,'prefactor_floor_meV',cfg.prefactor_floor,'prefactor_on_aux',cfg.prefactor_on_aux,'noise_sigma',sg,'warm_u',wu);
   s=compact(f,C(c),kinfo,toc(t0));
-  if C(c).main || (C(c).n==1 && C(c).primary_aux && strcmp(C(c).form,'2d') && ~C(c).h_variant) || ...
-    (strcmp(C(c).model,'lorentz_symmetric') && C(c).n==2 && C(c).primary_aux && strcmp(C(c).form,'2d') && ~C(c).h_variant)
+  if f.success && (C(c).main || (C(c).n==1 && C(c).primary_aux && strcmp(C(c).form,'2d') && ~C(c).h_variant)) || ...
+    f.success && (strcmp(C(c).model,'lorentz_symmetric') && C(c).n==2 && C(c).primary_aux && strcmp(C(c).form,'2d') && ~C(c).h_variant)
    s.curves=curves(f);
   end
   if isempty(R.fits), R.fits=s; else, R.fits(end+1)=s; end
