@@ -30,8 +30,11 @@ function fit = qe_zlp_joint_fit(E, Y, options)
 %   (exclude_windows). The overshoot inequality still applies there.
 %
 %   prefactor (function of |E| in meV, e.g. from qe_kinematic_prefactor)
-%   multiplies every inelastic peak before the convolution, so peak parameters
+%   multiplies the inelastic peaks before the convolution, so peak parameters
 %   and amplitudes describe the loss function itself; the ZLP is not scaled.
+%   Below prefactor_floor_meV the prefactor is held at its value there, so a
+%   broad peak's low-energy tail is not amplified by the qE -> 0 growth of the
+%   2D prefactor; prefactor_on_aux = false leaves the aux peaks unscaled.
 %
 %   Residuals use a Poisson-like noise model sigma = g*sqrt(local level), with
 %   g estimated from the high-pass scatter, so chi2_red ~ 1 for a good fit;
@@ -68,6 +71,8 @@ arguments
  options.aux_windows (:,2) double = zeros(0, 2)
  options.aux_model char {mustBeMember(options.aux_model,{'lorentz','lorentz_symmetric'})} = 'lorentz'
  options.prefactor = []
+ options.prefactor_floor_meV (1,1) double {mustBeNonnegative} = 0
+ options.prefactor_on_aux (1,1) logical = true
  options.noise_sigma (:,1) double = []
  options.warm_u (1,:) double = []
  options.n_starts (1,1) double {mustBePositive,mustBeInteger} = 8
@@ -136,7 +141,7 @@ P.lags = lags;
 P.E_ext = (E(1) - lags(end)) + (0:(numel(E) + numel(lags) - 2)).' * dE;
 P.Kext = ones(size(P.E_ext));
 if ~isempty(options.prefactor)
-    P.Kext = reshape(options.prefactor(abs(P.E_ext)), [], 1);
+    P.Kext = reshape(options.prefactor(max(abs(P.E_ext), options.prefactor_floor_meV)), [], 1);
     assert(numel(P.Kext) == numel(P.E_ext) && all(isfinite(P.Kext)) && all(P.Kext >= 0), ...
         'qe_zlp_joint_fit:Prefactor', 'prefactor must return finite nonnegative values.');
 end
@@ -302,7 +307,10 @@ L = zeros(numel(P.E_ext), np);
 for j = 1:np
     L(:, j) = local_peak(P, th.E0(j), th.W(j), P.models{j});
 end
-F = L .* P.Kext;
+F = L;
+scaled = 1:np;
+if ~P.opts.prefactor_on_aux, scaled = 1:min(np, P.opts.n_peaks); end
+F(:, scaled) = L(:, scaled) .* P.Kext;
 xk = P.lags - th.c;
 Kc = zeros(numel(P.lags), nz);
 for k = 1:nz
