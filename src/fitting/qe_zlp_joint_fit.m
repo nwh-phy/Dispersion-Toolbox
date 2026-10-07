@@ -45,7 +45,7 @@ arguments
  options.n_peaks (1,1) double {mustBeNonnegative,mustBeInteger} = 1
  options.initial_E0 (1,:) double = []
  options.initial_width (1,:) double = []
- options.n_zlp (1,1) double {mustBeMember(options.n_zlp,[1 2 3])} = 2
+ options.n_zlp (1,1) double {mustBeMember(options.n_zlp,[1 2 3 4])} = 2
  options.core_halfwidth (1,1) double = NaN
  options.core_weight (1,1) double {mustBeNonnegative} = 0.05
  options.gain_weight (1,1) double {mustBeNonnegative} = 3
