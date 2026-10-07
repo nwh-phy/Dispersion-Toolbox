@@ -71,6 +71,20 @@ verifySize(testCase, fit.aux_peaks, [numel(fit.energy_meV) 1]);
 end
 
 
+function testTwoAuxPeaksResolvePhononAndHigherBand(testCase)
+peaks = struct('E0', {700, 50, 120}, 'W', {400, 10, 50}, 'height', {300, 2000, 300}, ...
+    'shape', {'sym', 'dl', 'dl'});
+[E, Y] = makeSpectrum(peaks);
+fit = qe_zlp_joint_fit(E, Y, signal_window=[300 1800], n_peaks=1, n_starts=4, ...
+    aux_windows=[30 80; 80 300]);
+
+verifyEqual(testCase, size(fit.aux_parameters), [2 3]);
+verifyLessThan(testCase, abs(fit.aux_parameters(1, 1) - 50), 6);
+verifyLessThan(testCase, abs(fit.aux_parameters(2, 1) - 120), 15);
+verifyLessThan(testCase, abs(fit.parameters(1) - 700), 15);
+end
+
+
 function testRejectsNonUniformGrid(testCase)
 [E, Y] = makeSpectrum(struct('E0', 700, 'W', 400, 'height', 300));
 E(300:end) = E(300:end) + 1;

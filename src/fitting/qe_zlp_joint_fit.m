@@ -148,7 +148,7 @@ PA.sqrtW(E > c0 + options.prefit_loss_max) = 0;
 PA.guard(:) = 0;
 [uA, ~, ~, flagA] = lsqnonlin(@(u) local_residual(u, PA), u0, u_lo, u_hi, lsq);
 
-%% Stage B: joint fit, multistart over peak seeds (aux peaks start mid-window)
+%% Stage B: joint fit, multistart over peak seeds (aux peaks mid-window in starts 1-2, random after)
 np = options.n_peaks;
 aw = options.aux_windows;
 na = size(aw, 1);
@@ -180,7 +180,12 @@ for st = 1:n_starts
         end
         pk0(1:2:end) = e0; pk0(2:2:end) = log(w0);
     end
-    x0 = min(max([uA pk0 aux0], lb + 1e-9), ub - 1e-9);
+    ax0 = aux0;
+    if st > 2 && na > 0
+        ax0(1:2:end) = aw(:, 1).' + diff(aw, 1, 2).' .* (0.1 + 0.8 * rand(stream, 1, na));
+        ax0(2:2:end) = log(2 * dE) + rand(stream, 1, na) .* (log(diff(aw, 1, 2)).' - log(2 * dE));
+    end
+    x0 = min(max([uA pk0 ax0], lb + 1e-9), ub - 1e-9);
     cand(st).start = st; cand(st).u0 = x0;
     try
         [u, cost, ~, flag, out] = lsqnonlin(@(u) local_residual(u, P), x0, lb, ub, lsq);
