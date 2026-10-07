@@ -29,8 +29,14 @@ function fit = qe_zlp_joint_fit(E, Y, options)
 %   background for the signal window) or are dropped from the data term
 %   (exclude_windows). The overshoot inequality still applies there.
 %
+%   prefactor (function of |E| in meV, e.g. from qe_kinematic_prefactor)
+%   multiplies every inelastic peak before the convolution, so peak parameters
+%   and amplitudes describe the loss function itself; the ZLP is not scaled.
+%
 %   Residuals use a Poisson-like noise model sigma = g*sqrt(local level), with
-%   g estimated from the high-pass scatter, so chi2_red ~ 1 for a good fit.
+%   g estimated from the high-pass scatter, so chi2_red ~ 1 for a good fit;
+%   noise_sigma (same length as Y) replaces it with a measured noise level.
+%   warm_u (a previous fit.u) is used as the first start.
 %
 %   Requires a uniform energy grid inside fit_window.
 %
@@ -61,6 +67,9 @@ arguments
  options.exclude_windows (:,2) double = zeros(0, 2)
  options.aux_windows (:,2) double = zeros(0, 2)
  options.aux_model char {mustBeMember(options.aux_model,{'lorentz','lorentz_symmetric'})} = 'lorentz'
+ options.prefactor = []
+ options.noise_sigma (:,1) double = []
+ options.warm_u (1,:) double = []
  options.n_starts (1,1) double {mustBePositive,mustBeInteger} = 8
  options.seed (1,1) double = 20261007
  options.max_iterations (1,1) double {mustBePositive,mustBeInteger} = 400
@@ -68,6 +77,8 @@ end
 
 %% Data on a uniform grid
 keep = E >= options.fit_window(1) & E <= options.fit_window(2);
+assert(isempty(options.noise_sigma) || numel(options.noise_sigma) == numel(Y), ...
+    'qe_zlp_joint_fit:NoiseSize', 'noise_sigma must match Y.');
 E = E(keep); Y = Y(keep);
 assert(numel(E) >= 20 && all(diff(E) > 0), 'qe_zlp_joint_fit:Axis', 'Need >=20 increasing energies.');
 dE = median(diff(E));
@@ -94,6 +105,11 @@ noise_region = valid & abs(E - c0) > options.core_halfwidth;
 g = 1.4826 * median(abs(hp(noise_region) - median(hp(noise_region))));
 if ~(isfinite(g) && g > 0), g = 1; end
 sigma = g * sqrt(level);
+if ~isempty(options.noise_sigma)
+    s_in = options.noise_sigma(keep);
+    use = isfinite(s_in) & s_in > 0;
+    sigma(use) = s_in(use);
+end
 
 core = 1 ./ (1 + exp((abs(E - c0) - options.core_halfwidth) / max(dE, 1)));
 mult = options.core_weight * core + (1 - core);
@@ -118,6 +134,12 @@ P.models = {};
 lags = (-round(options.kernel_halfwidth / dE):round(options.kernel_halfwidth / dE)).' * dE;
 P.lags = lags;
 P.E_ext = (E(1) - lags(end)) + (0:(numel(E) + numel(lags) - 2)).' * dE;
+P.Kext = ones(size(P.E_ext));
+if ~isempty(options.prefactor)
+    P.Kext = reshape(options.prefactor(abs(P.E_ext)), [], 1);
+    assert(numel(P.Kext) == numel(P.E_ext) && all(isfinite(P.Kext)) && all(P.Kext >= 0), ...
+        'qe_zlp_joint_fit:Prefactor', 'prefactor must return finite nonnegative values.');
+end
 
 %% ZLP bounds and start (component 1 narrow core, then progressively wider)
 nz = options.n_zlp;
@@ -186,6 +208,9 @@ for st = 1:n_starts
         ax0(2:2:end) = log(2 * dE) + rand(stream, 1, na) .* (log(diff(aw, 1, 2)).' - log(2 * dE));
     end
     x0 = min(max([uA pk0 ax0], lb + 1e-9), ub - 1e-9);
+    if st == 1 && numel(options.warm_u) == numel(lb)
+        x0 = min(max(options.warm_u, lb + 1e-9), ub - 1e-9);
+    end
     cand(st).start = st; cand(st).u0 = x0;
     try
         [u, cost, ~, flag, out] = lsqnonlin(@(u) local_residual(u, P), x0, lb, ub, lsq);
@@ -208,6 +233,7 @@ th = local_decode(u, P);
 fit.success = true;
 fit.selected_start = best;
 fit.cost = cand(best).cost;
+fit.u = u;
 fit.energy_meV = E;
 fit.observed = Y;
 fit.sigma = sigma;
@@ -235,6 +261,8 @@ fit.parameter_names = {'E0_meV', 'width_meV', 'amplitude'};
 fit.aux_parameters = pars(np + (1:na), :);
 fit.peaks = M.peaks(:, order);
 fit.peaks_intrinsic = M.peaks_intrinsic(:, order);
+fit.loss_function = M.loss(:, order);
+fit.prefactor_grid = M.Kgrid;
 
 r = fit.residual ./ sigma;
 dof = max(nnz(valid & sig) - (2 + 3 * (np + na)), 1);
@@ -270,10 +298,11 @@ for k = 1:nz
 end
 
 % Peak columns, convolved with a first-pass kernel, then with the fitted ZLP.
-F = zeros(numel(P.E_ext), np);
+L = zeros(numel(P.E_ext), np);
 for j = 1:np
-    F(:, j) = local_peak(P, th.E0(j), th.W(j), P.models{j});
+    L(:, j) = local_peak(P, th.E0(j), th.W(j), P.models{j});
 end
+F = L .* P.Kext;
 xk = P.lags - th.c;
 Kc = zeros(numel(P.lags), nz);
 for k = 1:nz
@@ -306,11 +335,14 @@ if nargout > 1
     M.zlp = sum(M.zlp_components, 2);
     M.peaks = A(:, nz + (1:np)) .* coef(nz + (1:np)).';
     M.peaks_intrinsic = zeros(n, np);
+    M.loss = zeros(n, np);
     H = (numel(P.lags) - 1) / 2;
     inside = H + (1:n);
     for j = 1:np
         M.peaks_intrinsic(:, j) = F(inside, j) * coef(nz + j) / col_scale(j);
+        M.loss(:, j) = L(inside, j) * coef(nz + j) / col_scale(j);
     end
+    M.Kgrid = P.Kext(inside);
     M.constant = 0;
     if P.opts.include_constant, M.constant = coef(end); end
     M.kernel = K / sum(K);

@@ -85,6 +85,32 @@ verifyLessThan(testCase, abs(fit.parameters(1) - 700), 15);
 end
 
 
+function testKinematicPrefactorMatchesAnalyticLimit(testCase)
+[K3, info] = qe_kinematic_prefactor(0.01, dq=1e-9, form='3d');
+K2 = qe_kinematic_prefactor(0.01, dq=1e-9, form='2d');
+qE = info.qE_per_meV * 1000;
+
+verifyEqual(testCase, info.qE_per_meV, 1.5434e-6, 'RelTol', 1e-3);
+verifyEqual(testCase, K3(1000), 1 / (0.01 ^ 2 + qE ^ 2), 'RelTol', 1e-6);
+verifyEqual(testCase, K2(1000), 0.01 / (0.01 ^ 2 + qE ^ 2) ^ 2, 'RelTol', 1e-6);
+end
+
+
+function testPrefactorRemovesKinematicTilt(testCase)
+% A 2D prefactor at |q| = 0.0025 A^-1 (30 kV) drops by ~55% between 0.5 and
+% 1.3 eV; fitting without it pulls a broad peak to lower energy.
+Kfun = qe_kinematic_prefactor([0.002 0.0025 0.003], form='2d', sigma_probe=4e-4);
+[E, Y] = makeSpectrum(struct('E0', 900, 'W', 800, 'height', 300), [], Kfun);
+with = qe_zlp_joint_fit(E, Y, signal_window=[300 1800], n_peaks=1, n_starts=4, prefactor=Kfun);
+without = qe_zlp_joint_fit(E, Y, signal_window=[300 1800], n_peaks=1, n_starts=4);
+
+verifyLessThan(testCase, abs(with.parameters(1) - 900), 20);
+verifyLessThan(testCase, abs(with.parameters(2) - 800) / 800, 0.08);
+verifyLessThan(testCase, without.parameters(1), 870);
+verifySize(testCase, with.loss_function, [numel(with.energy_meV) 1]);
+end
+
+
 function testRejectsNonUniformGrid(testCase)
 [E, Y] = makeSpectrum(struct('E0', 700, 'W', 400, 'height', 300));
 E(300:end) = E(300:end) + 1;
@@ -92,11 +118,12 @@ verifyError(testCase, @() qe_zlp_joint_fit(E, Y), 'qe_zlp_joint_fit:NonUniform')
 end
 
 
-function [E, Y, truth] = makeSpectrum(peaks, zlp)
+function [E, Y, truth] = makeSpectrum(peaks, zlp, prefactor)
 % Two-component asymmetric Pearson ZLP plus loss peaks (symmetric Lorentzian
 % by default, 'dl' = Drude-Lorentz) with detailed-balance gain side, each
 % convolved with the area-normalised ZLP; Gaussian-approximated Poisson noise.
-if nargin < 2
+if nargin < 3, prefactor = []; end
+if nargin < 2 || isempty(zlp)
     zlp = struct('h', [5e5 2e4], 's', [8 25; 8 27], 'm', [3 1.0; 3 0.95], 'c', 1.5);
 end
 E = (-180:4:1800).';
@@ -122,6 +149,7 @@ for j = 1:numel(peaks)
         f = (pk.W / 2) ./ ((Ea - pk.E0) .^ 2 + (pk.W / 2) ^ 2);
     end
     f(Ex < 0) = f(Ex < 0) .* exp(-Ea(Ex < 0) / kT);
+    if ~isempty(prefactor), f = f .* prefactor(Ea); end
     Sj = conv(f, K, 'valid');
     S = S + pk.height * Sj / max(Sj);
 end
