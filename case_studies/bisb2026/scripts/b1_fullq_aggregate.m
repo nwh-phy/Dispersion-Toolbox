@@ -30,7 +30,7 @@ for si=1:numel(sessions)
    st(1),st(2),st(3),st(4),st(5),sy(1),sy(2),sy(3),sy(4),sy(5), ...
    m.chi2_signal,m.chi2_gain,m.chi2_low,m.background_fraction,dchi,dchi*corr,sb(1),sb(2),sb(3),sb(4),ndeg}; %#ok<AGROW>
  end
- S.(matlab.lang.makeValidName(ses))=struct('D',D,'Rs',{Rs});
+ S.(matlab.lang.makeValidName(ses))=struct('D',D,'Rs',{Rs},'name',ses);
 end
 VA={'session','q','abs_q','sign','q_mean','status','any_boundary','E0_low','E0_high','W_low','W_high','weight_low', ...
  'fsum_low','stat_E0_low','stat_E0_high','stat_W_low','stat_W_high','stat_weight_low','sys_E0_low','sys_E0_high', ...
@@ -125,13 +125,18 @@ r=struct('kind',kind,'p',p,'p_sd',sqrt(diag(C))'*sqrt(max(chi2,1)),'chi2_red',ch
  'q',q,'E',E,'sE',s,'fun',fun);
 end
 
+function f=newfig(pos)
+f=figure('Visible','off','Position',pos); if isprop(f,'Theme'), f.Theme='light'; end
+end
+
 function plots(T,fits,S,cfg,figd)
-ses=fieldnames(S); col=lines(2);
+ses=fieldnames(S); col=lines(2); cb=[0 0.447 0.741]; co=[0.85 0.325 0.098];
+use=strcmp(T.status,'converged')&~T.any_boundary&T.abs_q<=0.03;
 % 1. E(q) with both branches, both sessions and signs.
-f=figure('Visible','off','Position',[100 100 900 650]); hold on;
+f=newfig([100 100 900 650]); hold on;
 mk={'o','s'};
 for si=1:numel(ses)
- t=T(strcmp(matlab.lang.makeValidName(T.session),ses{si}),:);
+ t=T(strcmp(matlab.lang.makeValidName(T.session),ses{si})&use,:);
  for sg=[-1 1]
   u=t(t.sign==sg,:); face=col(si,:); if sg<0, face='none'; end
   errorbar(u.abs_q,u.E0_low,hypot(u.stat_E0_low,u.sys_E0_low),mk{si},'Color',col(si,:),'MarkerFaceColor',face,'DisplayName',sprintf('%s low, q%s0',ses{si},char(61+sg)));
@@ -144,15 +149,15 @@ for k=1:numel(fits)
  plot(x,fits(k).high.fun(fits(k).high.p,x),'k-','DisplayName','quasi-2D fit (high)');
  plot(x,fits(k).low.fun(fits(k).low.p,x),'k--','DisplayName','gapped fit (low)');
 end
-xlabel('|q| (Å^{-1})'); ylabel('E_0 (meV)'); grid on; legend('Location','southeast','Interpreter','none');
+xlim([0 0.031]); xlabel('|q| (Å^{-1})'); ylabel('E_0 (meV)'); grid on; legend('Location','southeast','Interpreter','none');
 title('B1 two-branch dispersion (DL, kinematic prefactor, joint ZLP)');
 exportgraphics(f,fullfile(figd,'dispersion_E0.png'),'Resolution',140); close(f);
 % 2. Widths and lower-branch weight.
-f=figure('Visible','off','Position',[100 100 1300 480]); tiledlayout(1,3);
-nexttile; hold on; for si=1:numel(ses), t=T(strcmp(matlab.lang.makeValidName(T.session),ses{si}),:);
+f=newfig([100 100 1300 480]); tiledlayout(1,3);
+nexttile; hold on; for si=1:numel(ses), t=T(strcmp(matlab.lang.makeValidName(T.session),ses{si})&use,:);
  errorbar(t.abs_q,t.W_low,hypot(t.stat_W_low,t.sys_W_low),'o','Color',col(si,:)); errorbar(t.abs_q,t.W_high,hypot(t.stat_W_high,t.sys_W_high),'s','Color',col(si,:)*0.6); end
 xlabel('|q| (Å^{-1})'); ylabel('\Gamma (meV)'); title('widths (o low, s high)'); grid on;
-nexttile; hold on; for si=1:numel(ses), t=T(strcmp(matlab.lang.makeValidName(T.session),ses{si}),:);
+nexttile; hold on; for si=1:numel(ses), t=T(strcmp(matlab.lang.makeValidName(T.session),ses{si})&use,:);
  errorbar(t.abs_q,t.weight_low,hypot(t.stat_weight_low,t.sys_weight_low),'o','Color',col(si,:),'DisplayName',ses{si}); end
 xlabel('|q| (Å^{-1})'); ylabel('low-branch share of loss-function area'); grid on; legend('Interpreter','none');
 nexttile; hold on; for si=1:numel(ses), t=T(strcmp(matlab.lang.makeValidName(T.session),ses{si}),:);
@@ -162,20 +167,22 @@ exportgraphics(f,fullfile(figd,'widths_weight_dchi2.png'),'Resolution',140); clo
 % 3. Stacked spectra and 4. loss-function maps per session.
 for si=1:numel(ses)
  Rs=S.(ses{si}).Rs; q=cellfun(@(r)r.q,Rs); sel=find(abs(q)<=0.03);
- f=figure('Visible','off','Position',[100 100 1300 900]); tiledlayout(1,2);
+ f=newfig([100 100 1300 900]); tiledlayout(1,2);
  for sg=[-1 1]
   nexttile; hold on; kk=sel(sign(q(sel))==sg); [~,o]=sort(abs(q(kk))); kk=kk(o);
   for j=1:numel(kk)
    m=Rs{kk(j)}.fits([Rs{kk(j)}.fits.main]); c=m.curves; if isempty(fieldnames(c)), continue; end
    w=c.E>=200&c.E<=cfg.window(2); sc=max(c.observed(w)); off=1.1*(j-1);
    plot(c.E(w),c.observed(w)/sc+off,'.','Color',[.4 .4 .4],'MarkerSize',3);
-   plot(c.E(w),c.prediction(w)/sc+off,'r-'); plot(c.E(w),(c.peaks(w,:)+c.zlp(w)+sum(c.aux_peaks(w,:),2))/sc+off,':');
+   bg=c.zlp(w)+sum(c.aux_peaks(w,:),2);
+   plot(c.E(w),c.prediction(w)/sc+off,'k-'); plot(c.E(w),(c.peaks(w,1)+bg)/sc+off,':','Color',cb,'LineWidth',1.1);
+   plot(c.E(w),(c.peaks(w,2)+bg)/sc+off,':','Color',co,'LineWidth',1.1); plot(c.E(w),bg/sc+off,'-','Color',[.6 .6 .6]);
    text(cfg.window(2)+20,off+0.3,sprintf('%+.4f',q(kk(j))),'FontSize',7);
   end
-  xlim([200 cfg.window(2)+150]); xlabel('E (meV)'); title(sprintf('%s, q%s0 (each scaled to its max)',ses{si},char(61+sg)),'Interpreter','none');
+  xlim([200 cfg.window(2)+150]); xlabel('E (meV)'); title(sprintf('%s, q%s0 (each scaled to its max)',S.(ses{si}).name,char(61+sg)),'Interpreter','none');
  end
- exportgraphics(f,fullfile(figd,sprintf('stacked_%s.png',ses{si})),'Resolution',130); close(f);
- f=figure('Visible','off','Position',[100 100 900 600]);
+ exportgraphics(f,fullfile(figd,sprintf('stacked_%s.png',S.(ses{si}).name)),'Resolution',130); close(f);
+ f=newfig([100 100 900 600]);
  Eg=200:4:cfg.window(2); M=nan(numel(Eg),numel(Rs));
  for j=1:numel(Rs)
   m=Rs{j}.fits([Rs{j}.fits.main]); c=m.curves; if isempty(fieldnames(c)), continue; end
@@ -184,8 +191,8 @@ for si=1:numel(ses)
  imagesc(q,Eg,M); axis xy; colorbar; hold on;
  t=S.(ses{si}); qq=cellfun(@(r)r.q,t.Rs); e1=cellfun(@(r)r.fits(1).parameters(1,1),t.Rs); e2=cellfun(@(r)r.fits(1).parameters(2,1),t.Rs);
  plot(qq,e1,'wo',qq,e2,'ws','MarkerSize',4); xlabel('q (Å^{-1})'); ylabel('E (meV)');
- title(sprintf('%s: fitted loss function (prefactor removed), per-bin max = 1',ses{si}),'Interpreter','none');
- exportgraphics(f,fullfile(figd,sprintf('loss_map_%s.png',ses{si})),'Resolution',130); close(f);
+ title(sprintf('%s: fitted loss function (prefactor removed), per-bin max = 1',S.(ses{si}).name),'Interpreter','none');
+ exportgraphics(f,fullfile(figd,sprintf('loss_map_%s.png',S.(ses{si}).name)),'Resolution',130); close(f);
 end
 end
 
