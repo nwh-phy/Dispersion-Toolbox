@@ -1,33 +1,57 @@
-function out = run_zlp_joint_fit_pilot()
+function out = run_zlp_joint_fit_pilot(source)
 % Pilot: ZEST-style joint ZLP fit vs the current power-law window fit on the
-% v7 mirror-q targets (590, A0 N=3 means). Same spectra, same n=1/2
-% components; only the background treatment differs. Joint variants:
+% v7 mirror-q targets (590, N=3). Same spectra, same n=1/2 components; only
+% the background treatment differs.
+%   source 'A1'  frame-drift-corrected spectra, read from the v7 run (Y1/E1);
+%                the power-law baseline must then reproduce the v7 A1 fits
+%          'A0'  uncorrected eq3D N=3 means
+% Joint variants:
 %   full  all of [-180, 1800] meV in the data term
 %   gap   loss side 30-300 meV dropped; ZLP tail set by gain side + core
 %   aux   one detailed-balance DL peak in 30-300 meV for the low-energy losses
 % Parent outputs stay read-only.
+arguments
+ source char {mustBeMember(source,{'A0','A1'})} = 'A1'
+end
 root=bisb_find_project_root(fileparts(mfilename('fullpath'))); addpath(genpath(fullfile(root,'src')));
 p2=fullfile(root,'paper_results','b1_components_v2','20260912T021813081Z_31fcc543_18af79b6');
+p7=fullfile(root,'paper_results','b1_mirror_q_v7','20261007T074250Z');
 cfg=struct('targets',[-.0025 .0075 .0125 .0025 -.0075 -.0125],'labels',{{'R1','R2','R3','R1m','R2m','R3m'}}, ...
  'seed_offset',[1 2 3 1 2 3],'window',[300 1800],'models',{{'lorentz_symmetric','lorentz'}}, ...
  'A_starts',24,'A_extra_n2',12,'J_starts',12,'seed',20260912,'low_window',[30 300]);
 id=char(datetime('now','TimeZone','UTC','Format','yyyyMMdd''T''HHmmss''Z'''));
-out=fullfile(root,'paper_results','zlp_joint_fit_pilot',id); assert(~isfolder(out));
+cfg.source=source;
+out=fullfile(root,'paper_results','zlp_joint_fit_pilot',[id '_' source]); assert(~isfolder(out));
 mkdir(fullfile(out,'figures')); diary(fullfile(out,'execution.log')); dc=onCleanup(@()diary('off'));
 disp(['RUN_DIR=' out]);
 [~,head]=system(sprintf('git -C "%s" rev-parse HEAD',root)); cfg.git_head=strtrim(head);
 
-l=load(fullfile(p2,'590_PL2_10w','L1_minimal.mat')); qe=l.d.qe; E=qe.energy_meV(:);
+l=load(fullfile(p2,'590_PL2_10w','L1_minimal.mat')); qe=l.d.qe;
 n3=qe_centered_bins(qe,cfg.targets,3); assert(all([n3.valid]),'Invalid centered bins');
+if strcmp(source,'A1')
+ v7=load(fullfile(p7,'mirror_fits.mat')); keys=cellfun(@(a)a.key,v7.A,'UniformOutput',false);
+end
 variants={'full',{};'gap',{'exclude_windows',cfg.low_window};'aux',{'aux_windows',cfg.low_window}};
 
 rows={}; R=struct([]);
 for r=1:numel(cfg.targets)
- b=n3(r); Y=b.mean(:); seed=cfg.seed+cfg.seed_offset(r);
+ b=n3(r); seed=cfg.seed+cfg.seed_offset(r);
+ if strcmp(source,'A1')
+  d7=v7.A{strcmp(keys,[cfg.labels{r} '_' cfg.models{1}])};
+  assert(isequal(d7.n3_channels,b.source_channel),'v7 channel mismatch'); E=d7.E1(:); Y=d7.Y1(:);
+ else
+  E=qe.energy_meV(:); Y=b.mean(:);
+ end
  for mi=1:numel(cfg.models)
   model=cfg.models{mi};
   fa=qe_compare_component_models(E,Y,energy_window=cfg.window,peak_model=model, ...
    n_starts=cfg.A_starts,extra_starts=cfg.A_extra_n2,start_policy='independent',seed=seed);
+  if strcmp(source,'A1')
+   a7=v7.A{strcmp(keys,[cfg.labels{r} '_' model])}.A1;
+   x=[fa(1).parameters(:);fa(2).parameters(:)]; x7=[a7(1).parameters(:);a7(2).parameters(:)];
+   rel=max(abs(x-x7)./max(1,abs(x7)),[],'omitnan');
+   fprintf('V7_CHECK %s %s power-law vs v7 A1: max relative parameter diff = %.3g\n',cfg.labels{r},model,rel);
+  end
   for n=1:2
    rows(end+1,:)=summary_row(cfg.labels{r},b.q_Ainv,model,n,'powerlaw_window',fa(n),0); %#ok<AGROW>
    J=struct();
