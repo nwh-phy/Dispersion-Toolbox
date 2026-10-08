@@ -51,6 +51,11 @@ output/
 outputs/
 paper_results/
 
+# Local-only archive (Windows storage-cleanup ledger, old agent scripts and notes)
+archive/storage_cleanup_20261007/
+archive/hermes_20260424/
+archive/old_notes/
+
 # Experimental data directories (CONFIDENTIAL — never commit)
 20260120 BiSb/
 graphene/
