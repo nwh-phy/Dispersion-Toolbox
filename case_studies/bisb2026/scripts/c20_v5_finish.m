@@ -18,7 +18,7 @@ for k=1:numel(directories)
  t.native_A_unit=repmat(unit,height(t),1); t.native_width_definition=repmat(width_name,height(t),1);
  t.integrated_area_unit=repmat("corrected_counts*meV",height(t),1); writetable(t,file);
 end
-sources=dir(fullfile(fileparts(mfilename('fullpath')),'c20_v5*.m')); rows={};
+sources=[dir(fullfile(fileparts(mfilename('fullpath')),'c20_v5*.m')); dir(fullfile(fileparts(mfilename('fullpath')),'c20_packet_readback.m'))]; rows={};
 for k=1:numel(sources)
  src=fullfile(sources(k).folder,sources(k).name); hash=c20_v4_io('hash',src);
  rows(end+1,:)={string(src),string(hash)}; %#ok<AGROW>
@@ -90,9 +90,12 @@ c20_v4_io('text',fullfile(packet,'README.md'),strjoin({'Read run_report.md first
  'FILE_MANIFEST.csv provides all payload sizes and SHA256. Actual archive extraction/readback results are saved beside the outer ZIP.'},newline));
 files=c20_v4_io('inventory',packet); writetable(files,fullfile(packet,'FILE_MANIFEST.csv'));
 archive=fullfile(delivery,'review_packet.zip'); assert(~isfile(archive)); zip(archive,{'*'},packet);
-decoded=fullfile(delivery,'packet_readback'); assert(~isfolder(decoded)); mkdir(decoded); unzip(archive,decoded);
-list=readtable(fullfile(decoded,'FILE_MANIFEST.csv'),TextType='string');
-for k=1:height(list), assert(strcmpi(c20_v4_io('hash',fullfile(decoded,list.path(k))),list.sha256(k))); end
-verified=c20_v5_verify(decoded); c20_v4_io('json',fullfile(delivery,'packet_readback_result.json'),verified);
+c20_packet_readback(archive,fullfile(delivery,'packet_readback_storage.json'),@(decoded)persistReadback(decoded,delivery));
+
 disp(['ARCHIVE=' archive]);
+end
+
+function verified=persistReadback(decoded,delivery)
+verified=c20_v5_verify(decoded);
+c20_v4_io('json',fullfile(delivery,'packet_readback_result.json'),verified);
 end

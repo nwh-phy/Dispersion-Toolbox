@@ -3,7 +3,7 @@ function archive = c20_v4_finish(out)
 assert(isfile(fullfile(out,'validation','simulation_summary.csv')));
 assert(isfile(fullfile(out,'validation','profiles','profile_objective.csv')));
 c20_v4_supplement(out);
-src={which('c20_v4_supplement'),which('c20_v4_verify_packet'),which('c20_v4_package'),[mfilename('fullpath') '.m']};
+src={which('c20_v4_supplement'),which('c20_v4_verify_packet'),which('c20_v4_package'),which('c20_packet_readback'),[mfilename('fullpath') '.m']};
 rows=cell(numel(src),2);
 for k=1:numel(src)
  hash=c20_v4_io('hash',src{k}); rows(k,:)={string(src{k}),string(hash)};

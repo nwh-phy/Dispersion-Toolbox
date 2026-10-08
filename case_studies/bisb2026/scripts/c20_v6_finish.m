@@ -33,7 +33,7 @@ writetable(cell2table(checks,'VariableNames',{'session','key','n','reused','inpu
 b=load(fullfile(out,'appendix','parent_hashes_before.mat'));
 assert(isequal(b.before{1},c20_v4_io('inventory',b.p2))&&isequal(b.before{2},c20_v4_io('inventory',b.p5)));
 r=runtests('tests/C20PhysicsPreviewTest.m'); assert(all([r.Passed])); writetable(table(r),fullfile(out,'appendix','final_tests.csv'));
-sources={which('c20_v6_physics_figures'),which('qe_spectral_centroids'),which('c20_v6_finish')}; rows={};
+sources={which('c20_v6_physics_figures'),which('qe_spectral_centroids'),which('c20_v6_finish'),which('c20_packet_readback')}; rows={};
 for k=1:numel(sources)
  file=sources{k}; h=c20_v4_io('hash',file); [~,name,ext]=fileparts(file); copyfile(file,fullfile(out,'appendix',[name '_final' ext]));
  rows(end+1,:)={string(file),string(h)}; %#ok<AGROW>
@@ -58,8 +58,11 @@ for k=1:numel(files)
 end
 manifest=c20_v4_io('inventory',packet); writetable(manifest,fullfile(packet,'FILE_MANIFEST.csv'));
 archive=fullfile(out,'physics_packet.zip'); assert(~isfile(archive)); zip(archive,{'*'},packet);
-decoded=fullfile(out,'packet_readback'); assert(~isfolder(decoded)); mkdir(decoded); unzip(archive,decoded);
-for k=1:height(manifest), assert(strcmpi(c20_v4_io('hash',fullfile(decoded,manifest.path(k))),manifest.sha256(k))); end
+c20_packet_readback(archive,fullfile(out,'packet_readback_storage.json'),@(decoded)persistReadback(decoded,out));
+disp(['PHYSICS_PACKET=' archive]);
+end
+
+function result=persistReadback(decoded,out)
 count=0;
 for sid={'590_PL2_10w','n0_PL2_10w_repeat'}
  a=load(fullfile(decoded,sid{1},'fit_details.mat'));
@@ -71,6 +74,7 @@ for sid={'590_PL2_10w','n0_PL2_10w_repeat'}
   end
  end
 end
-assert(count==56); c20_v4_io('json',fullfile(out,'packet_readback.json'),struct('payload_hashes',height(manifest),'fit_arrays',count,'passed',true));
-disp(['PHYSICS_PACKET=' archive]);
+manifest=readtable(fullfile(decoded,'FILE_MANIFEST.csv'),TextType='string');
+assert(count==56); result=struct('payload_hashes',height(manifest),'fit_arrays',count,'passed',true);
+c20_v4_io('json',fullfile(out,'packet_readback.json'),result);
 end

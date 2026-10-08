@@ -23,12 +23,14 @@ c20_v4_io('text',fullfile(packet,'README.md'),strjoin({ ...
 manifest=c20_v4_io('inventory',packet); writetable(manifest,fullfile(packet,'FILE_MANIFEST.csv'));
 archive=fullfile(out,'review_packet.zip'); assert(~isfile(archive));
 zip(archive,{'*'},packet);
-decoded=fullfile(out,'packet_readback'); assert(~isfolder(decoded)); mkdir(decoded); unzip(archive,decoded);
-got=readtable(fullfile(decoded,'FILE_MANIFEST.csv'),TextType='string');
-for k=1:height(got), assert(strcmpi(c20_v4_io('hash',fullfile(decoded,got.path(k))),got.sha256(k)),'ZIP file hash mismatch'); end
+c20_packet_readback(archive,fullfile(out,'packet_readback_storage.json'),@(decoded)persistReadback(decoded,out));
+disp(['ARCHIVE=' archive]);
+end
+
+function summary=persistReadback(decoded,out)
 result=c20_v4_verify_packet(decoded);
 save(fullfile(out,'packet_readback_result.mat'),'result');
 c20_v4_io('json',fullfile(out,'packet_readback_result.json'),rmfield(result,'fit_checks'));
 writetable(result.fit_checks,fullfile(out,'packet_readback_fit_checks.csv'));
-disp(['ARCHIVE=' archive]);
+summary=rmfield(result,'fit_checks');
 end
