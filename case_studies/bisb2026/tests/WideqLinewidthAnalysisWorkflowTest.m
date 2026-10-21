@@ -3,7 +3,7 @@ classdef WideqLinewidthAnalysisWorkflowTest < matlab.unittest.TestCase
         function scriptDeclaresLinewidthOnlyOutputs(testCase)
             caseRoot = fileparts(fileparts(mfilename('fullpath')));
             scriptPath = fullfile(caseRoot, 'scripts', ...
-                'run_wideq_linewidth_analysis.m');
+                'legacy_202605', 'run_wideq_linewidth_analysis.m');
 
             testCase.verifyTrue(isfile(scriptPath));
             src = fileread(scriptPath);
@@ -35,7 +35,7 @@ classdef WideqLinewidthAnalysisWorkflowTest < matlab.unittest.TestCase
         function scriptDoesNotIntroduceStrengthAnalysis(testCase)
             caseRoot = fileparts(fileparts(mfilename('fullpath')));
             scriptPath = fullfile(caseRoot, 'scripts', ...
-                'run_wideq_linewidth_analysis.m');
+                'legacy_202605', 'run_wideq_linewidth_analysis.m');
 
             testCase.verifyTrue(isfile(scriptPath));
             src = fileread(scriptPath);

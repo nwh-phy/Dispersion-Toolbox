@@ -1,8 +1,32 @@
 # BiSb case-study 脚本索引
 
-在项目根目录的 MATLAB 里运行。脚本用 `bisb_find_project_root` 找根目录、自己加 `src/` 路径，结果写到 `paper_results/<名字>/<时间戳>/`（各结果文件夹的说明见本地的 `paper_results/00_INDEX.md`）。
+在项目根目录的 MATLAB 里运行：`startup; addpath(genpath(fullfile(pwd,'case_studies','bisb2026')))`，再按函数名调用。脚本用 `bisb_find_project_root`（留在本目录顶层，三批共用）找根目录、自己加 `src/` 路径，结果写到 `paper_results/<名字>/<时间戳>/`（各结果文件夹的说明见本地的 `paper_results/00_INDEX.md`）。
 
-77 个脚本分三批。7 个 Lorentz 追踪脚本和 `run_b1_double_peak_binning_analysis.m` 靠 `addpath(script_dir)` 调用同目录的函数，`case_studies/bisb2026/tests` 里有 3 个测试按相对路径找这个目录，所以脚本都放在同一层，不分子文件夹。
+目录（2026-10-21 整理）：
+
+| 位置 | 内容 | 状态 |
+|---|---|---|
+| 本目录顶层 | 2026-10 起的 B1 分析：全 q、adaptive-q、低 q 的 P1/P1b/P2a/P2b、简化流程检验 | 在用 |
+| `legacy_c20/` | C20 v2–v6（2026-09）和 v7 镜像检验 | 冻结 |
+| `legacy_202605/` | 论文期脚本（2026-03 至 05） | 冻结 |
+
+冻结的两批不再修改。v2、v4、v5 的入口脚本把自己和依赖文件的旧路径（`case_studies/bisb2026/scripts/<名字>.m`）写进了溯源清单，移动后不能原样重跑；要重跑先改清单里的路径。
+
+## 当前：B1 低 q（2026-10-09 起）
+
+| 批次 | 脚本 | 作用 |
+|---|---|---|
+| adaptive-q | `b1_adaptq_config.m`、`_build`、`_look`、`_fit_worker`、`_aggregate`、`_dispersion`；图 `_e0_figs`、`_fig_twopeak`、`_fig_saturation`、`_fig_kinematic`；诊断 `_lowq_diag`、`_raw_lowq` | 计数允许处用原生通道（N=1）的自适应分箱，阶段 1–6 同全 q |
+| P1 | `b1_p1_config.m`、`b1_p1_lowq.m`、`b1_p1_report.m` | 低 q 复核第一步：单个原生通道的拟合 |
+| P1b | `b1_p1b_config.m`、`_diag`、`_noise`、`_lowq`、`_report` | 不同 kernel 的低 q 拟合，帧数据的噪声模型 σ² = g(E)·counts |
+| P2a | `b1_p2a_inputs(_config)`、`_response(_config)`、`_build_ops`、`_operator(_config)`、`_synth(_config)`、`_escale` | 590 的输入检查、slice 响应、块算子、注入回收 |
+| P2b | `b1_p2b_config.m`、`b1_p2b_fit.m`、`b1_p2b_dispersion.m` | 20 个原生通道共用一个 L(Q,E) 的前向拟合，以及两支色散 |
+| P2b 的 h | `b1_p2b_h66_run.m`、`b1_p2b_h66_conv.m`、`b1_p2b_hscan_run.m`、`b1_p2b_hscan_summary.py` | 狭缝接收 h = 0.0005–0.0066 的重跑与扫描；配置靠 `h66/`、`hscan/` 里的同名文件覆盖（待改成传参数） |
+| 简化流程 | `b1_simple_config.m`、`b1_simple_root.m`、`b1_simple_s0.m` | SI 式简单模型在多小的 q 还可靠 |
+| 单项检验 | `b1_kinematic_ridge.m`、`b1_layer_fig.m`（配 `b1_layer_compare.py`）、`b1_whole_band_check.m` | 列归一化 q-E 图的峰脊、1L/2L 对比图、不分两支的整个 B1 带 |
+| 共用 | `b1_sha256.m` | 配置和输入的 SHA-256，用来给输出文件夹命名 |
+
+报告在 `case_studies/bisb2026/reports/`。
 
 ## 当前：B1 全 q 双分量（2026-10）
 
@@ -23,9 +47,9 @@
 - `run_zlp_joint_fit_pilot.m`：ZLP 联合拟合和旧的幂律窗口拟合对比
 - `run_zlp_aux_phonon_test.m`：50–150 meV 辅助峰是否含 MoS₂ 声子
 - `run_zlp_ncomp_test.m`：低 q 处 ZLP 分量数
-- `run_b1_mirror_q_v7.m`：±q 镜像检验，b1_fullq 阶段 0 的参照
+- `legacy_c20/run_b1_mirror_q_v7.m`：±q 镜像检验，b1_fullq 阶段 0 的参照（用到 C20 v4 的读写和作图函数，所以和 C20 放在一起）
 
-## C20（2026-09，Codex 在 Windows 上写的）
+## C20（2026-09，Codex 在 Windows 上写的；`legacy_c20/`，冻结）
 
 v5、v6 按固定路径读取上一版的运行目录并校验 ZIP 哈希，不要重跑（v5 的 `next_action.md` 写明不重跑）。
 
@@ -40,9 +64,9 @@ v5、v6 按固定路径读取上一版的运行目录并校验 ZIP 哈希，不�
 
 测试：`tests/C20*.m`、`tests/test_b1_component_pilot_v2.m`。
 
-## 论文期（2026-03 至 05）
+## 论文期（2026-03 至 05；`legacy_202605/`，冻结）
 
-对应的测试在 `case_studies/bisb2026/tests/`。
+对应的测试在 `case_studies/bisb2026/tests/`。7 个 Lorentz 追踪脚本和 `run_b1_double_peak_binning_analysis.m` 靠 `addpath(script_dir)` 调用同目录的函数，所以这批整体放在一个文件夹里。
 
 | 用途 | 脚本 |
 |---|---|

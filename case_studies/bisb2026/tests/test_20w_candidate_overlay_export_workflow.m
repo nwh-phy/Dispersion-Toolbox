@@ -6,10 +6,10 @@ end
 function testOverlayScriptDeclaresEvidenceInputsAndOutputs(testCase)
 case_root = fileparts(fileparts(mfilename('fullpath')));
 script_path = fullfile(case_root, 'scripts', ...
-    'run_20w_candidate_overlay_export.m');
+    'legacy_202605', 'run_20w_candidate_overlay_export.m');
 
 assertTrue(testCase, isfile(script_path), ...
-    'case_studies/bisb2026/scripts/run_20w_candidate_overlay_export.m should exist.');
+    'case_studies/bisb2026/scripts/legacy_202605/run_20w_candidate_overlay_export.m should exist.');
 
 txt = fileread(script_path);
 
@@ -36,10 +36,10 @@ end
 function testOverlayScriptSeparatesMainFitFromCandidateOnlyLayer(testCase)
 case_root = fileparts(fileparts(mfilename('fullpath')));
 script_path = fullfile(case_root, 'scripts', ...
-    'run_20w_candidate_overlay_export.m');
+    'legacy_202605', 'run_20w_candidate_overlay_export.m');
 
 assertTrue(testCase, isfile(script_path), ...
-    'case_studies/bisb2026/scripts/run_20w_candidate_overlay_export.m should exist.');
+    'case_studies/bisb2026/scripts/legacy_202605/run_20w_candidate_overlay_export.m should exist.');
 
 txt = fileread(script_path);
 

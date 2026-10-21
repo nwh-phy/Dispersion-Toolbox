@@ -10,6 +10,7 @@ addpath(scripts_dir);
 project_root = bisb_find_project_root(scripts_dir);
 run(fullfile(project_root, 'startup.m'));
 addpath(scripts_dir);
+addpath(fullfile(scripts_dir, 'legacy_202605'));
 testCase.TestData.project_root = project_root;
 end
 

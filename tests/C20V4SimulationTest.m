@@ -4,6 +4,7 @@ classdef C20V4SimulationTest < matlab.unittest.TestCase
    root=fileparts(fileparts(mfilename('fullpath')));
    t.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(root,'src'),IncludingSubfolders=true));
    t.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(root,'case_studies','bisb2026','scripts')));
+   t.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(root,'case_studies','bisb2026','scripts','legacy_c20')));
   end
  end
  methods(Test)

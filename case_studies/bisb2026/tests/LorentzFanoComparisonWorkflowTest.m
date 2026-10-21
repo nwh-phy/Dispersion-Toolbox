@@ -3,7 +3,7 @@ classdef LorentzFanoComparisonWorkflowTest < matlab.unittest.TestCase
         function scriptDeclaresRequestedComparisonOutputs(testCase)
             caseRoot = fileparts(fileparts(mfilename('fullpath')));
             scriptPath = fullfile(caseRoot, 'scripts', ...
-                'run_lorentz_fano_comparison.m');
+                'legacy_202605', 'run_lorentz_fano_comparison.m');
 
             testCase.verifyTrue(isfile(scriptPath));
             src = fileread(scriptPath);
@@ -25,7 +25,7 @@ classdef LorentzFanoComparisonWorkflowTest < matlab.unittest.TestCase
         function scriptKeepsComparisonFocusedOnPeakAndGamma(testCase)
             caseRoot = fileparts(fileparts(mfilename('fullpath')));
             scriptPath = fullfile(caseRoot, 'scripts', ...
-                'run_lorentz_fano_comparison.m');
+                'legacy_202605', 'run_lorentz_fano_comparison.m');
 
             testCase.verifyTrue(isfile(scriptPath));
             src = fileread(scriptPath);

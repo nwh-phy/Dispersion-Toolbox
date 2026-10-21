@@ -13,7 +13,7 @@ end
 function testEvidenceAuditScriptDeclaresV15CleanNoFitWorkflow(testCase)
 script_path = fullfile(testCase.TestData.project_root, ...
     'case_studies', 'bisb2026', 'scripts', ...
-    'run_b1_lorentz_peak_evidence_audit.m');
+    'legacy_202605', 'run_b1_lorentz_peak_evidence_audit.m');
 
 verifyTrue(testCase, isfile(script_path));
 src = fileread(script_path);

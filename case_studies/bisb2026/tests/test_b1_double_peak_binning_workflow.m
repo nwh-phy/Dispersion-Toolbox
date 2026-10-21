@@ -285,7 +285,7 @@ end
 function testWorkflowScriptDeclaresRequiredOutputsAndNoFallback(testCase)
 script_path = fullfile(testCase.TestData.project_root, ...
     'case_studies', 'bisb2026', 'scripts', ...
-    'run_b1_double_peak_binning_analysis.m');
+    'legacy_202605', 'run_b1_double_peak_binning_analysis.m');
 
 verifyTrue(testCase, isfile(script_path));
 src = fileread(script_path);
@@ -362,10 +362,10 @@ end
 function testB1FitScriptsExposeCustomBranchInputsWithoutChangingDefaults(testCase)
 analysis_path = fullfile(testCase.TestData.project_root, ...
     'case_studies', 'bisb2026', 'scripts', ...
-    'run_b1_physical_fit_analysis.m');
+    'legacy_202605', 'run_b1_physical_fit_analysis.m');
 enhancement_path = fullfile(testCase.TestData.project_root, ...
     'case_studies', 'bisb2026', 'scripts', ...
-    'run_b1_physical_fit_enhancements.m');
+    'legacy_202605', 'run_b1_physical_fit_enhancements.m');
 
 analysis_src = fileread(analysis_path);
 enhancement_src = fileread(enhancement_path);
@@ -389,7 +389,7 @@ end
 function testBalancedHighQBin7LorentzTrackingScriptDeclaresPlan(testCase)
 script_path = fullfile(testCase.TestData.project_root, ...
     'case_studies', 'bisb2026', 'scripts', ...
-    'run_b1_lorentz_tracking_balanced_highqbin7_sg71.m');
+    'legacy_202605', 'run_b1_lorentz_tracking_balanced_highqbin7_sg71.m');
 
 verifyTrue(testCase, isfile(script_path));
 src = fileread(script_path);
@@ -473,7 +473,7 @@ end
 function testUntil300ScriptUsesHardGateAndDoesNotFitAboveGate(testCase)
 script_path = fullfile(testCase.TestData.project_root, ...
     'case_studies', 'bisb2026', 'scripts', ...
-    'run_b1_lorentz_tracking_until300.m');
+    'legacy_202605', 'run_b1_lorentz_tracking_until300.m');
 
 verifyTrue(testCase, isfile(script_path));
 src = fileread(script_path);
@@ -559,7 +559,7 @@ end
 function testUpperStabilityScriptDeclaresGateAndNoFitAboveGate(testCase)
 script_path = fullfile(testCase.TestData.project_root, ...
     'case_studies', 'bisb2026', 'scripts', ...
-    'run_b1_lorentz_tracking_upper_stability.m');
+    'legacy_202605', 'run_b1_lorentz_tracking_upper_stability.m');
 
 verifyTrue(testCase, isfile(script_path));
 src = fileread(script_path);
@@ -791,7 +791,7 @@ end
 function testRidgeGuidedScriptDeclaresClean300ReferencesAndTemplateOnly(testCase)
 script_path = fullfile(testCase.TestData.project_root, ...
     'case_studies', 'bisb2026', 'scripts', ...
-    'run_b1_lorentz_tracking_ridge_guided_optimization.m');
+    'legacy_202605', 'run_b1_lorentz_tracking_ridge_guided_optimization.m');
 
 verifyTrue(testCase, isfile(script_path));
 src = fileread(script_path);
@@ -833,7 +833,7 @@ end
 function testRidgeGuidedFailureRetryScriptDeclaresTargetedNoFitWorkflow(testCase)
 script_path = fullfile(testCase.TestData.project_root, ...
     'case_studies', 'bisb2026', 'scripts', ...
-    'run_b1_lorentz_tracking_ridge_guided_failure_retry.m');
+    'legacy_202605', 'run_b1_lorentz_tracking_ridge_guided_failure_retry.m');
 
 verifyTrue(testCase, isfile(script_path));
 src = fileread(script_path);
@@ -862,7 +862,7 @@ end
 function testUpperRapidRisePlateauScriptDeclaresNoFitWorkflow(testCase)
 script_path = fullfile(testCase.TestData.project_root, ...
     'case_studies', 'bisb2026', 'scripts', ...
-    'run_b1_lorentz_tracking_upper_rapidrise_plateau.m');
+    'legacy_202605', 'run_b1_lorentz_tracking_upper_rapidrise_plateau.m');
 
 verifyTrue(testCase, isfile(script_path));
 src = fileread(script_path);

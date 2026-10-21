@@ -8,6 +8,7 @@ classdef C20PacketReadbackTest < matlab.unittest.TestCase
         function setupPacket(t)
             project=fileparts(fileparts(mfilename('fullpath')));
             t.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(project,'case_studies','bisb2026','scripts')));
+            t.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(project,'case_studies','bisb2026','scripts','legacy_c20')));
             fixture=t.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             t.Root=fixture.Folder; payload=fullfile(t.Root,'payload'); mkdir(payload);
             c20_v4_io('text',fullfile(payload,'sample.txt'),'synthetic readback only');

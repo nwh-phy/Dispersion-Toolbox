@@ -6,10 +6,10 @@ end
 function testScriptDeclaresFiveRequestedEnhancements(testCase)
 case_root = fileparts(fileparts(mfilename('fullpath')));
 script_path = fullfile(case_root, 'scripts', ...
-    'run_b1_physical_fit_enhancements.m');
+    'legacy_202605', 'run_b1_physical_fit_enhancements.m');
 
 assertTrue(testCase, isfile(script_path), ...
-    'case_studies/bisb2026/scripts/run_b1_physical_fit_enhancements.m should exist.');
+    'case_studies/bisb2026/scripts/legacy_202605/run_b1_physical_fit_enhancements.m should exist.');
 
 txt = fileread(script_path);
 
@@ -29,10 +29,10 @@ end
 function testScriptUsesWideQAndDeclaresExpectedOutputs(testCase)
 case_root = fileparts(fileparts(mfilename('fullpath')));
 script_path = fullfile(case_root, 'scripts', ...
-    'run_b1_physical_fit_enhancements.m');
+    'legacy_202605', 'run_b1_physical_fit_enhancements.m');
 
 assertTrue(testCase, isfile(script_path), ...
-    'case_studies/bisb2026/scripts/run_b1_physical_fit_enhancements.m should exist.');
+    'case_studies/bisb2026/scripts/legacy_202605/run_b1_physical_fit_enhancements.m should exist.');
 
 txt = fileread(script_path);
 

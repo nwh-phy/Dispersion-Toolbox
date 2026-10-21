@@ -241,7 +241,7 @@ end
 function testEpsilonSensitivityScriptKeepsOnlyB1(testCase)
 project_root = fileparts(fileparts(mfilename('fullpath')));
 src = fileread(fullfile(project_root, 'case_studies', 'bisb2026', ...
-    'scripts', 'run_epsilon_bg_sensitivity.m'));
+    'scripts', 'legacy_202605', 'run_epsilon_bg_sensitivity.m'));
 
 verifyTrue(testCase, contains(src, 'Refit B1 with different dielectric backgrounds'));
 verifyTrue(testCase, contains(src, 'branches = 1;'));
@@ -252,7 +252,7 @@ end
 function testGuiHistoryDispersionPlotsFitLineOnlyForB1(testCase)
 project_root = fileparts(fileparts(mfilename('fullpath')));
 src = fileread(fullfile(project_root, 'case_studies', 'bisb2026', ...
-    'scripts', 'run_590_gui_history_area_analysis.m'));
+    'scripts', 'legacy_202605', 'run_590_gui_history_area_analysis.m'));
 
 verifyTrue(testCase, contains(src, 'if b == 1'));
 verifyTrue(testCase, contains(src, 'local_plot_supported_fit_curve(ax, best.fit, col, b);'));
@@ -262,7 +262,7 @@ end
 function testGuiHistorySupportsLegacyB2PointOverride(testCase)
 project_root = fileparts(fileparts(mfilename('fullpath')));
 src = fileread(fullfile(project_root, 'case_studies', 'bisb2026', ...
-    'scripts', 'run_590_gui_history_area_analysis.m'));
+    'scripts', 'legacy_202605', 'run_590_gui_history_area_analysis.m'));
 
 verifyTrue(testCase, contains(src, 'local_apply_branch_point_overrides'));
 verifyTrue(testCase, contains(src, 'legacy_branch_points_260521'));

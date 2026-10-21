@@ -6,10 +6,10 @@ end
 function testScriptDeclaresThreeSessionComparison(testCase)
 case_root = fileparts(fileparts(mfilename('fullpath')));
 script_path = fullfile(case_root, 'scripts', ...
-    'run_lowq_gap_comparison.m');
+    'legacy_202605', 'run_lowq_gap_comparison.m');
 
 assertTrue(testCase, isfile(script_path), ...
-    'case_studies/bisb2026/scripts/run_lowq_gap_comparison.m should exist.');
+    'case_studies/bisb2026/scripts/legacy_202605/run_lowq_gap_comparison.m should exist.');
 
 txt = fileread(script_path);
 
@@ -31,10 +31,10 @@ end
 function testScriptUsesSameGapModelsAs20wDiagnostic(testCase)
 case_root = fileparts(fileparts(mfilename('fullpath')));
 script_path = fullfile(case_root, 'scripts', ...
-    'run_lowq_gap_comparison.m');
+    'legacy_202605', 'run_lowq_gap_comparison.m');
 
 assertTrue(testCase, isfile(script_path), ...
-    'case_studies/bisb2026/scripts/run_lowq_gap_comparison.m should exist.');
+    'case_studies/bisb2026/scripts/legacy_202605/run_lowq_gap_comparison.m should exist.');
 
 txt = fileread(script_path);
 

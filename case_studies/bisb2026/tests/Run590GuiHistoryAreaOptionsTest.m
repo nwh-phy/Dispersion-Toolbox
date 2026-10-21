@@ -3,7 +3,7 @@ classdef Run590GuiHistoryAreaOptionsTest < matlab.unittest.TestCase
         function acceptsQRangeAndOutputTagOptions(testCase)
             caseRoot = fileparts(fileparts(mfilename('fullpath')));
             scriptPath = fullfile(caseRoot, 'scripts', ...
-                'run_590_gui_history_area_analysis.m');
+                'legacy_202605', 'run_590_gui_history_area_analysis.m');
 
             testCase.verifyTrue(isfile(scriptPath));
             src = fileread(scriptPath);
@@ -27,7 +27,7 @@ classdef Run590GuiHistoryAreaOptionsTest < matlab.unittest.TestCase
         function defaultsQRangeToQ015WhenUnspecified(testCase)
             caseRoot = fileparts(fileparts(mfilename('fullpath')));
             scriptPath = fullfile(caseRoot, 'scripts', ...
-                'run_590_gui_history_area_analysis.m');
+                'legacy_202605', 'run_590_gui_history_area_analysis.m');
 
             testCase.verifyTrue(isfile(scriptPath));
             src = fileread(scriptPath);

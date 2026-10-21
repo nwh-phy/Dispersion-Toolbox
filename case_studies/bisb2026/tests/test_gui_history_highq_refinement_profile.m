@@ -5,7 +5,7 @@ end
 function setupOnce(testCase)
 case_root = fileparts(fileparts(mfilename('fullpath')));
 testCase.TestData.script_src = fileread(fullfile(case_root, ...
-    'scripts', 'run_590_gui_history_area_analysis.m'));
+    'scripts', 'legacy_202605', 'run_590_gui_history_area_analysis.m'));
 end
 
 function testTwentyWHighQRefinementIsSessionScoped(testCase)
