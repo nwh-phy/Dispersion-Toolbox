@@ -8,9 +8,9 @@
 |---|---|---|
 | 本目录顶层 | 2026-10 起的 B1 分析：全 q、adaptive-q、低 q 的 P1/P1b/P2a/P2b、简化流程检验 | 在用 |
 | `legacy_c20/` | C20 v2–v6（2026-09）和 v7 镜像检验 | 冻结 |
-| `legacy_202605/` | 论文期脚本（2026-03 至 05） | 冻结 |
+| `legacy_202605/` | 论文期脚本（2026-03 至 05），以及只给它们用的 9 个函数（2026-10-21 从 `src/` 移来，见下） | 冻结 |
 
-冻结的两批不再修改。v2、v4、v5 的入口脚本把自己和依赖文件的旧路径（`case_studies/bisb2026/scripts/<名字>.m`）写进了溯源清单，移动后不能原样重跑；要重跑先改清单里的路径。
+冻结的两批不再修改。v2、v4、v5 的入口脚本把自己和依赖文件的旧路径（`case_studies/bisb2026/scripts/<名字>.m`、`src/b1_*.m`）写进了溯源清单，移动后不能原样重跑；要重跑先改清单里的路径。
 
 ## 当前：B1 低 q（2026-10-09 起）
 
@@ -67,6 +67,8 @@ v5、v6 按固定路径读取上一版的运行目录并校验 ZIP 哈希，不�
 ## 论文期（2026-03 至 05；`legacy_202605/`，冻结）
 
 对应的测试在 `case_studies/bisb2026/tests/`。7 个 Lorentz 追踪脚本和 `run_b1_double_peak_binning_analysis.m` 靠 `addpath(script_dir)` 调用同目录的函数，所以这批整体放在一个文件夹里。
+
+2026-10-21 从 `src/` 移来的函数（使用者只有本批脚本、C20 v2 和测试）：`b1_double_peak_binning_extract.m` 及其子函数 `b1_double_peak_candidate_path_select.m`、`b1_double_peak_ridge_reference.m`，`b1_double_peak_repair_tracking_points.m`、`b1_double_peak_upper_stability_metrics.m`、`b1_peak_evidence_audit_classify.m`、`qe_recommend_lowq_background_configs.m`、`qe_summarize_lowq_background_eval.m`，以及早期的 10w/20w 对比脚本 `analyze_dispersion.m`。
 
 | 用途 | 脚本 |
 |---|---|

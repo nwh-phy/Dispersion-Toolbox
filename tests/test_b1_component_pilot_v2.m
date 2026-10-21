@@ -3,6 +3,7 @@ tests=functiontests(localfunctions);
 end
 function setupOnce(~)
 root=fileparts(fileparts(mfilename('fullpath'))); addpath(genpath(fullfile(root,'src')));
+addpath(fullfile(root,'case_studies','bisb2026','scripts','legacy_202605'));
 end
 function q=fixture(dq)
 q=struct('q_Ainv',(-.015:dq:.015),'dq_Ainv',dq,'energy_meV',(300:4:1800)');

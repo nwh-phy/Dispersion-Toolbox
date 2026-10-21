@@ -6,6 +6,7 @@ end
 function setupOnce(testCase)
 project_root = fileparts(fileparts(fileparts(fileparts(mfilename('fullpath')))));
 run(fullfile(project_root, 'startup.m'));
+addpath(fullfile(project_root, 'case_studies', 'bisb2026', 'scripts', 'legacy_202605'));
 testCase.TestData.project_root = project_root;
 end
 
