@@ -1,5 +1,6 @@
-import csv, sys
-R = '/Users/nwh/Documents/Dispersion-Toolbox/paper_results/b1_adaptq/20261009T054142Z/p2b/'
+import csv, os, sys
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+R = os.path.join(ROOT, 'paper_results', 'b1_adaptq', '20261009T054142Z', 'p2b') + os.sep
 runs = [(0.0005, 'fit_590_33db389c'), (0.001, 'fit_590_f594eda0'), (0.002, 'fit_590_679b7905'), (0.004, 'fit_590_91493ef7'), (0.0066, 'fit_590_79ee195c')]
 print('h        variant        chi2     dchi2(vs best)  chi2/dof  holdout chi2/pt  holdout mean  neg.tails  lobo pred')
 rows = []
