@@ -1,4 +1,4 @@
-function out = b1_p2b_fit(run_root)
+function out = b1_p2b_fit(run_root, cfg, ocfg)
 % P2b on 590: one shared loss function L(Q,E) for the 20 native channels
 % |q| = 0.0005-0.005 (both signs) and the six time blocks, seen through the
 % block operators of P2a step 2 (slice response, measured drift, two-Pearson
@@ -15,10 +15,22 @@ function out = b1_p2b_fit(run_root)
 % statistical errors (Jacobian, scaled by chi2/dof). The dispersion (E0 and apex)
 % is assembled with the earlier binned fits at 0.0055-0.0155 and fitted with
 % E^2 = A q / (1 + rho q) (gapless) and E^2 = Delta^2 + A q / (1 + rho q) (gapped).
+% cfg and ocfg default to b1_p2b_config and b1_p2a_operator_config; reruns pass
+% modified copies (b1_p2b_slot_config). Only cfg names the output folder, so a run
+% with another operator config needs its own cfg.version (checked against the
+% config.json of an existing folder).
 % Output: <run_root>/p2b/fit_590_<config hash>/.
 root=bisb_find_project_root(fileparts(mfilename('fullpath'))); addpath(genpath(fullfile(root,'src')));
-cfg=b1_p2b_config(); ocfg=b1_p2a_operator_config(); ocfg.exit_q=cfg.exit_q; tag=b1_sha256(cfg); t0=tic;
-out=fullfile(run_root,'p2b',sprintf('fit_590_%s',tag(1:8))); if ~isfolder(out), mkdir(out); end
+if nargin<2, cfg=b1_p2b_config(); end
+if nargin<3, ocfg=b1_p2a_operator_config(); end
+ocfg.exit_q=cfg.exit_q; tag=b1_sha256(cfg); t0=tic;
+out=fullfile(run_root,'p2b',sprintf('fit_590_%s',tag(1:8)));
+if isfile(fullfile(out,'config.json'))
+ old=jsondecode(fileread(fullfile(out,'config.json')));
+ assert(isfield(old,'operator_config') && strcmp(jsonencode(jsondecode(jsonencode(ocfg))),jsonencode(old.operator_config)), ...
+  'b1_p2b_fit:OperatorConfig','%s holds a run with another operator config; give this one its own cfg.version',out);
+end
+if ~isfolder(out), mkdir(out); end
 ind=fullfile(run_root,'p2a','inputs_590_PL2_10w_66385d96'); rd=fullfile(ind,'response_42ffc295');
 L=load(fullfile(ind,'p2a_cube.mat'),'cube'); cube=L.cube; q=cube.q(:).'; dq=cube.dq;
 RR=load(fullfile(rd,'response.mat'),'R','J6'); R=RR.R; J6=RR.J6;

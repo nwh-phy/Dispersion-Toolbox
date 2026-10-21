@@ -7,10 +7,9 @@ function T = b1_p2b_h66_conv(run_root)
 %   effect: max |shape(h 0.0005) - shape(h 0.0066, 105)| / sqrt(mu)  (shape = counts scaled to
 %           the same window sum, i.e. what a residue refit cannot absorb)
 % Output: <run_root>/p2b/h66_conv/.
-here = fileparts(mfilename('fullpath')); root = b1_simple_root(); addpath(fullfile(here, 'h66'));
-assert(contains(which('b1_p2a_operator_config'), [filesep 'h66' filesep]), 'h66 override not first on the path');
+root = b1_simple_root();
 if nargin < 1, run_root = fullfile(root, 'paper_results', 'b1_adaptq', '20261009T054142Z'); end
-cfg = b1_p2b_config(); ocfg0 = b1_p2a_operator_config(); t0 = tic;
+[cfg, ocfg0] = b1_p2b_slot_config('h66'); t0 = tic;
 out = fullfile(run_root, 'p2b', 'h66_conv'); if ~isfolder(out), mkdir(out); end
 S = load(fullfile(run_root, 'p2b', 'fit_590_691c36ad', 'p2b_results.mat'), 'res'); F = S.res(1).fit;
 ind = fullfile(run_root, 'p2a', 'inputs_590_PL2_10w_66385d96'); rd = fullfile(ind, 'response_42ffc295');

@@ -21,7 +21,7 @@
 | P1b | `b1_p1b_config.m`、`_diag`、`_noise`、`_lowq`、`_report` | 不同 kernel 的低 q 拟合，帧数据的噪声模型 σ² = g(E)·counts |
 | P2a | `b1_p2a_inputs(_config)`、`_response(_config)`、`_build_ops`、`_operator(_config)`、`_synth(_config)`、`_escale` | 590 的输入检查、slice 响应、块算子、注入回收 |
 | P2b | `b1_p2b_config.m`、`b1_p2b_fit.m`、`b1_p2b_dispersion.m` | 20 个原生通道共用一个 L(Q,E) 的前向拟合，以及两支色散 |
-| P2b 的 h | `b1_p2b_h66_run.m`、`b1_p2b_h66_conv.m`、`b1_p2b_hscan_run.m`、`b1_p2b_hscan_summary.py` | 狭缝接收 h = 0.0005–0.0066 的重跑与扫描；配置靠 `h66/`、`hscan/` 里的同名文件覆盖（待改成传参数） |
+| P2b 的 h | `b1_p2b_slot_config.m`、`b1_p2b_h66_run.m`、`b1_p2b_h66_conv.m`、`b1_p2b_hscan_run.m`、`b1_p2b_hscan_summary.py` | 狭缝接收 h = 0.0005–0.0066 的重跑与扫描。`b1_p2b_slot_config('h66')` 或 `('hscan', h)` 在 `b1_p2b_config`、`b1_p2a_operator_config` 的基础上改出两份配置，传给 `b1_p2b_fit(run_root, cfg, ocfg)` |
 | 简化流程 | `b1_simple_config.m`、`b1_simple_root.m`、`b1_simple_s0.m` | SI 式简单模型在多小的 q 还可靠 |
 | 单项检验 | `b1_kinematic_ridge.m`、`b1_layer_fig.m`（配 `b1_layer_compare.py`）、`b1_whole_band_check.m` | 列归一化 q-E 图的峰脊、1L/2L 对比图、不分两支的整个 B1 带 |
 | 共用 | `b1_sha256.m` | 配置和输入的 SHA-256，用来给输出文件夹命名 |
