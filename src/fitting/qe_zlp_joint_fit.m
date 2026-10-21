@@ -28,6 +28,30 @@ function fit = qe_zlp_joint_fit(E, Y, options)
 %   one aux_model peak per row, reported in aux_parameters and counted as
 %   background for the signal window) or are dropped from the data term
 %   (exclude_windows). The overshoot inequality still applies there.
+%   holdout_windows remove data completely: from the data term of both
+%   stages, the overshoot inequality, the guard term, the noise estimate and
+%   the fit statistics. The model is still evaluated on the continuous axis,
+%   so the window can be used to test the extrapolated background.
+%
+%   peak_E0_bounds (default signal_window) and peak_width_max bound the
+%   n_peaks loss peaks independently of the data windows; aux_width_max caps
+%   the aux widths (default: the aux window width). prefit_aux = true adds
+%   the aux peaks (with their detailed-balance gain side) to the ZLP prefit
+%   (Stage A), whose data are E <= prefit_loss_max outside holdout_windows.
+%   kernel_mode 'prefit' fixes the instrument kernel to the Stage A ZLP.
+%   start_E0 / start_width (rows = starts) give deterministic peak starts;
+%   when set, warm_u is tried as an additional start instead of replacing
+%   the first one.
+%
+%   zlp_mode 'prefit_shape' uses one response for the elastic and the
+%   inelastic signal: Stage B models the ZLP as a*R(E - c) with R the Stage A
+%   ZLP line shape (fixed), and convolves the inelastic terms with the same R
+%   centred at the same c, so the whole model shifts with one energy zero.
+%   Only c and a (linear) remain for the elastic term in Stage B.
+%   prefit_gain_min (meV, relative to the ZLP peak) limits the Stage A data on
+%   the gain side; prefit_overshoot_local restricts the Stage A overshoot
+%   inequality to the Stage A data; kernel_iterations repeats the fitted-ZLP
+%   kernel update until kernel and ZLP coefficients agree (default 1 = once).
 %
 %   prefactor (function of |E| in meV, e.g. from qe_kinematic_prefactor)
 %   multiplies the inelastic peaks before the convolution, so peak parameters
@@ -63,7 +87,7 @@ arguments
  options.guard_weight (1,1) double {mustBeNonnegative} = 0
  options.overshoot (1,1) logical = true
  options.overshoot_sigma (1,1) double {mustBeNonnegative} = 3
- options.kernel_mode char {mustBeMember(options.kernel_mode,{'fitted_zlp','core','none'})} = 'fitted_zlp'
+ options.kernel_mode char {mustBeMember(options.kernel_mode,{'fitted_zlp','core','none','prefit'})} = 'fitted_zlp'
  options.kernel_halfwidth (1,1) double {mustBePositive} = 300
  options.temperature_K (1,1) double {mustBePositive} = 300
  options.include_constant (1,1) logical = false
@@ -78,6 +102,17 @@ arguments
  options.n_starts (1,1) double {mustBePositive,mustBeInteger} = 8
  options.seed (1,1) double = 20261007
  options.max_iterations (1,1) double {mustBePositive,mustBeInteger} = 400
+ options.holdout_windows (:,2) double = zeros(0, 2)
+ options.peak_E0_bounds (1,2) double = [NaN NaN]
+ options.peak_width_max (1,1) double {mustBePositive} = 5000
+ options.aux_width_max (:,1) double = []
+ options.prefit_aux (1,1) logical = false
+ options.start_E0 (:,:) double = zeros(0, 0)
+ options.start_width (:,:) double = zeros(0, 0)
+ options.prefit_gain_min (1,1) double = -Inf
+ options.prefit_overshoot_local (1,1) logical = false
+ options.zlp_mode char {mustBeMember(options.zlp_mode,{'free','prefit_shape'})} = 'free'
+ options.kernel_iterations (1,1) double {mustBePositive,mustBeInteger} = 1
 end
 
 %% Data on a uniform grid
@@ -102,11 +137,24 @@ if isnan(options.core_halfwidth), options.core_halfwidth = 2.5 * fwhm0; end
 if isnan(options.prefit_loss_max), options.prefit_loss_max = fwhm0; end
 kT = 0.08617333262 * options.temperature_K;
 
-local = movmedian(Yf, 7);
-level_floor = max(1e-6 * zmax, prctile(local(valid & local > 0), 1));
-level = max(local, level_floor);
-hp = (Yf - movmean(Yf, 5)) ./ sqrt(level) / sqrt(0.8);
-noise_region = valid & abs(E - c0) > options.core_halfwidth;
+hold = false(size(E));
+for k = 1:size(options.holdout_windows, 1)
+    hold = hold | (E >= options.holdout_windows(k, 1) & E <= options.holdout_windows(k, 2));
+end
+if any(hold)
+    % Local statistics outside the holdout use no holdout data, and vice versa.
+    Yo = Yf; Yo(hold) = NaN; Yh = Yf; Yh(~hold) = NaN;
+    local = movmedian(Yo, 7, 'omitnan'); lh = movmedian(Yh, 7, 'omitnan'); local(hold) = lh(hold);
+    level_floor = max(1e-6 * zmax, prctile(local(valid & ~hold & local > 0), 1));
+    level = max(local, level_floor);
+    hp = (Yf - movmean(Yo, 5, 'omitnan')) ./ sqrt(level) / sqrt(0.8);
+else
+    local = movmedian(Yf, 7);
+    level_floor = max(1e-6 * zmax, prctile(local(valid & local > 0), 1));
+    level = max(local, level_floor);
+    hp = (Yf - movmean(Yf, 5)) ./ sqrt(level) / sqrt(0.8);
+end
+noise_region = valid & ~hold & abs(E - c0) > options.core_halfwidth;
 g = 1.4826 * median(abs(hp(noise_region) - median(hp(noise_region))));
 if ~(isfinite(g) && g > 0), g = 1; end
 sigma = g * sqrt(level);
@@ -124,18 +172,21 @@ sqrtW(~valid) = 0;
 for k = 1:size(options.exclude_windows, 1)
     sqrtW(E >= options.exclude_windows(k, 1) & E <= options.exclude_windows(k, 2)) = 0;
 end
+sqrtW(hold) = 0;
 
 sig = E >= options.signal_window(1) & E <= options.signal_window(2);
 guard = sig .* sqrt(options.guard_weight) ./ sigma;
-guard(~valid) = 0;
+guard(~valid | hold) = 0;
 
 margin = options.overshoot_sigma * sigma;
-over_mask = valid & E > c0 + options.core_halfwidth;
+over_mask = valid & ~hold & E > c0 + options.core_halfwidth;
 
 %% Fixed problem description shared by both stages
 P = struct('E', E, 'Y', Yf, 'valid', valid, 'dE', dE, 'sqrtW', sqrtW, 'guard', guard, ...
     'margin', margin, 'over_mask', over_mask, 'kT', kT, 'nz', options.n_zlp, 'opts', options);
 P.models = {};
+P.nb = 0;            % leading peak columns that are loss peaks (not aux)
+P.K_fixed = [];      % fixed instrument kernel ('prefit' mode, set after Stage A)
 lags = (-round(options.kernel_halfwidth / dE):round(options.kernel_halfwidth / dE)).' * dE;
 P.lags = lags;
 P.E_ext = (E(1) - lags(end)) + (0:(numel(E) + numel(lags) - 2)).' * dE;
@@ -169,32 +220,91 @@ lsq = optimoptions('lsqnonlin', 'Display', 'off', 'MaxIterations', options.max_i
     'MaxFunctionEvaluations', 200 * options.max_iterations, ...
     'FunctionTolerance', 1e-10, 'StepTolerance', 1e-10);
 
-%% Stage A: ZLP-only prefit on the gain side and the loss-side core
-PA = P; PA.np = 0;
-PA.sqrtW(E > c0 + options.prefit_loss_max) = 0;
-PA.guard(:) = 0;
-[uA, ~, ~, flagA] = lsqnonlin(@(u) local_residual(u, PA), u0, u_lo, u_hi, lsq);
-
-%% Stage B: joint fit, multistart over peak seeds (aux peaks mid-window in starts 1-2, random after)
+%% Peak and aux bounds (shared by both stages)
 np = options.n_peaks;
 aw = options.aux_windows;
 na = size(aw, 1);
-P.np = np + na;
-P.models = [repmat({peak_models(options.peak_model)}, 1, np), repmat({peak_models(options.aux_model)}, 1, na)];
 sw = options.signal_window;
-p_lo = [repmat([sw(1) log(2 * dE)], 1, np), reshape([aw(:, 1) log(2 * dE) * ones(na, 1)].', 1, [])];
-p_hi = [repmat([sw(2) log(5000)], 1, np), reshape([aw(:, 2) log(diff(aw, 1, 2))].', 1, [])];
-aux0 = reshape([mean(aw, 2) log(diff(aw, 1, 2) / 2)].', 1, []);
-lb = [u_lo p_lo]; ub = [u_hi p_hi];
+eb = options.peak_E0_bounds;
+if any(isnan(eb)), eb = sw; end
+wa = options.aux_width_max;
+if isempty(wa), wa = diff(aw, 1, 2); elseif isscalar(wa), wa = wa * ones(na, 1); end
+wa = reshape(wa, [], 1);
+assert(numel(wa) == na, 'qe_zlp_joint_fit:AuxWidth', 'aux_width_max needs one value per aux window.');
+a_lo = reshape([aw(:, 1) log(2 * dE) * ones(na, 1)].', 1, []);
+a_hi = reshape([aw(:, 2) log(wa)].', 1, []);
+aux0 = reshape([mean(aw, 2) log(min(diff(aw, 1, 2) / 2, wa / 2))].', 1, []);
+aux_models = repmat({peak_models(options.aux_model)}, 1, na);
+
+%% Stage A: ZLP prefit on the gain side and the loss side up to prefit_loss_max
+%  (the core by default). With prefit_aux the aux peaks are fitted as well, so
+%  their detailed-balance gain side does not bend the ZLP tails.
+PA = P; PA.np = 0; PA.nb = 0;
+PA.sqrtW(E > c0 + options.prefit_loss_max) = 0;
+PA.sqrtW(E < c0 + options.prefit_gain_min) = 0;
+PA.guard(:) = 0;
+if options.prefit_overshoot_local, PA.over_mask = PA.over_mask & PA.sqrtW > 0; end
+uA_lo = u_lo; uA_hi = u_hi; uA0 = u0;
+if options.prefit_aux && na > 0
+    PA.np = na; PA.models = aux_models;
+    uA_lo = [u_lo a_lo]; uA_hi = [u_hi a_hi]; uA0 = [u0 aux0];
+end
+uA0 = min(max(uA0, uA_lo + 1e-9), uA_hi - 1e-9);
+[uA, costA, ~, flagA] = lsqnonlin(@(u) local_residual(u, PA), uA0, uA_lo, uA_hi, lsq);
+[~, MA] = local_residual(uA, PA);
+thA = local_decode(uA, PA);
+if strcmp(options.kernel_mode, 'prefit')
+    Kc = zeros(numel(P.lags), nz);
+    for k = 1:nz
+        Kc(:, k) = local_pearson(P.lags - thA.c, thA.sL(k), thA.sR(k), thA.mL(k), thA.mR(k));
+    end
+    Kf = Kc * MA.coef(1:nz);
+    P.K_fixed = Kf / sum(Kf);
+end
+uAz = uA(1:1 + 4 * nz);
+if PA.np > 0, aux0 = min(max(uA(2 + 4 * nz:end), a_lo + 1e-9), a_hi - 1e-9); end
+uB_lo = u_lo; uB_hi = u_hi;
+P.zlp_shape = [];
+if strcmp(options.zlp_mode, 'prefit_shape')
+    % One response for elastic and inelastic signal: Stage A line shape, fixed.
+    wz = MA.coef(1:nz);
+    assert(any(wz > 0), 'qe_zlp_joint_fit:Prefit', 'Stage A gave no ZLP.');
+    P.zlp_shape = struct('w', wz(:) / sum(wz), 'sL', thA.sL, 'sR', thA.sR, 'mL', thA.mL, 'mR', thA.mR);
+    uAz = uA(1); uB_lo = u_lo(1); uB_hi = u_hi(1);
+end
+auxA = nan(PA.np, 3);
+for j = 1:PA.np
+    auxA(j, :) = [thA.E0(j) thA.W(j) MA.coef(nz + j) / MA.col_scale(j)];
+end
+rA = (Y - MA.prediction) ./ sigma;
+stageA = struct('u', uA, 'cost', costA, 'exitflag', flagA, 'data_mask', PA.sqrtW > 0, ...
+    'prediction', MA.prediction, 'zlp', MA.zlp, 'aux_peaks', MA.peaks, 'aux_parameters', auxA, ...
+    'zlp_parameters', struct('center_meV', thA.c, 'height', MA.coef(1:nz).', 'sL', thA.sL, 'sR', thA.sR, ...
+    'mL', thA.mL, 'mR', thA.mR, 'fwhm_meV', local_fwhm(E, MA.zlp, find(E >= thA.c, 1), dE)), ...
+    'chi2_red_data', mean(rA(PA.sqrtW > 0 & E < c0 - options.core_halfwidth) .^ 2));
+
+%% Stage B: joint fit, multistart over peak seeds (aux peaks from Stage A or mid-window in the first starts, random after)
+P.np = np + na; P.nb = np;
+P.models = [repmat({peak_models(options.peak_model)}, 1, np), aux_models];
+p_lo = [repmat([eb(1) log(2 * dE)], 1, np), a_lo];
+p_hi = [repmat([eb(2) log(options.peak_width_max)], 1, np), a_hi];
+lb = [uB_lo p_lo]; ub = [uB_hi p_hi];
 stream = RandStream('mt19937ar', 'Seed', options.seed);
 widths = [80 250 650 1500];
+nd = size(options.start_E0, 1);
+use_warm = numel(options.warm_u) == numel(lb);
 n_starts = options.n_starts;
+if nd > 0, n_starts = max(n_starts, nd) + use_warm; end
 if np == 0, n_starts = 1; end
 cand = struct('start', cell(1, n_starts), 'u0', [], 'u', [], 'cost', Inf, 'exitflag', NaN, 'message', '');
 for st = 1:n_starts
     pk0 = zeros(1, 2 * np);
     if np > 0
-        if st == 1 && ~isempty(options.initial_E0)
+        if st <= nd
+            e0 = options.start_E0(st, 1:np);
+            w0 = 300 * ones(1, np);
+            if ~isempty(options.start_width), w0 = options.start_width(st, 1:np); end
+        elseif st == 1 && ~isempty(options.initial_E0)
             e0 = options.initial_E0(1:np);
             w0 = 300 * ones(1, np);
             if ~isempty(options.initial_width), w0 = options.initial_width(1:np); end
@@ -208,12 +318,12 @@ for st = 1:n_starts
         pk0(1:2:end) = e0; pk0(2:2:end) = log(w0);
     end
     ax0 = aux0;
-    if st > 2 && na > 0
+    if st > max(2, nd) && na > 0
         ax0(1:2:end) = aw(:, 1).' + diff(aw, 1, 2).' .* (0.1 + 0.8 * rand(stream, 1, na));
-        ax0(2:2:end) = log(2 * dE) + rand(stream, 1, na) .* (log(diff(aw, 1, 2)).' - log(2 * dE));
+        ax0(2:2:end) = log(2 * dE) + rand(stream, 1, na) .* (log(wa).' - log(2 * dE));
     end
-    x0 = min(max([uA pk0 ax0], lb + 1e-9), ub - 1e-9);
-    if st == 1 && numel(options.warm_u) == numel(lb)
+    x0 = min(max([uAz pk0 ax0], lb + 1e-9), ub - 1e-9);
+    if use_warm && ((nd == 0 && st == 1) || (nd > 0 && st == n_starts))
         x0 = min(max(options.warm_u, lb + 1e-9), ub - 1e-9);
     end
     cand(st).start = st; cand(st).u0 = x0;
@@ -226,7 +336,7 @@ for st = 1:n_starts
 end
 ok = find([cand.exitflag] > 0 & isfinite([cand.cost]));
 fit = struct('success', false, 'numerical_status', 'failed', 'candidates', cand, ...
-    'prefit_exitflag', flagA, 'effective_options', options);
+    'prefit_exitflag', flagA, 'effective_options', options, 'stageA', stageA);
 if isempty(ok), return; end
 [~, kbest] = min([cand(ok).cost]);
 best = ok(kbest);
@@ -235,6 +345,7 @@ u = cand(best).u;
 %% Package
 [~, M] = local_residual(u, P);
 th = local_decode(u, P);
+nzB = size(M.zlp_components, 2);
 fit.success = true;
 fit.selected_start = best;
 fit.cost = cand(best).cost;
@@ -250,15 +361,20 @@ fit.zlp_components = M.zlp_components;
 fit.constant = M.constant;
 fit.aux_peaks = M.peaks(:, np + (1:na));
 fit.background = M.zlp + M.constant + sum(fit.aux_peaks, 2);
-[~, MA] = local_residual(uA, PA);
 fit.prefit_zlp = MA.zlp;
+fit.stageA = stageA;
+fit.holdout_mask = hold;
+fit.data_mask = P.sqrtW > 0;
+fit.overshoot_mask = P.over_mask;
 fit.kernel = struct('lag_meV', lags, 'K', M.kernel, 'mode', options.kernel_mode);
-fit.zlp_parameters = struct('center_meV', th.c, 'height', M.coef(1:nz).', ...
+fit.zlp_parameters = struct('center_meV', th.c, 'height', M.coef(1:nzB).', ...
     'sL', th.sL, 'sR', th.sR, 'mL', th.mL, 'mR', th.mR, ...
     'fwhm_meV', local_fwhm(E, M.zlp, find(E >= th.c, 1), dE));
+if ~isempty(P.zlp_shape), fit.zlp_parameters.shape_weights = P.zlp_shape.w.'; end
+fit.zlp_mode = options.zlp_mode;
 pars = nan(np + na, 3);
 for j = 1:np + na
-    pars(j, :) = [th.E0(j) th.W(j) M.coef(nz + j) / M.col_scale(j)];
+    pars(j, :) = [th.E0(j) th.W(j) M.coef(nzB + j) / M.col_scale(j)];
 end
 [~, order] = sort(pars(1:np, 1));
 fit.parameters = pars(order, :);
@@ -270,19 +386,20 @@ fit.loss_function = M.loss(:, order);
 fit.prefactor_grid = M.Kgrid;
 
 r = fit.residual ./ sigma;
-dof = max(nnz(valid & sig) - (2 + 3 * (np + na)), 1);
-fit.chi2_red_signal = sum(r(valid & sig) .^ 2) / dof;
-fit.chi2_red_gain = mean(r(valid & E < c0 - options.core_halfwidth) .^ 2);
-ys = Y(valid & sig);
-fit.r2_signal = 1 - sum(fit.residual(valid & sig) .^ 2) / sum((ys - mean(ys)) .^ 2);
-fit.zlp_fraction_signal = sum(M.zlp(valid & sig)) / sum(ys);
-fit.background_fraction_signal = sum(fit.background(valid & sig)) / sum(ys);
+vs = valid & sig & ~hold;
+dof = max(nnz(vs) - (2 + 3 * (np + na)), 1);
+fit.chi2_red_signal = sum(r(vs) .^ 2) / dof;
+fit.chi2_red_gain = mean(r(valid & ~hold & E < c0 - options.core_halfwidth) .^ 2);
+ys = Y(vs);
+fit.r2_signal = 1 - sum(fit.residual(vs) .^ 2) / sum((ys - mean(ys)) .^ 2);
+fit.zlp_fraction_signal = sum(M.zlp(vs)) / sum(ys);
+fit.background_fraction_signal = sum(fit.background(vs)) / sum(ys);
 fit.overshoot_active = any(M.zlp(over_mask) > Y(over_mask) + margin(over_mask) - 1e-9 * zmax);
 
 span = ub - lb;
 hit = abs(u - lb) < 1e-4 * span | abs(u - ub) < 1e-4 * span;
 fit.boundary = hit;
-pb = reshape(hit(numel(u_lo) + 1:end), 2, []).';
+pb = reshape(hit(numel(uB_lo) + 1:end), 2, []).';
 fit.peak_boundary = pb(order, :);
 fit.aux_boundary = pb(np + (1:na), :);
 fit.zero_amplitude = fit.parameters(:, 3).' <= 0;
@@ -297,10 +414,20 @@ function [r, M] = local_residual(u, P)
 th = local_decode(u, P);
 E = P.E; n = numel(E); nz = P.nz; np = P.np;
 x = E - th.c;
-Zc = zeros(n, nz);
-for k = 1:nz
-    Zc(:, k) = local_pearson(x, th.sL(k), th.sR(k), th.mL(k), th.mR(k));
+fixedZ = isfield(P, 'zlp_shape') && ~isempty(P.zlp_shape);
+if fixedZ
+    % fixed line shape R (Stage A), one column; amplitude solved linearly
+    Zc = zeros(n, 1);
+    for k = 1:numel(P.zlp_shape.w)
+        Zc = Zc + P.zlp_shape.w(k) * local_pearson(x, th.sL(k), th.sR(k), th.mL(k), th.mR(k));
+    end
+else
+    Zc = zeros(n, nz);
+    for k = 1:nz
+        Zc(:, k) = local_pearson(x, th.sL(k), th.sR(k), th.mL(k), th.mR(k));
+    end
 end
+nzc = size(Zc, 2);
 
 % Peak columns, convolved with a first-pass kernel, then with the fitted ZLP.
 L = zeros(numel(P.E_ext), np);
@@ -309,29 +436,44 @@ for j = 1:np
 end
 F = L;
 scaled = 1:np;
-if ~P.opts.prefactor_on_aux, scaled = 1:min(np, P.opts.n_peaks); end
+if ~P.opts.prefactor_on_aux, scaled = 1:min(np, P.nb); end
 F(:, scaled) = L(:, scaled) .* P.Kext;
 xk = P.lags - th.c;
-Kc = zeros(numel(P.lags), nz);
-for k = 1:nz
-    Kc(:, k) = local_pearson(xk, th.sL(k), th.sR(k), th.mL(k), th.mR(k));
-end
-switch P.opts.kernel_mode
-    case 'none'
-        K = double(abs(xk) == min(abs(xk)));
-    otherwise
-        K = Kc(:, 1);
-end
-[coef, A, col_scale] = local_solve(Zc, local_convolve(F, K / sum(K), P), P);
-if strcmp(P.opts.kernel_mode, 'fitted_zlp') && np > 0 && any(coef(1:nz) > 0)
-    K = Kc * coef(1:nz);
+if fixedZ
+    % the same fixed line shape is the instrument kernel, centred at the same c
+    K = zeros(numel(P.lags), 1);
+    for k = 1:numel(P.zlp_shape.w)
+        K = K + P.zlp_shape.w(k) * local_pearson(xk, th.sL(k), th.sR(k), th.mL(k), th.mR(k));
+    end
     [coef, A, col_scale] = local_solve(Zc, local_convolve(F, K / sum(K), P), P);
+else
+    Kc = zeros(numel(P.lags), nz);
+    for k = 1:nz
+        Kc(:, k) = local_pearson(xk, th.sL(k), th.sR(k), th.mL(k), th.mR(k));
+    end
+    fixed = strcmp(P.opts.kernel_mode, 'prefit') && ~isempty(P.K_fixed);
+    if fixed
+        K = P.K_fixed;
+    elseif strcmp(P.opts.kernel_mode, 'none')
+        K = double(abs(xk) == min(abs(xk)));
+    else
+        K = Kc(:, 1);
+    end
+    [coef, A, col_scale] = local_solve(Zc, local_convolve(F, K / sum(K), P), P);
+    if (strcmp(P.opts.kernel_mode, 'fitted_zlp') || (strcmp(P.opts.kernel_mode, 'prefit') && ~fixed)) ...
+            && np > 0 && any(coef(1:nz) > 0)
+        for it = 1:P.opts.kernel_iterations
+            K = Kc * coef(1:nz);
+            [coef, A, col_scale] = local_solve(Zc, local_convolve(F, K / sum(K), P), P);
+            if ~any(coef(1:nz) > 0), break; end
+        end
+    end
 end
 
 pred = A * coef;
 r = P.sqrtW .* (pred - P.Y);
-r = [r; P.guard .* (Zc * coef(1:nz))];
-if isfinite(P.opts.asym_sigma)
+r = [r; P.guard .* (Zc * coef(1:nzc))];
+if isfinite(P.opts.asym_sigma) && ~fixedZ
     r = [r; (log(th.sR) - log(th.sL)).' / P.opts.asym_sigma; (log(th.mR) - log(th.mL)).' / P.opts.asym_sigma];
 end
 
@@ -339,16 +481,16 @@ if nargout > 1
     M.coef = coef;
     M.col_scale = col_scale;
     M.prediction = pred;
-    M.zlp_components = Zc .* coef(1:nz).';
+    M.zlp_components = Zc .* coef(1:nzc).';
     M.zlp = sum(M.zlp_components, 2);
-    M.peaks = A(:, nz + (1:np)) .* coef(nz + (1:np)).';
+    M.peaks = A(:, nzc + (1:np)) .* coef(nzc + (1:np)).';
     M.peaks_intrinsic = zeros(n, np);
     M.loss = zeros(n, np);
     H = (numel(P.lags) - 1) / 2;
     inside = H + (1:n);
     for j = 1:np
-        M.peaks_intrinsic(:, j) = F(inside, j) * coef(nz + j) / col_scale(j);
-        M.loss(:, j) = L(inside, j) * coef(nz + j) / col_scale(j);
+        M.peaks_intrinsic(:, j) = F(inside, j) * coef(nzc + j) / col_scale(j);
+        M.loss(:, j) = L(inside, j) * coef(nzc + j) / col_scale(j);
     end
     M.Kgrid = P.Kext(inside);
     M.constant = 0;
@@ -411,11 +553,18 @@ end
 
 function th = local_decode(u, P)
 nz = P.nz;
-z = reshape(u(2:1 + 4 * nz), 4, nz);
 th.c = u(1);
-th.sL = exp(z(1, :)); th.sR = exp(z(2, :));
-th.mL = exp(z(3, :)); th.mR = exp(z(4, :));
-pk = reshape(u(2 + 4 * nz:end), 2, []);
+if isfield(P, 'zlp_shape') && ~isempty(P.zlp_shape)
+    % fixed ZLP line shape: only the centre is a parameter
+    S = P.zlp_shape;
+    th.sL = S.sL; th.sR = S.sR; th.mL = S.mL; th.mR = S.mR;
+    pk = reshape(u(2:end), 2, []);
+else
+    z = reshape(u(2:1 + 4 * nz), 4, nz);
+    th.sL = exp(z(1, :)); th.sR = exp(z(2, :));
+    th.mL = exp(z(3, :)); th.mR = exp(z(4, :));
+    pk = reshape(u(2 + 4 * nz:end), 2, []);
+end
 if isempty(pk), pk = zeros(2, 0); end
 th.E0 = pk(1, :);
 th.W = exp(pk(2, :));

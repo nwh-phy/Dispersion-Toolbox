@@ -16,6 +16,10 @@ function [Kfun, info] = qe_kinematic_prefactor(member_q, options)
 %   uniform inside each member channel (width dq), qy uniform within +/- h_perp
 %   (spectrometer acceptance across the dispersion axis); both are convolved
 %   with a Gaussian probe angular spread sigma_probe (A^-1).
+%   sigma_probe_y sets a different spread across the dispersion axis (default:
+%   sigma_probe); n_probe / probe_extent set the Gaussian sampling (default 13
+%   points over +/-3 sigma), n_sub the samples per channel width and q_round the
+%   node merging; raise them to check quadrature convergence.
 %
 %   See also: qe_zlp_joint_fit
 
@@ -27,6 +31,10 @@ arguments
  options.h_perp (1,1) double {mustBeNonnegative} = 0
  options.sigma_probe (1,1) double {mustBeNonnegative} = 0
  options.n_sub (1,1) double {mustBePositive,mustBeInteger} = 9
+ options.sigma_probe_y (1,1) double = NaN      % NaN: same as sigma_probe
+ options.n_probe (1,1) double {mustBePositive,mustBeInteger} = 13
+ options.probe_extent (1,1) double {mustBePositive} = 3
+ options.q_round (1,1) double {mustBePositive} = 1e-6
 end
 
 gam = 1 + options.beam_kV * 1e3 / 510998.95;
@@ -35,25 +43,23 @@ qE_per_meV = 1e-3 / 6.582119569e-16 / v * 1e-10;
 
 ns = options.n_sub;
 box = ((1:ns) - 0.5) / ns - 0.5;
-if options.sigma_probe > 0
-    z = linspace(-3, 3, 13);
-    wz = exp(-z .^ 2 / 2);
-else
-    z = 0; wz = 1;
-end
+sx = options.sigma_probe; sy = options.sigma_probe_y;
+if isnan(sy), sy = sx; end
+[zx, wzx] = local_probe(sx, options.n_probe, options.probe_extent);
+[zy, wzy] = local_probe(sy, options.n_probe, options.probe_extent);
 qx = member_q(:) + options.dq * box;
-qx = qx(:) + options.sigma_probe * z;
-wx = ones(numel(member_q) * ns, 1) * wz;
+qx = qx(:) + sx * zx;
+wx = ones(numel(member_q) * ns, 1) * wzx;
 if options.h_perp > 0
-    qy = options.h_perp * 2 * box(:) + options.sigma_probe * z;
-    wy = ones(ns, 1) * wz;
+    qy = options.h_perp * 2 * box(:) + sy * zy;
+    wy = ones(ns, 1) * wzy;
 else
-    qy = options.sigma_probe * z;
-    wy = wz;
+    qy = sy * zy;
+    wy = wzy;
 end
 Q = sqrt(qx(:) .^ 2 + qy(:).' .^ 2);
 W = wx(:) * wy(:).';
-[qn, ~, ic] = unique(round(Q(:) / 1e-6) * 1e-6);
+[qn, ~, ic] = unique(round(Q(:) / options.q_round) * options.q_round);
 wn = accumarray(ic, W(:));
 wn = wn / sum(wn);
 keep = qn > 0;
@@ -63,7 +69,19 @@ form = options.form;
 Kfun = @(E) local_eval(E, qn, wn, qE_per_meV, form);
 info = struct('form', form, 'beam_kV', options.beam_kV, 'qE_per_meV', qE_per_meV, ...
     'q_nodes', qn, 'q_weights', wn, 'q_mean', sum(wn .* qn), 'h_perp', options.h_perp, ...
-    'sigma_probe', options.sigma_probe, 'member_q', member_q(:).');
+    'sigma_probe', options.sigma_probe, 'sigma_probe_y', sy, 'n_sub', ns, 'n_probe', options.n_probe, ...
+    'probe_extent', options.probe_extent, 'member_q', member_q(:).');
+end
+
+
+function [z, w] = local_probe(s, n, ext)
+% Gaussian probe samples (unnormalised weights); a delta when s = 0.
+if s > 0
+    z = linspace(-ext, ext, n);
+    w = exp(-z .^ 2 / 2);
+else
+    z = 0; w = 1;
+end
 end
 
 

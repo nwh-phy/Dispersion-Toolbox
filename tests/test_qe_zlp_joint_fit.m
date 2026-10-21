@@ -111,6 +111,73 @@ verifySize(testCase, with.loss_function, [numel(with.energy_meV) 1]);
 end
 
 
+function testPrefitShapeInvariantToEnergyShift(testCase)
+% zlp_mode 'prefit_shape': elastic and inelastic terms share one response and
+% one energy zero, so shifting the whole spectrum moves c and leaves E0, W.
+zlp = struct('h', [5e5 2e4], 's', [8 25; 8 27], 'm', [3 1.0; 3 0.95], 'c', 1.5);
+[E, Y1] = makeSpectrum(struct('E0', 700, 'W', 400, 'height', 300), zlp);
+zlp.c = 9.5;
+[~, Y2] = makeSpectrum(struct('E0', 700, 'W', 400, 'height', 300), zlp);
+f1 = qe_zlp_joint_fit(E, Y1, signal_window=[300 1800], n_peaks=1, n_starts=4, zlp_mode='prefit_shape', kernel_iterations=5);
+f2 = qe_zlp_joint_fit(E, Y2, signal_window=[300 1800], n_peaks=1, n_starts=4, zlp_mode='prefit_shape', kernel_iterations=5);
+
+verifyTrue(testCase, f1.success && f2.success);
+verifyEqual(testCase, f2.zlp_parameters.center_meV - f1.zlp_parameters.center_meV, 8, 'AbsTol', 0.5);
+% Absolute recovery is looser than in the free-ZLP test: the fixed shape comes
+% from the gain side and cannot follow the generator's slightly heavier loss
+% tail (sR = 27 vs sL = 25 meV in the wide component); measured bias ~19 meV.
+verifyLessThan(testCase, abs(f1.parameters(1) - 700), 25);
+verifyLessThan(testCase, abs(f2.parameters(1) - f1.parameters(1)), 3);
+verifyLessThan(testCase, abs(f2.parameters(2) - f1.parameters(2)) / f1.parameters(2), 0.02);
+end
+
+
+function testPrefitShapeKernelRebuildsFromStageA(testCase)
+% The Stage B kernel and the Stage A prediction are reproducible from the
+% saved Stage A parameters (kernel iterations make kernel and ZLP agree).
+[E, Y] = makeSpectrum(struct('E0', 700, 'W', 400, 'height', 300));
+fit = qe_zlp_joint_fit(E, Y, signal_window=[300 1800], n_peaks=1, n_starts=2, zlp_mode='prefit_shape', kernel_iterations=5);
+z = fit.stageA.zlp_parameters;
+pear = @(x, sL, sR, mL, mR) (x < 0) .* (1 + (x / sL) .^ 2 / mL) .^ (-mL) + ...
+    (x >= 0) .* (1 + (x / sR) .^ 2 / mR) .^ (-mR);
+lag = fit.kernel.lag_meV; K = zeros(size(lag)); Z = zeros(size(fit.energy_meV));
+for k = 1:numel(z.height)
+    K = K + z.height(k) * pear(lag - fit.zlp_parameters.center_meV, z.sL(k), z.sR(k), z.mL(k), z.mR(k));
+    Z = Z + z.height(k) * pear(fit.energy_meV - z.center_meV, z.sL(k), z.sR(k), z.mL(k), z.mR(k));
+end
+verifyEqual(testCase, fit.kernel.K, K / sum(K), 'AbsTol', 1e-12);
+verifyEqual(testCase, fit.stageA.prediction, Z, 'RelTol', 1e-9);
+verifyEqual(testCase, fit.zlp_mode, 'prefit_shape');
+end
+
+
+function testHoldoutDataDoNotEnterTheFit(testCase)
+% Changing the data inside holdout_windows leaves every fitted quantity
+% unchanged, with and without an external noise model.
+[E, Y] = makeSpectrum(struct('E0', 700, 'W', 400, 'height', 300));
+Yp = Y; h = E >= 150 & E <= 250; Yp(h) = 1.3 * Yp(h) + 50;
+args = {'signal_window', [250 1800], 'n_peaks', 1, 'n_starts', 3, 'holdout_windows', [150 250], ...
+    'zlp_mode', 'prefit_shape', 'kernel_iterations', 5, 'prefit_overshoot_local', true, 'aux_windows', [30 80]};
+for withNoise = [false true]
+    extra = {};
+    if withNoise
+        s1 = sqrt(max(Y, 1)); s2 = s1; s2(h) = sqrt(max(Yp(h), 1));
+        extra = {'noise_sigma', s1}; extra2 = {'noise_sigma', s2};
+    else
+        extra2 = {};
+    end
+    a = qe_zlp_joint_fit(E, Y, args{:}, extra{:});
+    b = qe_zlp_joint_fit(E, Yp, args{:}, extra2{:});
+    verifyEqual(testCase, b.parameters, a.parameters);
+    verifyEqual(testCase, b.aux_parameters, a.aux_parameters);
+    verifyEqual(testCase, b.zlp_parameters.center_meV, a.zlp_parameters.center_meV);
+    verifyEqual(testCase, b.stageA.u, a.stageA.u);
+    verifyEqual(testCase, b.kernel.K, a.kernel.K);
+    verifyEqual(testCase, b.sigma(~h), a.sigma(~h));
+end
+end
+
+
 function testRejectsNonUniformGrid(testCase)
 [E, Y] = makeSpectrum(struct('E0', 700, 'W', 400, 'height', 300));
 E(300:end) = E(300:end) + 1;
