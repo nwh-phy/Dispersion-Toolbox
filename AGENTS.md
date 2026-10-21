@@ -24,3 +24,15 @@ The root `thesis.pdf` predates the submitted PDF. A read-only comparison found t
 3. Follow the thesis's source chain into figures, tables, analysis outputs, scripts, and raw-data records when a specific result requires verification. Older `paper_results` reports (indexed in `paper_results/00_INDEX.md`), `archive/old_notes/PROJECT_MEMORY.md`, `archive/old_notes/WORKSPACE_INDEX.md`, and other model-generated notes are supporting historical records, not the default summary of current scientific progress.
 4. If the thesis and upstream evidence disagree, identify the discrepancy and verify it explicitly. Do not assume that either a document's completion status or the model that generated an analysis determines scientific correctness.
 5. This alignment instruction does not authorize raw-data processing, replacement figures, thesis edits, or publication. Keep those actions within the user's requested scope and follow the thesis project's own instructions when working there.
+
+## Code organization
+
+Agreed with the user on 2026-10-21, after the clean-up of the BiSb scripts (commits `db55a4d`, `a1fcebd`, `1628013`). The script index is `case_studies/bisb2026/scripts/README.md`.
+
+1. A new round of analysis adds a config function and calls the existing code. Do not copy the previous round's script and edit the copy; put what changes into the config or into a new function.
+2. When a helper would be copied into a second file, move it into its own function file instead: `src/` if it is generic q-EELS processing, otherwise the top level of `case_studies/bisb2026/scripts/`.
+3. Pass the variants of a run as arguments, as a modified copy of the config struct (see `b1_p2b_slot_config` and `b1_p2b_fit(run_root, cfg, ocfg)`). Do not override a function with a same-name file placed earlier on the path, and do not pass settings through environment variables.
+4. Commit at the end of every analysis stage; do not leave scripts untracked across sessions. Find the project root with `bisb_find_project_root`, never an absolute `/Users/...` path. The data and `paper_results/` exist only in the main checkout, so analysis scripts run there; a worktree must not read uncommitted files of another checkout.
+5. When a line of analysis is finished, move its scripts into a `legacy_*` folder (`legacy_202605/`, `legacy_c20/`) and stop editing them.
+6. `src/` holds the GUI toolbox and generic functions only; BiSb-specific code lives in `case_studies/bisb2026/`.
+7. Before committing a change to shared code, run `tests/` and `case_studies/bisb2026/tests` and compare with the previous result. Known failures on 2026-10-21: one in `tests/` (`QeAssignPeakBranchesByWindowsTest`, written for the overlap rule before `18af79b`) and five in `case_studies/bisb2026/tests` (three source-text checks of paper-era scripts, two real-data background-selection tests).
