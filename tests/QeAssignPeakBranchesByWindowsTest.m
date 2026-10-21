@@ -26,21 +26,31 @@ classdef QeAssignPeakBranchesByWindowsTest < matlab.unittest.TestCase
             testCase.verifyTrue(all(result.branches{3}(:,2) >= 3000 & result.branches{3}(:,2) <= 3600));
         end
 
-        function testOverlappingWindowsAssignEachPeakOnlyOnce(testCase)
+        function testUntaggedOverlapPeaksGoToLaterBranchOnce(testCase)
             peaks = [
                 makePeakRows(0.02, 1720, 0.95, 10)
                 makePeakRows(0.03, 2050, 0.95, 10)
                 ];
-            specs = [
-                struct('name', 'Low', 'energy_window_meV', [500 2100], 'enabled', true)
-                struct('name', 'Mid', 'energy_window_meV', [1700 2600], 'enabled', true)
+            specs = makeOverlappingSpecs();
+
+            result = qe_assign_peak_branches_by_windows(peaks, specs);
+
+            testCase.verifyEqual(size(result.branches{1}, 1), 0);
+            testCase.verifyEqual(size(result.branches{2}, 1), 2);
+            testCase.verifyEqual(size(qe_flatten_branch_points(result.branches), 1), 2);
+            testCase.verifyEqual(sort(result.branches{2}(:,2)), [1720; 2050]);
+        end
+
+        function testTaggedOverlapPeaksKeepTheirBranch(testCase)
+            peaks = [
+                makePeakRows([0.02; 0.03], [1720; 2050], 0.95, 10), [1; 2]
                 ];
+            specs = makeOverlappingSpecs();
 
             result = qe_assign_peak_branches_by_windows(peaks, specs);
 
             testCase.verifyEqual(size(result.branches{1}, 1), 1);
             testCase.verifyEqual(size(result.branches{2}, 1), 1);
-            testCase.verifyEqual(size(qe_flatten_branch_points(result.branches), 1), 2);
             testCase.verifyEqual(result.branches{1}(1,2), 1720);
             testCase.verifyEqual(result.branches{2}(1,2), 2050);
         end
@@ -67,6 +77,15 @@ specs = [
     struct('name', 'Low', 'energy_window_meV', [500 1200], 'enabled', true)
     struct('name', 'Mid', 'energy_window_meV', [1700 2400], 'enabled', true)
     struct('name', 'High', 'energy_window_meV', [3000 3600], 'enabled', true)
+    ];
+end
+
+
+function specs = makeOverlappingSpecs()
+% GUI default B1 / B2 windows, which overlap at 1700-2100 meV
+specs = [
+    struct('name', 'Low', 'energy_window_meV', [500 2100], 'enabled', true)
+    struct('name', 'Mid', 'energy_window_meV', [1700 2600], 'enabled', true)
     ];
 end
 
