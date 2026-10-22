@@ -81,18 +81,18 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 
 1. 设置 **Prominence**、**Max Peaks**（每个 q 通道最多几个峰）
 2. 选择 **Peak Model**（一般用 Drude-Lorentz）
-3. 点击 **Auto Fit ω(q)**
+3. 点击 **Auto Fit Branches**
 4. 检查散点和 branch assignment 是否合理
 
 **方式 B — Seed propagation**（峰位漂移大时更稳定）：
 
 1. 在 **Guesses** 文本框输入峰位估计（如 `800,2500`），或点击 **Pick Guesses** 在谱上点选
-2. 点击 **Auto Fit ω(q)**
+2. 点击 **Auto Fit Branches**
 3. 算法会从 seed 点逐通道追踪峰位
 
 **方式 C — 自动拟合 + 局部人工矫正**（论文级 curated workflow 推荐）：
 
-1. 先点击 **Auto Fit ω(q)**，把自动结果作为 branch 底稿
+1. 先点击 **Auto Fit Branches**，把自动结果作为 branch 底稿
 2. 在 q-E map 中选中需要复查的 q 通道，并在单谱窗口确认正确峰位
 3. 用 correction target 下拉框选择 **Auto**、**Branch N** 或 **New Branch N+1**
    - **Auto**：自动选择当前 q 附近、能量最接近的 branch 点
@@ -115,7 +115,7 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 ### Step 5：色散拟合
 
 1. 选择 **Disp Model**（如 Quasi-2D Plasmon）
-2. 点击 **Fit Dispersion**
+2. 选择要拟合的 branch，点击 **Fit Curated**
 3. 拟合曲线和参数会显示在色散图中
 
 ### Step 6：诊断检查
@@ -135,6 +135,10 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 
 > **保存手动调参状态时建议同时保存两类文件**：先点 **Save Pts** 保存被接受/矫正的 branch 点，再点 History 面板 **Save** 保存 `op_history.mat`。History 保存前会强制追加当前 live GUI snapshot，因此即使某个控件没有单独生成一条 history 记录，最后保存的 `opHistory{end}.snapshot` 仍应包含当前状态。该 snapshot 会记录预处理/显示参数，也会记录自动拟合与 curated workflow 的关键控件，例如 `Prominence`、`Smooth W`、`Max Peaks`、`Peak Model`、`Guesses`、correction target、`Disp Model`、导出比例和当前选中 q 通道。
 
+恢复完整的 curated 工作状态时，先加载原始数据，再用 **Load Pts** 恢复分支点和修正记录，最后用 History **Load** 恢复控件、目标分支和选中 q。历史文件只保存参数，不保存峰位点、原始数据或尚未接受的单谱拟合。新历史也保存归一化方法、自动/手动堆叠偏移模式和 ZLP joint 设置；不含归一化方法的旧历史按原默认 `Area` 恢复。
+
+重新拟合、切换通道或修改拟合/预处理设置会使待接受的单谱结果失效。拟合失败后，**Accept Fit** 不会继续接受上一次结果。
+
 ---
 
 ## 推荐流程
@@ -145,7 +149,7 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 2. 在不同 q 通道浏览原始谱，了解数据质量
 3. 开启 Normalize (ZLP Peak) + Denoise (Wiener2D)，保持 **QE BG** 关闭
 4. 先做单谱拟合（**Fit Spectrum**），确认不扣背景时峰位仍清楚
-5. 再做全局自动拟合（**Auto Fit ω(q)**）
+5. 再做全局自动拟合（**Auto Fit Branches**，目前使用 BG + peaks 路径；**ZLP joint** 用于单谱 **Fit Spectrum**）
 6. 逐 q 检查 branch assignment；对少数明显错误点，用 **Correct Auto** + target branch 下拉框做局部矫正，必要时用 **Undo Corr** 回退误操作
 7. 保存 **Save Pts**（curated branches + correction log）和操作历史，确保可复现、可审计
 8. 可选：开启 QE BG 作为稳健性检查，确认主 branch 峰位没有被背景模型显著改变
@@ -227,6 +231,8 @@ fit_result = fit_dispersion_generic( ...
 ```
 
 参数应由具体数据决定，以上仅为示例。
+
+GUI 的单通道 ZLP joint 与 BiSb 的 P2b 多通道前向模型是不同方法。前者的 `apex_energy_meV` 表示损失函数峰顶，`omega_p` 表示模型 E0；它们也不等同于观测谱上的峰顶。数值验收只证明 GUI 和函数接口计算一致，不证明低 q 的模型参数具有物理唯一性。
 
 ---
 

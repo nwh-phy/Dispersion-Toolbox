@@ -2,6 +2,8 @@ function [app, hooks] = interactive_qe_browser(startPath, historyFile)
 % [app, hooks] = interactive_qe_browser(...) also returns test hooks: hooks.ui (the
 % widget handles), hooks.state() (the live state), hooks.select_q(k), and
 % hooks.fit_spectrum() / hooks.accept_fit() (the Fit Spectrum / Accept buttons).
+% File hooks save_history/load_history/save_points/load_points/export_data(path)
+% run the same callbacks without file dialogs; an empty path cancels the action.
 arguments
     startPath {mustBeTextScalar} = ""
     historyFile {mustBeTextScalar} = ""
@@ -20,19 +22,10 @@ end
 
 % Auto-load history if provided
 if strlength(string(historyFile)) > 0 && isfile(historyFile)
-    loaded = load(char(historyFile));
-    if isfield(loaded, 'opHistory') && ~isempty(loaded.opHistory)
-        state.opHistory = loaded.opHistory;
-        local_refresh_history_list();
-        % Restore the last snapshot
-        last_snap = state.opHistory{end}.snapshot;
-        try
-            local_restore_param_snapshot(last_snap);
-            local_rebuild_comparison(false);
-            local_update_all_views();
-        catch
-        end
-        ui.InfoLabel.Text = sprintf('History restored (%d entries)', numel(state.opHistory));
+    try
+        local_load_history_file(char(historyFile));
+    catch ME
+        ui.InfoLabel.Text = sprintf('History restore failed: %s', ME.message);
         ui.InfoLabel.Visible = "on";
     end
 end
@@ -42,7 +35,12 @@ if nargout > 0
 end
 if nargout > 1
     hooks = struct('ui', ui, 'state', @local_hook_state, 'select_q', @local_hook_select_q, ...
-        'fit_spectrum', @() local_on_fit_spectrum([], []), 'accept_fit', @() local_on_accept_fit([], []));
+        'fit_spectrum', @() local_on_fit_spectrum([], []), 'accept_fit', @() local_on_accept_fit([], []), ...
+        'save_history', @(path) local_on_save_history([], [], path), ...
+        'load_history', @(path) local_on_load_history([], [], path), ...
+        'save_points', @(path) local_on_save_pts([], [], path), ...
+        'load_points', @(path) local_on_load_pts([], [], path), ...
+        'export_data', @(path) local_on_export_data([], [], path));
 end
 
 
@@ -471,6 +469,7 @@ end
         snap.yMin = ui.YMinField.Value;
         snap.yMax = ui.YMaxField.Value;
         snap.offset = ui.OffsetField.Value;
+        snap.stackOffsetMode = char(state.stackOffsetMode);
         snap.traceMode = char(ui.TraceModeDropdown.Value);
         snap.waterfallMin = ui.WaterfallMinField.Value;
         snap.waterfallMax = ui.WaterfallMaxField.Value;
@@ -481,6 +480,7 @@ end
         snap.waterfallResidual = ui.WaterfallResidualCheckbox.Value;
         snap.baseLambda = ui.BaselineLambdaField.Value;
         snap.areaNorm = ui.AreaNormCheckbox.Value;
+        snap.normMethod = char(ui.NormMethodDropdown.Value);
         snap.areaNormMin = ui.AreaNormMinField.Value;
         snap.areaNormMax = ui.AreaNormMaxField.Value;
         snap.bgSub = ui.BgSubCheckbox.Value;
@@ -544,6 +544,9 @@ end
         ui.QEndField.Value = snap.qEnd;
         ui.QStepField.Value = snap.qStep;
         ui.DqOverrideField.Value = snap.dqOverride;
+        % Reaxis before resolving the saved signed q selection. Otherwise a
+        % nondefault dq selects a channel on the dataset's original q axis.
+        local_apply_dq(local_current_dq());
         ui.EnergyMinField.Value = snap.energyMin;
         ui.EnergyMaxField.Value = snap.energyMax;
         ui.ZlpMinField.Value = snap.zlpMin;
@@ -561,6 +564,9 @@ end
         ui.OffsetField.Value = snap.offset;
         ui.TraceModeDropdown.Value = snap.traceMode;
         state.stackOffsetMode = "manual";
+        if isfield(snap, 'stackOffsetMode') && ismember(string(snap.stackOffsetMode), ["auto", "manual"])
+            state.stackOffsetMode = string(snap.stackOffsetMode);
+        end
         state.lastAutoStackOffset = snap.offset;
         if isfield(snap, 'waterfallMin')
             ui.WaterfallMinField.Value = snap.waterfallMin;
@@ -575,6 +581,11 @@ end
         end
         ui.BaselineLambdaField.Value = snap.baseLambda;
         ui.AreaNormCheckbox.Value = snap.areaNorm;
+        if isfield(snap, 'normMethod') && any(strcmp(snap.normMethod, ui.NormMethodDropdown.Items))
+            ui.NormMethodDropdown.Value = snap.normMethod;
+        else
+            ui.NormMethodDropdown.Value = 'Area';  % historical default; old files did not record it
+        end
         ui.AreaNormMinField.Value = snap.areaNormMin;
         ui.AreaNormMaxField.Value = snap.areaNormMax;
         ui.BgSubCheckbox.Value = snap.bgSub;
@@ -755,14 +766,11 @@ end
     end
 
 
-    function local_on_save_history(~, ~)
+    function local_on_save_history(~, ~, save_path)
         % Save opHistory to a .mat file in the data folder.  Always append a
         % final live snapshot first so manually tuned controls are captured
         % even when an individual widget did not emit a history callback.
-        local_ensure_latest_history_snapshot("Saved current GUI state");
-        if isempty(state.opHistory)
-            ui.InfoLabel.Text = "No history to save";
-            ui.InfoLabel.Visible = "on";
+        if nargin >= 3 && strlength(string(save_path)) == 0
             return
         end
 
@@ -774,12 +782,18 @@ end
         end
         default_file = fullfile(default_dir, 'op_history.mat');
 
-        [fname, fpath] = uiputfile('*.mat', 'Save Operation History', default_file);
-        if isequal(fname, 0)
-            return
+        if nargin < 3
+            [fname, fpath] = uiputfile('*.mat', 'Save Operation History', default_file);
+            if isequal(fname, 0)
+                return
+            end
+            save_path = fullfile(fpath, fname);
+        else
+            [~, name, ext] = fileparts(save_path);
+            fname = [name ext];
         end
 
-        save_path = fullfile(fpath, fname);
+        local_ensure_latest_history_snapshot("Saved current GUI state");
         opHistory = state.opHistory; %#ok<NASGU>
         save(save_path, 'opHistory');
         ui.InfoLabel.Text = sprintf('History saved → %s', fname);
@@ -788,43 +802,55 @@ end
     end
 
 
-    function local_on_load_history(~, ~)
+    function local_on_load_history(~, ~, load_path)
         % Load opHistory from a .mat file and restore the last state
+        if nargin >= 3 && strlength(string(load_path)) == 0
+            return
+        end
         default_dir = pwd;
         if ~isempty(state.dataset) && isfield(state.dataset, 'source_path') ...
                 && strlength(string(state.dataset.source_path)) > 0
             default_dir = fileparts(char(state.dataset.source_path));
         end
 
-        [fname, fpath] = uigetfile('*.mat', 'Load Operation History', ...
-            fullfile(default_dir, 'op_history.mat'));
-        if isequal(fname, 0)
-            return
+        if nargin < 3
+            [fname, fpath] = uigetfile('*.mat', 'Load Operation History', ...
+                fullfile(default_dir, 'op_history.mat'));
+            if isequal(fname, 0)
+                return
+            end
+            load_path = fullfile(fpath, fname);
         end
+        try
+            local_load_history_file(load_path);
+        catch ME
+            if nargin >= 3
+                rethrow(ME);
+            end
+            local_show_error(ME, false);
+        end
+    end
 
-        load_path = fullfile(fpath, fname);
+
+    function local_load_history_file(load_path)
         loaded = load(load_path);
-        if ~isfield(loaded, 'opHistory')
-            ui.InfoLabel.Text = "File does not contain opHistory";
-            ui.InfoLabel.Visible = "on";
-            return
+        if ~isfield(loaded, 'opHistory') || ~iscell(loaded.opHistory) || ...
+                (~isempty(loaded.opHistory) && ...
+                ~all(cellfun(@(entry) isstruct(entry) && isscalar(entry) && ...
+                all(isfield(entry, {'snapshot', 'label', 'timestamp'})), loaded.opHistory)))
+            error('interactive_qe_browser:InvalidHistory', 'File does not contain valid opHistory entries.');
         end
 
+        % Report a restoration failure instead of silently claiming success.
+        if ~isempty(loaded.opHistory)
+            local_restore_param_snapshot(loaded.opHistory{end}.snapshot);
+            local_rebuild_comparison(false);
+            local_update_all_views();
+        end
         state.opHistory = loaded.opHistory;
         local_refresh_history_list();
-
-        % Restore the last snapshot if available
-        if ~isempty(state.opHistory)
-            last_entry = state.opHistory{end};
-            try
-                local_restore_param_snapshot(last_entry.snapshot);
-                local_rebuild_comparison(false);
-                local_update_all_views();
-            catch ME
-                fprintf('  Warning: could not fully restore state: %s\n', ME.message);
-            end
-        end
-
+        [~, name, ext] = fileparts(load_path);
+        fname = [name ext];
         ui.InfoLabel.Text = sprintf('History loaded ← %s (%d entries)', fname, numel(state.opHistory));
         ui.InfoLabel.Visible = "on";
         fprintf('  History loaded from: %s (%d entries)\n', load_path, numel(state.opHistory));
@@ -965,15 +991,24 @@ end
         end
 
         dq_Ainv = local_current_dq();
-        state.dataset.dq_Ainv = dq_Ainv;
-        state.eq3dQE = local_reaxis_qe(state.eq3dQE, dq_Ainv);
-        state.physicalQE = local_reaxis_qe(state.physicalQE, dq_Ainv);
-        state.comparisonQE = local_reaxis_qe(state.comparisonQE, dq_Ainv);
+        local_apply_dq(dq_Ainv);
 
         local_sync_controls_from_qe(local_get_reference_qe());
 
         local_log_operation(local_describe_changes());
         local_update_all_views();
+    end
+
+
+    function local_apply_dq(dq_Ainv)
+        if isempty(state.dataset)
+            return
+        end
+        state.dataset.dq_Ainv = dq_Ainv;
+        state.eq3dQE = local_reaxis_qe(state.eq3dQE, dq_Ainv);
+        state.physicalQE = local_reaxis_qe(state.physicalQE, dq_Ainv);
+        state.comparisonQE = local_reaxis_qe(state.comparisonQE, dq_Ainv);
+        ui.DqDisplay.Value = sprintf("%.6f", dq_Ainv);
     end
 
 
@@ -1059,6 +1094,7 @@ end
     function local_on_fit_param_change(~, ~)
         % Auto-fit/dispersion/export parameters may not redraw the view, but
         % they are part of a reusable GUI profile and must enter history.
+        local_clear_pending_fit();
         local_log_operation(local_describe_changes());
     end
 
@@ -1105,13 +1141,19 @@ end
     end
 
 
-    function local_on_save_pts(~, ~)
+    function local_on_save_pts(~, ~, save_path)
+        if nargin >= 3 && strlength(string(save_path)) == 0
+            return
+        end
         if isempty(state.manual_points) && isempty(state.manual_branches)
             return
         end
-        [file, path] = uiputfile('*.mat', 'Save dispersion points', 'dispersion_points.mat');
-        if isequal(file, 0)
-            return
+        if nargin < 3
+            [file, path] = uiputfile('*.mat', 'Save dispersion points', 'dispersion_points.mat');
+            if isequal(file, 0)
+                return
+            end
+            save_path = fullfile(path, file);
         end
         if ~isempty(state.manual_branches)
             pts = qe_flatten_branch_points(state.manual_branches);
@@ -1127,17 +1169,23 @@ end
         manual_dispersion.snapshot = local_capture_snapshot();
         manual_dispersion.source = 'gui_auto_fit_with_manual_corrections';
         manual_dispersion.timestamp = datestr(now);
-        save(fullfile(path, file), 'manual_dispersion');
+        save(save_path, 'manual_dispersion');
         ui.PtsLabel.Text = sprintf("%d pts (saved)", size(pts, 1));
     end
 
 
-    function local_on_load_pts(~, ~)
-        [file, path] = uigetfile('*.mat', 'Load dispersion points');
-        if isequal(file, 0)
+    function local_on_load_pts(~, ~, load_path)
+        if nargin >= 3 && strlength(string(load_path)) == 0
             return
         end
-        loaded = load(fullfile(path, file));
+        if nargin < 3
+            [file, path] = uigetfile('*.mat', 'Load dispersion points');
+            if isequal(file, 0)
+                return
+            end
+            load_path = fullfile(path, file);
+        end
+        loaded = load(load_path);
         if isfield(loaded, 'manual_dispersion')
             md = loaded.manual_dispersion;
             if isfield(md, 'branches') && ~isempty(md.branches)
@@ -1163,6 +1211,7 @@ end
             return
         end
         ui.PtsLabel.Text = sprintf("%d pts (loaded)", size(state.manual_points, 1));
+        state.fitResults = {};  % curves from the previous points are no longer valid
         local_sync_correction_controls();
         local_update_all_views();
     end
@@ -1298,6 +1347,7 @@ end
         % Fit the currently displayed single spectrum with the selected method:
         % 'bg_peaks' fits the preprocessed spectrum (fit_loss_function), 'zlp_joint'
         % the raw counts of the channel together with the ZLP (qe_fit_spectrum_joint).
+        local_clear_pending_fit();
         if isempty(state.physicalQE) && isempty(state.comparisonQE)
             ui.FitInfoLabel.Text = "Load data first";
             return
@@ -1582,6 +1632,14 @@ end
 
     function tag = local_fit_overlay_tag()
         tag = 'spectrum_fit_overlay';
+    end
+
+
+    function local_clear_pending_fit()
+        state.pendingFit = [];
+        ui.AcceptFitButton.Enable = "off";
+        delete(findobj(ui.SingleAxes, 'Tag', local_fit_overlay_tag()));
+        delete(findobj(ui.SingleAxes, 'Tag', 'lorentz_fit'));
     end
 
 
@@ -2232,12 +2290,15 @@ end
     end
 
 
-    function local_on_export_data(~, ~)
+    function local_on_export_data(~, ~, out_file)
         % Export preprocessed q-E data as a lossless .mat file.
         %
         % IMPORTANT: Always exports from physicalQE (the true q-E map),
         % regardless of the current view mode. This avoids exporting
         % the comparison view as if it were raw physical data.
+        if nargin >= 3 && strlength(string(out_file)) == 0
+            return
+        end
         if isempty(state.physicalQE)
             ui.InfoLabel.Text = "Load data first";
             ui.InfoLabel.Visible = "on";
@@ -2283,12 +2344,17 @@ end
         end
         default_name = sprintf('%s_preprocessed%s.mat', src_name, pp_summary);
 
-        [fname, fpath] = uiputfile({'*.mat', 'MATLAB data (*.mat)'}, ...
-            'Export preprocessed data', fullfile(default_dir, default_name));
-        if isequal(fname, 0)
-            return
+        if nargin < 3
+            [fname, fpath] = uiputfile({'*.mat', 'MATLAB data (*.mat)'}, ...
+                'Export preprocessed data', fullfile(default_dir, default_name));
+            if isequal(fname, 0)
+                return
+            end
+            out_file = fullfile(fpath, fname);
+        else
+            [~, name, ext] = fileparts(out_file);
+            fname = [name ext];
         end
-        out_file = fullfile(fpath, fname);
 
         try
             % Pack export struct — all fields needed to reconstruct analysis
@@ -2497,6 +2563,7 @@ end
 
 %<RENDER_CALLBACKS>
     function local_update_all_views()
+        local_clear_pending_fit();
         qe = local_get_active_qe();
         local_update_stage_label();
         local_update_info_label();
@@ -3285,6 +3352,7 @@ end
 
 
     function local_update_selected_q_views()
+        local_clear_pending_fit();
         qe = local_get_active_qe();
         if isempty(qe)
             return

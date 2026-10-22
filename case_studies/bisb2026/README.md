@@ -7,7 +7,7 @@ Core reusable code stays in `src/`. Scripts here are examples layered on top of
 the toolbox and may require ignored local inputs such as `20260120 BiSb/` and
 ignored outputs under `paper_results/`.
 
-## Analysis Convention
+## Thesis-era Analysis Convention
 
 - The primary peak-position evidence uses the no-BG, area-normalized Fano
   extraction route.
@@ -26,15 +26,17 @@ startup; runtests('tests')
 runtests('case_studies/bisb2026/tests')
 ```
 
-For individual case-study exports:
+Current analysis entry points and configurations are indexed in
+[`scripts/README.md`](scripts/README.md). The earlier export runners have moved
+to `scripts/legacy_202605/` and are frozen; the former commands that added only
+`scripts/` no longer locate those runners. Choose the current configuration and
+run directory from the index rather than rerunning a historical export by default.
 
-```matlab
-addpath('case_studies/bisb2026/scripts')
-output = run_b1_physical_fit_analysis();
-output = run_b1_physical_fit_enhancements();
-output = run_b3_scatter_only_export();
-output = run_q015_linewidth_by_session_export();
-```
+The GUI/API numerical acceptance tests are in `tests/test_gui_joint_fit_realdata.m`.
+They compare six representative channels from the three local eq3D datasets,
+including both signs of q. They require local data and report an explicit skip
+when it is unavailable. Agreement checks the interface, not the physical validity
+of the single-channel model.
 
 Result folders remain under the ignored `paper_results/` tree so existing paths
 and generated artifacts are not broken by this cleanup.

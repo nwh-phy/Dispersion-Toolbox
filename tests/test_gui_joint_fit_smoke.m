@@ -86,6 +86,190 @@ verifySubstring(testCase, char(h.ui.FitInfoLabel.Text), 'Drude-Lorentz and Sym. 
 end
 
 
+function testFailedRefitCannotAcceptThePreviousResult(testCase)
+h = testCase.TestData.hooks;
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.fit_spectrum();
+verifyNotEmpty(testCase, h.state().pendingFit);
+h.ui.PeakModelDropdown.Value = 'gaussian';
+h.fit_spectrum();
+verifyEmpty(testCase, h.state().pendingFit);
+verifyEqual(testCase, char(h.ui.AcceptFitButton.Enable), 'off');
+verifyEmpty(testCase, findobj(h.ui.SingleAxes, 'Tag', 'spectrum_fit_overlay'));
+h.accept_fit();
+verifyEmpty(testCase, h.state().manual_points);
+end
+
+
+function testChangingChannelOrFitSettingsInvalidatesPendingFit(testCase)
+h = testCase.TestData.hooks;
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.fit_spectrum();
+h.select_q(channelAt(h.state(), -0.005));
+verifyEmpty(testCase, h.state().pendingFit);
+verifyEqual(testCase, char(h.ui.AcceptFitButton.Enable), 'off');
+h.accept_fit();
+verifyEmpty(testCase, h.state().manual_points);
+h.fit_spectrum();
+verifyNotEmpty(testCase, h.state().pendingFit);
+h.ui.BeamKVField.Value = 60;
+h.ui.BeamKVField.ValueChangedFcn(h.ui.BeamKVField, []);
+verifyEmpty(testCase, h.state().pendingFit);
+verifyEqual(testCase, char(h.ui.AcceptFitButton.Enable), 'off');
+end
+
+
+function testHistoryRestoresNormalizationCalibrationAndSelectedChannel(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+history_path = fullfile(folder, 'history.mat');
+h.ui.DqOverrideField.Value = 0.00025;
+h.ui.DqOverrideField.ValueChangedFcn(h.ui.DqOverrideField, []);
+h.select_q(channelAt(h.state(), -0.0025));
+h.ui.NormMethodDropdown.Value = 'ZLP Peak';
+h.ui.AreaNormCheckbox.Value = true;
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.ui.KinematicCheckbox.Value = false;
+h.ui.BeamKVField.Value = 60;
+h.ui.PoissonWeightsCheckbox.Value = false;
+h.save_history(history_path);
+saved = load(history_path);
+snapshot = saved.opHistory{end}.snapshot;
+delete(h.ui.Figure);
+[app, restored] = interactive_qe_browser(testCase.TestData.data_dir, history_path);
+testCase.addTeardown(@delete, app);
+verifyEqual(testCase, restored.ui.NormMethodDropdown.Value, 'ZLP Peak');
+verifyTrue(testCase, restored.ui.AreaNormCheckbox.Value);
+verifyEqual(testCase, restored.ui.FitMethodDropdown.Value, 'zlp_joint');
+verifyFalse(testCase, restored.ui.KinematicCheckbox.Value);
+verifyEqual(testCase, restored.ui.BeamKVField.Value, 60);
+verifyFalse(testCase, restored.ui.PoissonWeightsCheckbox.Value);
+st = restored.state();
+verifyEqual(testCase, st.physicalQE.dq_Ainv, 0.00025);
+verifyEqual(testCase, st.dataset.dq_Ainv, st.physicalQE.dq_Ainv);
+verifyEqual(testCase, st.physicalQE.q_Ainv(st.selectedQIndex), -0.0025, 'AbsTol', 1e-12);
+verifyEqual(testCase, st.selectedQIndex, snapshot.selectedQIndex);
+verifyEqual(testCase, st.stackOffsetMode, string(snapshot.stackOffsetMode));
+end
+
+
+function testOldHistoryRestoresLegacyMethodWithoutNewFields(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+history_path = fullfile(folder, 'old_history.mat');
+h.save_history(history_path);
+saved = load(history_path);
+opHistory = saved.opHistory;
+new_fields = {'fitMethod', 'kinematicFactor', 'beamKV', 'poissonWeights', ...
+    'normMethod', 'stackOffsetMode'};
+for k = 1:numel(opHistory)
+    fields = intersect(fieldnames(opHistory{k}.snapshot), new_fields);
+    opHistory{k}.snapshot = rmfield(opHistory{k}.snapshot, fields);
+end
+save(history_path, 'opHistory');
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.ui.NormMethodDropdown.Value = 'ZLP Peak';
+h.load_history(history_path);
+verifyEqual(testCase, h.ui.FitMethodDropdown.Value, 'bg_peaks');
+verifyEqual(testCase, h.ui.NormMethodDropdown.Value, 'Area');
+verifySubstring(testCase, char(h.ui.InfoLabel.Text), 'History loaded');
+end
+
+
+function testBrokenHistoryDoesNotClaimSuccessfulRestoration(testCase)
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+history_path = fullfile(folder, 'broken_history.mat');
+opHistory = {struct('label', 'broken', 'timestamp', '00:00:00', 'snapshot', struct())};
+save(history_path, 'opHistory');
+[app, restored] = interactive_qe_browser(testCase.TestData.data_dir, history_path);
+testCase.addTeardown(@delete, app);
+verifySubstring(testCase, char(restored.ui.InfoLabel.Text), 'History restore failed');
+verifyEmpty(testCase, strfind(char(restored.ui.InfoLabel.Text), 'History loaded'));
+end
+
+
+function testCuratedPointsCorrectionsAndTargetsSurviveReopening(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+points_path = fullfile(folder, 'points.mat');
+history_path = fullfile(folder, 'history.mat');
+manual_dispersion = struct('branches', {{[-0.005 600; 0.005 700], ...
+    [-0.005 900; 0.005 1000]}});
+save(points_path, 'manual_dispersion');
+h.load_points(points_path);
+h.select_q(channelAt(h.state(), -0.005));
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.ui.CorrectionBranchDropdown.Value = 'Branch 2';
+h.fit_spectrum();
+result = h.state().pendingFit.result;
+h.accept_fit();
+before = h.state();
+verifyEqual(testCase, before.manual_branches{2}(1, 1:2), ...
+    [-0.005 result.apex_energy_meV], 'AbsTol', 1e-12);
+verifyNumElements(testCase, before.branchCorrectionLog, 1);
+h.save_points(points_path);
+h.save_history(history_path);
+saved = load(points_path);
+verifyEqual(testCase, saved.manual_dispersion.q_Ainv, before.manual_points(:, 1));
+verifyEqual(testCase, saved.manual_dispersion.energy_meV, before.manual_points(:, 2));
+verifyEqual(testCase, saved.manual_dispersion.abs_q_Ainv, abs(before.manual_points(:, 1)));
+delete(h.ui.Figure);
+[app, restored] = interactive_qe_browser(testCase.TestData.data_dir);
+testCase.addTeardown(@delete, app);
+restored.load_points(points_path);
+restored.load_history(history_path);
+after = restored.state();
+verifyEqual(testCase, after.manual_points, before.manual_points);
+verifyEqual(testCase, after.manual_branches, before.manual_branches);
+verifyEqual(testCase, after.branchCorrectionLog, before.branchCorrectionLog);
+verifyEqual(testCase, restored.ui.CorrectionBranchDropdown.Value, 'Branch 2');
+verifyEqual(testCase, after.selectedQIndex, before.selectedQIndex);
+end
+
+
+function testDataExportUsesPhysicalAxesAndPreprocessingInComparisonView(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+export_path = fullfile(folder, 'export.mat');
+h.ui.ViewModeDropdown.Value = 'Comparison';
+h.ui.AreaNormCheckbox.Value = true;
+h.ui.NormMethodDropdown.Value = 'ZLP Peak';
+h.export_data(export_path);
+out = load(export_path);
+qe = h.state().physicalQE;
+[expected, ~] = qe_preprocess(qe, out.preprocessing);
+verifyEqual(testCase, out.data_kind, 'physical');
+verifyEqual(testCase, out.view_mode_at_export, 'Comparison');
+verifyEqual(testCase, out.intensity_unprocessed, qe.intensity);
+verifyEqual(testCase, out.intensity, expected.intensity, 'AbsTol', 1e-12);
+verifyEqual(testCase, out.q_Ainv, qe.q_Ainv(:));
+verifyEqual(testCase, out.energy_meV, qe.energy_meV(:));
+verifyEqual(testCase, out.dq_Ainv, qe.dq_Ainv);
+verifyEqual(testCase, out.preprocessing.norm_method, 'ZLP Peak');
+verifyEqual(testCase, out.dimensions.n_q, numel(qe.q_Ainv));
+verifyEqual(testCase, out.dimensions.n_energy, numel(qe.energy_meV));
+end
+
+
+function testCancelledFileOperationsDoNotChangeCuratedState(testCase)
+h = testCase.TestData.hooks;
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.fit_spectrum();
+h.accept_fit();
+before = h.state();
+h.save_history('');
+h.load_history('');
+h.save_points('');
+h.load_points('');
+h.export_data('');
+after = h.state();
+verifyEqual(testCase, after.manual_points, before.manual_points);
+verifyEqual(testCase, after.manual_branches, before.manual_branches);
+verifyEqual(testCase, after.branchCorrectionLog, before.branchCorrectionLog);
+verifyEqual(testCase, after.opHistory, before.opHistory);
+end
+
+
 function k = channelAt(st, q)
 [~, k] = min(abs(st.physicalQE.q_Ainv - q));
 end
