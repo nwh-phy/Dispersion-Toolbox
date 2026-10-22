@@ -3540,11 +3540,10 @@ end
     function local_plot_dispersion_overlay(ax, qe)
         % --- Manual points overlay ---
         if ~isempty(state.manual_branches)
-            branch_colors = {[0.9 0.15 0.15], [0.15 0.45 0.9], [0.85 0.65 0.0]};
             for bi = 1:numel(state.manual_branches)
                 bpts = state.manual_branches{bi};
                 if isempty(bpts), continue; end
-                bc = branch_colors{min(bi, numel(branch_colors))};
+                bc = qe_plot_helpers.branch_color(bi);   % as in the dispersion panel
                 overlay_handles = qe_plot_helpers.plot_branch_scatter( ...
                     ax, bpts, bc, sprintf('Branch %d', bi));
                 set(overlay_handles, 'HandleVisibility', 'off', ...
