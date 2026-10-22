@@ -626,6 +626,36 @@ verifyNotEmpty(testCase, h.state().manual_points);
 end
 
 
+function testDisplayAndBranchControlsKeepTheFit(testCase)
+% The y axis, branch windows and dispersion model do not enter a single-spectrum
+% fit: it stays drawn and acceptable, also after Accept. Preprocessing drops it.
+h = testCase.TestData.hooks;
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.fit_spectrum();
+fitted = h.state().pendingFit;
+changeControl(h.ui.YScaleDropdown, 'log');
+changeControl(h.ui.AutoYCheckbox, false);
+changeControl(h.ui.Branch2MinField, 1800);
+changeControl(h.ui.DispModelDropdown, 'acoustic_linear');
+verifyEqual(testCase, h.state().pendingFit, fitted);
+verifyEqual(testCase, char(h.ui.AcceptFitButton.Enable), 'on');
+verifyNumElements(testCase, findobj(h.ui.SingleAxes, 'Tag', 'spectrum_fit_overlay', 'DisplayName', 'Peak 1'), 1);
+
+h.accept_fit();
+changeControl(h.ui.YScaleDropdown, 'linear');
+verifyEqual(testCase, char(h.ui.AcceptFitButton.Enable), 'off');
+verifySubstring(testCase, char(h.ui.FitInfoLabel.Text), '✓ Accepted');
+verifyNumElements(testCase, findobj(h.ui.SingleAxes, 'Tag', 'spectrum_fit_overlay', 'DisplayName', 'Peak 1'), 1);
+verifySize(testCase, h.state().manual_points, [1 2]);
+
+h.fit_spectrum();
+changeControl(h.ui.DenoiseCheckbox, true);
+verifyEmpty(testCase, h.state().pendingFit);
+verifyEqual(testCase, char(h.ui.AcceptFitButton.Enable), 'off');
+verifyEmpty(testCase, findobj(h.ui.SingleAxes, 'Tag', 'spectrum_fit_overlay'));
+end
+
+
 function testSessionFromAnOlderBrowserRestoresNewControlsToDefaults(testCase)
 % A session saved before a control existed lacks its field everywhere. It loads,
 % with that control at its default; one saved by a newer browser is refused.
@@ -660,6 +690,13 @@ save(newer, 'session');
 before = h.state();
 verifyError(testCase, @() h.load_session(newer), 'qe_validate_browser_session:InvalidSession');
 verifyEqual(testCase, h.state().pendingFit, before.pendingFit);
+end
+
+
+function changeControl(control, value)
+% Set a control as the user does: new value, then its ValueChangedFcn.
+control.Value = value;
+control.ValueChangedFcn(control, []);
 end
 
 

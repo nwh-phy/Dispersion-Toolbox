@@ -1030,6 +1030,8 @@ end
             % Roll back both the data/calibration and the controls. Reuse the
             % saved views rather than rebuilding from the rejected settings.
             state = previous_state;
+            state.pendingFit = [];
+            state.displayedFit = [];
             local_restore_param_snapshot(previous_snapshot);
             local_update_all_views();
             local_refresh_history_list();
@@ -1273,7 +1275,7 @@ end
     function local_on_fit_param_change(~, ~)
         % Auto-fit/dispersion parameters may not redraw the view, but
         % they are part of a reusable GUI profile and must enter history.
-        local_clear_pending_fit();
+        local_refresh_spectrum_fit();
         local_log_operation(local_describe_changes());
     end
 
@@ -1871,6 +1873,39 @@ end
         ui.AcceptFitButton.Enable = "off";
         delete(findobj(ui.SingleAxes, 'Tag', local_fit_overlay_tag()));
         delete(findobj(ui.SingleAxes, 'Tag', 'lorentz_fit'));
+    end
+
+
+    function local_refresh_spectrum_fit()
+        % After a redraw or a control change, draw the displayed fit again while
+        % it still belongs to this channel, these counts and these fit inputs;
+        % otherwise drop it, so that it can no longer be accepted.
+        pf = state.displayedFit;
+        if isempty(pf) || ~local_fit_matches_view(pf)
+            local_clear_pending_fit();
+            return
+        end
+        local_render_spectrum_fit(pf);
+        if isempty(state.pendingFit)
+            ui.FitInfoLabel.Text = sprintf('%s  ✓ Accepted', ui.FitInfoLabel.Text);
+        end
+    end
+
+
+    function valid = local_fit_matches_view(pf)
+        % Display, auto-fit, branch, dispersion and export controls do not enter
+        % a single-spectrum fit; every other control saved at fit time must be
+        % unchanged. Controls added after the fit was saved are not compared.
+        view_only = {'qStart', 'qEnd', 'qStep', 'smoothMode', 'smoothWidth', 'yScale', ...
+            'autoY', 'yMin', 'yMax', 'offset', 'stackOffsetMode', 'maxShift', 'dispModel', ...
+            'fitBranchTarget', 'correctionBranchTarget', 'exportMode', 'exportRatio'};
+        fitted = pf.provenance.snapshot;
+        current = local_capture_snapshot();
+        names = fieldnames(fitted);
+        names = names(~ismember(names, view_only) & ~startsWith(names, {'waterfall', 'branch'}));
+        valid = all(isfield(current, names)) && ...
+            all(cellfun(@(n) isequaln(fitted.(n), current.(n)), names)) && ...
+            strcmp(qe_data_fingerprint(state.physicalQE), pf.provenance.data_sha256);
     end
 
 
@@ -2767,12 +2802,12 @@ end
 
 %<RENDER_CALLBACKS>
     function local_update_all_views()
-        local_clear_pending_fit();
         qe = local_get_active_qe();
         local_update_stage_label();
         local_update_info_label();
 
         if isempty(state.physicalQE)
+            local_clear_pending_fit();
             local_clear_axes(ui.QEAxes);
             local_clear_axes(ui.ComparisonAxes);
             local_clear_axes(ui.SingleAxes);
@@ -3097,6 +3132,7 @@ end
                 || (~isempty(bg_diag_qi) && pp_opts.do_bg_sub)
             legend(ax, "Location", "best");
         end
+        local_refresh_spectrum_fit();
     end
 
 
@@ -3556,9 +3592,9 @@ end
 
 
     function local_update_selected_q_views()
-        local_clear_pending_fit();
         qe = local_get_active_qe();
         if isempty(qe)
+            local_clear_pending_fit();
             return
         end
         local_plot_single_spectrum(qe);
