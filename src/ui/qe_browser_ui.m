@@ -7,7 +7,7 @@ function ui_handles = qe_browser_ui(cb)
 %         .on_load_data, .on_build_views, .on_undo, .on_reset_stage,
 %         .on_display_change, .on_normalization_change, .on_dq_override_changed,
 %         .on_qnorm_changed, .on_norm_method_changed, .on_auto_y_changed,
-%         .on_fit_param_change, .on_correction_target_change,
+%         .on_fit_param_change, .on_export_param_change, .on_correction_target_change,
 %         .on_pick_peaks, .on_undo_pt, .on_clear_pts, .on_save_pts,
 %         .on_load_pts, .on_split_branches, .on_fit_model, .on_export,
 %         .on_auto_fit_dispersion, .on_fit_spectrum, .on_accept_fit,
@@ -665,7 +665,7 @@ function ui_handles = qe_browser_ui(cb)
         "Items", {'1:1', '4:3', '3:2', '16:9', '2:1'}, ...
         "Value", '16:9', ...
         "Tooltip", "Export panel aspect ratio", ...
-        "ValueChangedFcn", cb.on_fit_param_change);
+        "ValueChangedFcn", cb.on_export_param_change);
     export_ratio.Layout.Row = 10;
     export_ratio.Layout.Column = 15;
 
@@ -673,7 +673,7 @@ function ui_handles = qe_browser_ui(cb)
         "Items", {'Quick PNG', 'PPT PNG', 'Publication'}, ...
         "Value", 'Quick PNG', ...
         "Tooltip", "Quick PNG: 150 DPI PNG only; PPT PNG: 300 DPI PNG only; Publication: 300 DPI PNG + PDF", ...
-        "ValueChangedFcn", cb.on_fit_param_change);
+        "ValueChangedFcn", cb.on_export_param_change);
     export_mode.Layout.Row = 10;
     export_mode.Layout.Column = [13 14];
 

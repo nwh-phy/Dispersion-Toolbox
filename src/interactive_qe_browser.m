@@ -105,6 +105,7 @@ end
         cb.on_norm_method_changed = @local_on_norm_method_changed;
         cb.on_auto_y_changed = @local_on_auto_y_changed;
         cb.on_fit_param_change = @local_on_fit_param_change;
+        cb.on_export_param_change = @local_on_export_param_change;
         cb.on_correction_target_change = @local_on_correction_target_change;
         cb.on_pick_peaks = @local_on_pick_peaks;
         cb.on_undo_pt = @local_on_undo_pt;
@@ -746,14 +747,10 @@ end
 
         entry = state.opHistory{sel_idx};
 
-        % Trim all entries AFTER the selected one
-        state.opHistory = state.opHistory(1:sel_idx);
-
         try
-            local_restore_param_snapshot(entry.snapshot);
-            local_rebuild_comparison(false);
+            local_restore_snapshot_transaction(entry.snapshot);
+            state.opHistory = state.opHistory(1:sel_idx);
             local_refresh_history_list();
-            local_update_all_views();
         catch ME
             local_show_error(ME, false);
         end
@@ -833,27 +830,39 @@ end
 
 
     function local_load_history_file(load_path)
-        loaded = load(load_path);
-        if ~isfield(loaded, 'opHistory') || ~iscell(loaded.opHistory) || ...
-                (~isempty(loaded.opHistory) && ...
-                ~all(cellfun(@(entry) isstruct(entry) && isscalar(entry) && ...
-                all(isfield(entry, {'snapshot', 'label', 'timestamp'})), loaded.opHistory)))
-            error('interactive_qe_browser:InvalidHistory', 'File does not contain valid opHistory entries.');
+        % Validate every entry before touching controls, axes, or pending fits.
+        opHistory = qe_read_browser_history(load_path);
+        if ~isempty(opHistory)
+            local_restore_snapshot_transaction(opHistory{end}.snapshot);
         end
-
-        % Report a restoration failure instead of silently claiming success.
-        if ~isempty(loaded.opHistory)
-            local_restore_param_snapshot(loaded.opHistory{end}.snapshot);
-            local_rebuild_comparison(false);
-            local_update_all_views();
-        end
-        state.opHistory = loaded.opHistory;
+        state.opHistory = opHistory;
         local_refresh_history_list();
         [~, name, ext] = fileparts(load_path);
         fname = [name ext];
         ui.InfoLabel.Text = sprintf('History loaded ← %s (%d entries)', fname, numel(state.opHistory));
         ui.InfoLabel.Visible = "on";
         fprintf('  History loaded from: %s (%d entries)\n', load_path, numel(state.opHistory));
+    end
+
+
+    function local_restore_snapshot_transaction(snap)
+        previous_state = state;
+        previous_snapshot = local_capture_snapshot();
+        % Once restoration starts, no earlier fit may survive a failed attempt.
+        local_clear_pending_fit();
+        try
+            local_restore_param_snapshot(snap);
+            local_rebuild_comparison(false);
+            local_update_all_views();
+        catch ME
+            % Roll back both the data/calibration and the controls. Reuse the
+            % saved views rather than rebuilding from the rejected settings.
+            state = previous_state;
+            local_restore_param_snapshot(previous_snapshot);
+            local_update_all_views();
+            local_refresh_history_list();
+            rethrow(ME);
+        end
     end
 
 
@@ -866,13 +875,10 @@ end
 
         target_idx = numel(state.opHistory) - 1;
         entry = state.opHistory{target_idx};
-        state.opHistory = state.opHistory(1:target_idx);
-
         try
-            local_restore_param_snapshot(entry.snapshot);
-            local_rebuild_comparison(false);
+            local_restore_snapshot_transaction(entry.snapshot);
+            state.opHistory = state.opHistory(1:target_idx);
             local_refresh_history_list();
-            local_update_all_views();
         catch ME
             local_show_error(ME, false);
         end
@@ -1092,9 +1098,15 @@ end
 
 
     function local_on_fit_param_change(~, ~)
-        % Auto-fit/dispersion/export parameters may not redraw the view, but
+        % Auto-fit/dispersion parameters may not redraw the view, but
         % they are part of a reusable GUI profile and must enter history.
         local_clear_pending_fit();
+        local_log_operation(local_describe_changes());
+    end
+
+
+    function local_on_export_param_change(~, ~)
+        % Export presets change neither fit inputs nor fitted curve overlays.
         local_log_operation(local_describe_changes());
     end
 

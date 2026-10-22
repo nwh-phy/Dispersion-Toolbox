@@ -84,7 +84,7 @@ runtests('tests/test_gui_joint_fit_smoke.m')
 runtests('case_studies/bisb2026/tests/test_gui_joint_fit_realdata.m')
 ```
 
-## Validation results
+## Validation results at c09d636
 
 The focused GUI run passed 10/10 tests before the additional malformed-history
 case and explicit legacy-normalization check were added. The standalone real-data
@@ -117,6 +117,42 @@ In the real-data comparison, the upper peak of two low-q channels reached the
 signal-window boundary and was marked invalid by both interfaces. Numerical
 agreement includes this rejection; it does not promote that peak to accepted
 scientific evidence.
+
+## Astra review follow-up
+
+Astra reproduced two gaps after the first-stage acceptance: changing the export
+preset erased the single-spectrum fit, and a partially valid history snapshot
+could change dq before failing while leaving an old pending fit acceptable.
+
+The follow-up separates export-setting callbacks from fit-setting callbacks.
+Changing the export preset or aspect ratio still records history but retains the
+pending fit, overlay objects, and Accept state.
+
+`qe_read_browser_history` validates every entry's required fields and dependent
+field groups before modifying live state. Newer optional fields remain optional
+for compatibility. Restoration snapshots the current state and controls; if a UI
+value or view rebuild fails, it restores the old data and controls and clears the
+pending fit. The history-selection and Undo paths reuse this restoration logic,
+and truncate history only after success.
+
+Three formal GUI cases were added: retaining the fit while changing both export
+settings, rejecting an incomplete snapshot before changing calibration, and
+rolling back a snapshot with a valid structure but an invalid dropdown value.
+The last two cases also check the subsequent Accept behavior.
+
+Follow-up verification on MATLAB R2026a:
+
+| Check | Previous passed | Follow-up passed | Failed | Incomplete/skipped |
+|---|---:|---:|---:|---:|
+| GUI behavior tests | 11 | 14/14 | 0 | 0 |
+| `tests/` | 174 | 177/177 | 0 | 0 |
+| `case_studies/bisb2026/tests/` | 78 | 78/78 | 0 | 0 |
+
+The final full runner exited successfully. All 255 cases passed, including the
+six-channel real-data comparison and the historical background checks. Temporary
+evidence: `/tmp/dispersion_gui_followup_focused.log`,
+`/tmp/dispersion_gui_followup_final.log`, and
+`/tmp/dispersion_gui_followup_final.mat` (`core`, `bisb`).
 
 ## Limits
 

@@ -188,6 +188,94 @@ verifyEmpty(testCase, strfind(char(restored.ui.InfoLabel.Text), 'History loaded'
 end
 
 
+function testExportSettingsPreservePendingFitAndOverlay(testCase)
+h = testCase.TestData.hooks;
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.fit_spectrum();
+before = h.state().pendingFit;
+assertNotEmpty(testCase, before);
+lines = findobj(h.ui.SingleAxes, 'Tag', 'spectrum_fit_overlay');
+assertNotEmpty(testCase, lines);
+h.ui.ExportModeDropdown.Value = 'Publication';
+h.ui.ExportModeDropdown.ValueChangedFcn(h.ui.ExportModeDropdown, []);
+h.ui.ExportRatioDropdown.Value = '4:3';
+h.ui.ExportRatioDropdown.ValueChangedFcn(h.ui.ExportRatioDropdown, []);
+verifyEqual(testCase, h.state().pendingFit, before);
+verifyEqual(testCase, char(h.ui.AcceptFitButton.Enable), 'on');
+verifyEqual(testCase, findobj(h.ui.SingleAxes, 'Tag', 'spectrum_fit_overlay'), lines);
+snapshot = h.state().opHistory{end}.snapshot;
+verifyEqual(testCase, snapshot.exportMode, 'Publication');
+verifyEqual(testCase, snapshot.exportRatio, '4:3');
+h.accept_fit();
+verifyEqual(testCase, h.state().manual_points, ...
+    [before.q_Ainv before.result.apex_energy_meV], 'AbsTol', 1e-12);
+end
+
+
+function testIncompleteHistoryIsRejectedBeforeChangingLiveState(testCase)
+h = testCase.TestData.hooks;
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.fit_spectrum();
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'incomplete_history.mat');
+h.save_history(p);
+loaded = load(p);
+opHistory = loaded.opHistory;
+opHistory{end}.snapshot.dqOverride = 0.00025;
+opHistory{end}.snapshot = rmfield(opHistory{end}.snapshot, 'energyMin');
+save(p, 'opHistory');
+before = h.state();
+verifyError(testCase, @() h.load_history(p), 'qe_read_browser_history:InvalidSnapshot');
+after = h.state();
+verifyEqual(testCase, after.physicalQE, before.physicalQE);
+verifyEqual(testCase, after.dataset, before.dataset);
+verifyEqual(testCase, after.selectedQIndex, before.selectedQIndex);
+verifyEqual(testCase, after.pendingFit, before.pendingFit);
+verifyEqual(testCase, after.opHistory, before.opHistory);
+verifyEqual(testCase, h.ui.DqOverrideField.Value, before.physicalQE.dq_Ainv);
+h.accept_fit();
+verifyEqual(testCase, h.state().manual_points(1, 1), ...
+    before.physicalQE.q_Ainv(before.selectedQIndex), 'AbsTol', 1e-12);
+end
+
+
+function testHistoryValueErrorRollsBackCalibrationAndInvalidatesFit(testCase)
+h = testCase.TestData.hooks;
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.fit_spectrum();
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'invalid_value_history.mat');
+h.save_history(p);
+loaded = load(p);
+opHistory = loaded.opHistory;
+opHistory{end}.snapshot.dqOverride = 0.00025;
+opHistory{end}.snapshot.yScale = 'unsupported';
+save(p, 'opHistory');
+before = h.state();
+old_y_scale = h.ui.YScaleDropdown.Value;
+threw = false;
+try
+    h.load_history(p);
+catch
+    threw = true;
+end
+verifyTrue(testCase, threw, 'Invalid UI values must fail restoration.');
+after = h.state();
+verifyEqual(testCase, after.physicalQE, before.physicalQE);
+verifyEqual(testCase, after.dataset, before.dataset);
+verifyEqual(testCase, after.selectedQIndex, before.selectedQIndex);
+verifyEqual(testCase, after.opHistory, before.opHistory);
+verifyEqual(testCase, after.manual_points, before.manual_points);
+verifyEqual(testCase, h.ui.DqOverrideField.Value, before.physicalQE.dq_Ainv);
+verifyEqual(testCase, h.ui.YScaleDropdown.Value, old_y_scale);
+verifyEmpty(testCase, after.pendingFit);
+verifyEqual(testCase, char(h.ui.AcceptFitButton.Enable), 'off');
+verifyEmpty(testCase, findobj(h.ui.SingleAxes, 'Tag', 'spectrum_fit_overlay'));
+h.accept_fit();
+verifyEqual(testCase, h.state().manual_points, before.manual_points);
+end
+
+
 function testCuratedPointsCorrectionsAndTargetsSurviveReopening(testCase)
 h = testCase.TestData.hooks;
 folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
