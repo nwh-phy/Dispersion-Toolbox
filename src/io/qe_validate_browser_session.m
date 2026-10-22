@@ -64,7 +64,7 @@ for k = 1:numel(fits)
     validateFit(pf);
     check(isIndex(pf.q_index, nq) && pf.q_index == snap.selectedQIndex && ...
         isequal(pf.q_Ainv, d.physicalQE.q_Ainv(pf.q_index)), 'Pending fit belongs to another channel.');
-    check(isequaln(pf.provenance.settings, qe_browser_fit_settings(snap)), 'Pending fit settings are stale.');
+    check(settingsAgree(pf.provenance.settings, snap), 'Pending fit settings are stale.');
     check(strcmp(pf.provenance.data_sha256, session.data_hashes.physical), 'Pending fit belongs to different counts or calibration.');
 end
 validatePlain(session);
@@ -104,7 +104,7 @@ check(isnumeric(pf.display_scale) && isscalar(pf.display_scale) && ...
 require(pf.provenance, {'settings', 'data_sha256', 'snapshot', 'sources', 'signal_window_meV', ...
     'energy_kind', 'input_kind', 'fitted_at'});
 check(isHash(pf.provenance.data_sha256) && numel(pf.provenance.energy_kind) == r.n_peaks && ...
-    isequaln(pf.provenance.settings, qe_browser_fit_settings(pf.provenance.snapshot)), 'Invalid fit provenance.');
+    settingsAgree(pf.provenance.settings, pf.provenance.snapshot), 'Invalid fit provenance.');
 energies = fitEnergies(r, true(r.n_peaks, 1));
 expected_display = energies >= pf.provenance.signal_window_meV(1);
 expected_keep = expected_display;
@@ -113,6 +113,18 @@ check(isequal(pf.display_keep, expected_display) && isequal(pf.keep, expected_ke
 if ~isempty(pf.fit_input)
     require(pf.fit_input, {'E', 'Y'});
     check(isnumeric(pf.fit_input.E) && numel(pf.fit_input.E) == numel(pf.fit_input.Y), 'Invalid saved fit input.');
+end
+end
+
+function yes = settingsAgree(settings, snapshot)
+% Each recorded fit setting has the same value in the snapshot. Comparing the
+% recorded names, not qe_browser_fit_settings of today, keeps sessions readable
+% after a control is added.
+yes = isstruct(settings) && isscalar(settings);
+if yes
+    names = fieldnames(settings);
+    yes = all(isfield(snapshot, names)) && ...
+        all(cellfun(@(n) isequaln(settings.(n), snapshot.(n)), names));
 end
 end
 

@@ -626,6 +626,43 @@ verifyNotEmpty(testCase, h.state().manual_points);
 end
 
 
+function testSessionFromAnOlderBrowserRestoresNewControlsToDefaults(testCase)
+% A session saved before a control existed lacks its field everywhere. It loads,
+% with that control at its default; one saved by a newer browser is refused.
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'session.mat');
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.fit_spectrum();
+h.save_session(p);
+saved = loadSession(p);
+
+session = saved;
+session.snapshot = rmfield(session.snapshot, 'poissonWeights');
+for k = 1:numel(session.history)
+    session.history{k}.snapshot = rmfield(session.history{k}.snapshot, 'poissonWeights');
+end
+session.pending_fit.provenance.snapshot = rmfield(session.pending_fit.provenance.snapshot, 'poissonWeights');
+session.pending_fit.provenance.settings = rmfield(session.pending_fit.provenance.settings, 'poissonWeights');
+session.display_fit = session.pending_fit;
+old = fullfile(folder, 'older.mat');
+save(old, 'session');
+h.ui.PoissonWeightsCheckbox.Value = false;   % the default is on
+h.load_session(old);
+verifyTrue(testCase, h.ui.PoissonWeightsCheckbox.Value);
+verifyEqual(testCase, h.state().pendingFit, session.pending_fit);
+verifyEqual(testCase, char(h.ui.AcceptFitButton.Enable), 'on');
+
+session = saved;
+session.snapshot.futureControl = 1;
+newer = fullfile(folder, 'newer.mat');
+save(newer, 'session');
+before = h.state();
+verifyError(testCase, @() h.load_session(newer), 'qe_validate_browser_session:InvalidSession');
+verifyEqual(testCase, h.state().pendingFit, before.pendingFit);
+end
+
+
 function session = loadSession(path)
 loaded = load(path); session = loaded.session;
 end

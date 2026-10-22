@@ -16,6 +16,9 @@ ui = local_build_ui();
 
 local_sync_manual_y_state();
 local_sync_denoise_profile_controls();
+% Controls of a fresh browser. A session saved before a control existed
+% restores that control to this default.
+default_snapshot = local_capture_snapshot();
 
 if strlength(string(startPath)) > 0
     local_load_start_path(string(startPath));
@@ -849,6 +852,17 @@ end
     function local_load_session_file(path)
         % Read/verify before mutation; restore every visible/data state on error.
         [session, missing] = qe_read_browser_session(path);
+        unknown = setdiff(fieldnames(session.snapshot), fieldnames(default_snapshot));
+        if ~isempty(unknown)
+            error('qe_validate_browser_session:InvalidSession', ...
+                'Session was saved by a newer browser (unknown controls: %s).', strjoin(unknown, ', '));
+        end
+        % Controls added since the session was saved take their defaults.
+        saved_controls = default_snapshot;
+        names = fieldnames(session.snapshot);
+        for k = 1:numel(names)
+            saved_controls.(names{k}) = session.snapshot.(names{k});
+        end
         previous_state = state;
         previous_snapshot = local_capture_snapshot();
         try
@@ -864,8 +878,8 @@ end
                 state.(names{k}) = session.analysis.(names{k});
             end
             state.opHistory = session.history;
-            local_restore_param_snapshot(session.snapshot);
-            if ~isequaln(local_capture_snapshot(), session.snapshot)
+            local_restore_param_snapshot(saved_controls);
+            if ~isequaln(local_capture_snapshot(), saved_controls)
                 error('qe_validate_browser_session:InvalidSession', ...
                     'Session controls cannot be restored exactly by this version.');
             end
