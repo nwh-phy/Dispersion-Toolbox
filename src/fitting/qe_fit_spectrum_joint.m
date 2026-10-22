@@ -37,6 +37,7 @@ arguments
     options.weights char {mustBeMember(options.weights, {'poisson', 'none'})} = 'poisson'
     options.initial_E0 (1,:) double = []
     options.n_starts (1,1) double {mustBeInteger, mustBePositive} = 8
+    options.warm_u (1,:) double = []   % result.joint.u of a fit with the same peaks: the first start
 end
 
 assert(numel(E) == numel(Y), 'qe_fit_spectrum_joint:Size', 'E and Y must have the same length');
@@ -49,6 +50,9 @@ end
 guess = options.initial_E0(isfinite(options.initial_E0));
 if numel(guess) == options.n_peaks
     args = [args, {'initial_E0', sort(guess)}];
+end
+if ~isempty(options.warm_u)
+    args = [args, {'warm_u', options.warm_u}];
 end
 kin = struct('used', false, 'beam_kV', options.beam_kV, 'q_Ainv', q_Ainv, 'dq', options.dq);
 if options.kinematic
