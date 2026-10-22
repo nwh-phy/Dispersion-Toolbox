@@ -61,7 +61,7 @@ verifyLessThan(testCase, peak_label.Position(2), yl(2));
 h.accept_fit();
 st = h.state();
 verifySize(testCase, st.manual_points, [1 2]);
-verifyEqual(testCase, st.manual_points(1, :), [0.005 r.apex_energy_meV], 'AbsTol', 1e-9);
+verifyEqual(testCase, st.manual_points(1, :), [0.005 r.omega_p], 'AbsTol', 1e-9);   % ZLP joint points are E0
 end
 
 
@@ -210,7 +210,7 @@ verifyEqual(testCase, snapshot.exportMode, 'Publication');
 verifyEqual(testCase, snapshot.exportRatio, '4:3');
 h.accept_fit();
 verifyEqual(testCase, h.state().manual_points, ...
-    [before.q_Ainv before.result.apex_energy_meV], 'AbsTol', 1e-12);
+    [before.q_Ainv before.result.omega_p], 'AbsTol', 1e-12);
 end
 
 
@@ -295,7 +295,7 @@ result = h.state().pendingFit.result;
 h.accept_fit();
 before = h.state();
 verifyEqual(testCase, before.manual_branches{2}(1, 1:2), ...
-    [-0.005 result.apex_energy_meV], 'AbsTol', 1e-12);
+    [-0.005 result.omega_p], 'AbsTol', 1e-12);
 verifyNumElements(testCase, before.branchCorrectionLog, 1);
 h.save_points(points_path);
 h.save_history(history_path);
@@ -414,8 +414,8 @@ verifyEqual(testCase, char(restored.ui.AcceptFitButton.Enable), 'on');
 restored.accept_fit();
 verifyNumElements(testCase, restored.state().acceptedFits, 2);
 record = restored.state().acceptedFits{end};
-verifyEqual(testCase, record.accepted_energy_meV, before.pendingFit.result.apex_energy_meV);
-verifyEqual(testCase, record.provenance.energy_kind, {'loss_function_apex'});
+verifyEqual(testCase, record.accepted_energy_meV, before.pendingFit.result.omega_p);
+verifyEqual(testCase, record.provenance.energy_kind, {'model_E0'});
 verifyEqual(testCase, record.provenance.settings.fitMethod, 'zlp_joint');
 verifyEqual(testCase, record.provenance.signal_window_meV, [300 1800]);
 verifyEqual(testCase, record.provenance.input_kind, 'physical_counts');

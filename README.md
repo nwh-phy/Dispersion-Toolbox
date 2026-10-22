@@ -105,7 +105,7 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 **单谱拟合方法**（`Fit Method`，最后一行控件）：
 
 - **BG + peaks**（默认，旧方法）：在预处理后的谱上拟合幂律背景加若干峰（`fit_loss_function`）。
-- **ZLP joint**：直接拟合所选通道的原始计数，ZLP 和损失峰一起拟合，不扣背景，不受归一化、去噪、背景扣除设置影响（`qe_fit_spectrum_joint` → `qe_zlp_joint_fit`）。拟合窗为 max(E min, 250) 到 E max；峰数取 **Max Peaks**（恰好这么多个，不是上限）；峰形只能选 **Drude-Lorentz** 或 **Sym. Lorentz**。**Kinematic factor**（默认开）给损失峰乘上该通道的 2D 运动学因子（`qe_kinematic_prefactor`，按 **Beam kV**），小 q 处不开会让 E0 系统性偏低（30 kV、q = 0.002 Å⁻¹、Γ = 400 meV 的合成谱上偏约 70 meV）；**Poisson weights** 按 σ = √counts 加权。信息栏给出 E0、峰顶（损失函数最大值，阻尼 DL 的峰顶低于 E0）和 χ²_red，比较 1 峰和 2 峰时看 χ²_red。叠加图里灰线是实际拟合的原始计数（按当前显示缩放）。这种拟合还没有误差棒。
+- **ZLP joint**：直接拟合所选通道的原始计数，ZLP 和损失峰一起拟合，不扣背景，不受归一化、去噪、背景扣除设置影响（`qe_fit_spectrum_joint` → `qe_zlp_joint_fit`）。拟合窗为 max(E min, 250) 到 E max；峰数取 **Max Peaks**（恰好这么多个，不是上限）；峰形只能选 **Drude-Lorentz** 或 **Sym. Lorentz**。**Kinematic factor**（默认开）给损失峰乘上该通道的 2D 运动学因子（`qe_kinematic_prefactor`，按 **Beam kV**），小 q 处不开会让 E0 系统性偏低（30 kV、q = 0.002 Å⁻¹、Γ = 400 meV 的合成谱上偏约 70 meV）；**Poisson weights** 按 σ = √counts 加权。信息栏给出 E0、峰顶（损失函数最大值，阻尼 DL 的峰顶低于 E0）和 χ²_red，比较 1 峰和 2 峰时看 χ²_red。**Accept Fit** 写进色散的是 E0：色散模型描述的是 E0，阻尼大时峰顶明显偏低（590 在 q = 0.005 的两个峰：E0 726/1594 meV，峰顶 651/1355 meV）。BG + peaks 仍写入峰顶，和论文期结果一致；每个被接受的拟合都记录了自己用的是哪一个（`energy_kind`）。叠加图里灰线是实际拟合的原始计数（按当前显示缩放）。这种拟合还没有误差棒。
 
 **方式 D — 手动选点**（旧式 fallback）：
 
@@ -240,7 +240,7 @@ fit_result = fit_dispersion_generic( ...
 
 参数应由具体数据决定，以上仅为示例。
 
-GUI 的单通道 ZLP joint 与 BiSb 的 P2b 多通道前向模型是不同方法。前者的 `apex_energy_meV` 表示损失函数峰顶，`omega_p` 表示模型 E0；它们也不等同于观测谱上的峰顶。数值验收只证明 GUI 和函数接口计算一致，不证明低 q 的模型参数具有物理唯一性。
+GUI 的单通道 ZLP joint 与 BiSb 的 P2b 多通道前向模型是不同方法。前者的 `apex_energy_meV` 表示损失函数峰顶，`omega_p` 表示模型 E0；它们也不等同于观测谱上的峰顶。GUI 里 ZLP joint 写进色散的是 `omega_p`。数值验收只证明 GUI 和函数接口计算一致，不证明低 q 的模型参数具有物理唯一性。
 
 ---
 

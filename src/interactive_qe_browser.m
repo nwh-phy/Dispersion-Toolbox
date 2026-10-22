@@ -1601,7 +1601,7 @@ end
 
         % Filter out peaks below E_min for display, and keep only reliable
         % peaks for acceptance into curated branches.
-        peak_energy = local_fit_peak_energy(result);
+        [peak_energy, kind] = qe_fit_point_energy(result);
         display_keep = peak_energy >= E_min;
         if ~any(display_keep)
             ui.FitInfoLabel.Text = "No valid peaks found above E_min";
@@ -1629,10 +1629,6 @@ end
         state.pendingFit.fit_input = fit_input;
         state.pendingFit.display_scale = display_scale;
         snap = local_capture_snapshot();
-        kind = repmat({'model_E0'}, result.n_peaks, 1);
-        if isfield(result, 'apex_energy_meV')
-            kind(isfinite(result.apex_energy_meV(:))) = {'loss_function_apex'};
-        end
         input_kind = 'preprocessed_spectrum';
         fit_window = [E_min E_max];
         if strcmp(snap.fitMethod, 'zlp_joint')
@@ -1659,7 +1655,7 @@ end
         fit_input = pf.fit_input;
         display_scale = pf.display_scale;
         abs_q = pf.abs_q;
-        peak_energy = local_fit_peak_energy(result);
+        peak_energy = local_point_energy(pf);
         % Overlay fit on spectrum axes
         ax = ui.SingleAxes;
         hold(ax, 'on');
@@ -1852,13 +1848,10 @@ end
     end
 
 
-    function peak_energy = local_fit_peak_energy(result)
-        peak_energy = result.omega_p(:);
-        if isfield(result, 'apex_energy_meV')
-            apex = result.apex_energy_meV(:);
-            use_apex = isfinite(apex);
-            peak_energy(use_apex) = apex(use_apex);
-        end
+    function energy = local_point_energy(pf)
+        % Energies a pending or displayed fit puts into the dispersion, by the
+        % kind recorded when it was fitted (a restored session keeps its own).
+        energy = qe_fit_point_energy(pf.result, pf.provenance.energy_kind);
     end
 
 
@@ -1922,7 +1915,7 @@ end
     function local_archive_accepted_fit(pf, target)
         pf.accepted_at = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
         pf.accepted_peak_indices = find(pf.keep);
-        energies = local_fit_peak_energy(pf.result);
+        energies = local_point_energy(pf);
         pf.accepted_energy_meV = energies(pf.keep);
         pf.target = target;
         state.acceptedFits{end+1} = pf;
@@ -1937,7 +1930,7 @@ end
 
         pf = state.pendingFit;
         result = pf.result;
-        peak_energy = local_fit_peak_energy(result);
+        peak_energy = local_point_energy(pf);
         keep = pf.keep;
         if ~any(keep), return; end
         abs_q = pf.abs_q;

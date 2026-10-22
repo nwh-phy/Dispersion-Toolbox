@@ -50,7 +50,7 @@ for k = 1:numel(a.acceptedFits)
     validateFit(record);
     require(record, {'accepted_at', 'accepted_peak_indices', 'accepted_energy_meV', 'target'});
     check(isequal(record.accepted_peak_indices, find(record.keep)) && ...
-        isequal(record.accepted_energy_meV, fitEnergies(record.result, record.keep)) && ...
+        isequal(record.accepted_energy_meV, pointEnergies(record, record.keep)) && ...
         isText(record.accepted_at) && isText(record.target), 'Invalid accepted-fit audit record.');
 end
 pf = session.pending_fit;
@@ -105,7 +105,7 @@ require(pf.provenance, {'settings', 'data_sha256', 'snapshot', 'sources', 'signa
     'energy_kind', 'input_kind', 'fitted_at'});
 check(isHash(pf.provenance.data_sha256) && numel(pf.provenance.energy_kind) == r.n_peaks && ...
     settingsAgree(pf.provenance.settings, pf.provenance.snapshot), 'Invalid fit provenance.');
-energies = fitEnergies(r, true(r.n_peaks, 1));
+energies = pointEnergies(pf, true(r.n_peaks, 1));
 expected_display = energies >= pf.provenance.signal_window_meV(1);
 expected_keep = expected_display;
 if isfield(r, 'peak_valid'), expected_keep = expected_keep & r.peak_valid(:); end
@@ -128,12 +128,9 @@ if yes
 end
 end
 
-function energy = fitEnergies(result, keep)
-energy = result.omega_p(:);
-if isfield(result, 'apex_energy_meV')
-    apex = result.apex_energy_meV(:);
-    energy(isfinite(apex)) = apex(isfinite(apex));
-end
+function energy = pointEnergies(pf, keep)
+% The energies the fit gave the dispersion, by the kinds recorded with it.
+energy = qe_fit_point_energy(pf.result, pf.provenance.energy_kind);
 energy = energy(keep);
 end
 
