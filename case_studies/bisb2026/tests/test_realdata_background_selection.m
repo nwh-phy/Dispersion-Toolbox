@@ -37,7 +37,7 @@ end
 
 function testDualWindowAutoCanLockCentralNeighborhoodToGroupedWinner(testCase)
 [qe_focus, opts] = loadRepresentativeLowQDataset(testCase);
-opts.bg_auto_group_qmax = 0.01;
+opts.bg_auto_group_qmax = 0.001;
 
 [~, bg_diag] = qe_preprocess(qe_focus, opts);
 center_idx = find(abs(qe_focus.q_Ainv) <= opts.bg_auto_group_qmax);
@@ -50,13 +50,13 @@ end
 function testShoulderGroupedAutoCanLockPositiveShoulderBand(testCase)
 [qe_focus, opts] = load20wLowQDataset(testCase);
 base_opts = opts;
-base_opts.bg_auto_group_qmax = 0.01;
+base_opts.bg_auto_group_qmax = 0.001;
 group_opts = base_opts;
-group_opts.bg_auto_group_ranges = [0.02, 0.05];
+group_opts.bg_auto_group_ranges = [0.002, 0.005];
 
 [~, bg_diag_base] = qe_preprocess(qe_focus, base_opts);
 [~, bg_diag_grouped] = qe_preprocess(qe_focus, group_opts);
-pos_idx = find(qe_focus.q_Ainv >= 0.02 & qe_focus.q_Ainv <= 0.05);
+pos_idx = find(qe_focus.q_Ainv >= 0.002 & qe_focus.q_Ainv <= 0.005);
 verifyGreaterThan(testCase, numel(pos_idx), 1);
 verifyEqual(testCase, unique(string({bg_diag_grouped(pos_idx).selected_method})), "PearsonVII");
 verifyLessThan(testCase, mean([bg_diag_grouped(pos_idx).neg_peak_fraction], 'omitnan'), ...
@@ -73,7 +73,7 @@ assumeTrue(testCase, exist(dataset_path, 'file') == 2, ...
 
 dataset = load_qe_dataset(dataset_path);
 qe = dataset.qe;
-focus_idx = find(abs(qe.q_Ainv) <= 0.15);
+focus_idx = find(abs(qe.q_Ainv) <= 0.015);
 verifyNotEmpty(testCase, focus_idx);
 
 qe_focus = qe;
@@ -106,7 +106,7 @@ assumeTrue(testCase, exist(dataset_path, 'file') == 2, ...
 
 dataset = load_qe_dataset(dataset_path);
 qe = dataset.qe;
-focus_idx = find(abs(qe.q_Ainv) <= 0.15);
+focus_idx = find(abs(qe.q_Ainv) <= 0.015);
 verifyNotEmpty(testCase, focus_idx);
 
 qe_focus = qe;

@@ -16,7 +16,7 @@ switch preset_name
         opts.bg_method = 'Auto';
         opts.bg_candidate_methods = {'Power', 'Exp2', 'ExpPoly3', 'Pearson', 'PearsonVII'};
         opts.bg_win_hi = [2800 3400];
-        opts.bg_auto_group_qmax = 0.01;
+        opts.bg_auto_group_qmax = 0.001;   % q = 0 +/- 2 channels at 10w (dq 0.0005 1/A since the 2026-05-14 calibration fix)
         opts.bg_auto_group_ranges = zeros(0, 2);
 
     case 'thesis_baseline_v1'

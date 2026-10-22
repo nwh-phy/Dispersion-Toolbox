@@ -25,7 +25,7 @@ function testTwentyWProfileTargetsOnlyB1LargeQ(testCase)
 src = testCase.TestData.script_src;
 
 verifyHasText(testCase, src, 'profile.branch_index = 1;');
-verifyHasText(testCase, src, 'profile.q_min_Ainv = 0.10;');
+verifyHasText(testCase, src, 'profile.q_min_Ainv = 0.010;');
 verifyHasText(testCase, src, 'profile.refit_window_meV = [1000 1700];');
 verifyHasText(testCase, src, 'profile.max_energy_shift_meV = 250;');
 verifyHasText(testCase, src, 'profile.window_edge_margin_meV = 50;');

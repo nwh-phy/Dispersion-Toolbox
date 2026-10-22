@@ -24,7 +24,7 @@ classdef Run590GuiHistoryAreaOptionsTest < matlab.unittest.TestCase
                 'snap.peakModel = char(string(options.peakModelOverride));'));
         end
 
-        function defaultsQRangeToQ015WhenUnspecified(testCase)
+        function defaultsQRangeToQ0015WhenUnspecified(testCase)
             caseRoot = fileparts(fileparts(mfilename('fullpath')));
             scriptPath = fullfile(caseRoot, 'scripts', ...
                 'legacy_202605', 'run_590_gui_history_area_analysis.m');
@@ -33,7 +33,7 @@ classdef Run590GuiHistoryAreaOptionsTest < matlab.unittest.TestCase
             src = fileread(scriptPath);
 
             testCase.verifyNotEmpty(strfind(src, ...
-                'options.qRangeOverride_Ainv (1,2) double = [-0.15 0.15]'));
+                'options.qRangeOverride_Ainv (1,2) double = [-0.015 0.015]'));
             testCase.verifyNotEmpty(strfind(src, ...
                 'options.peakModelOverride {mustBeTextScalar} = ""'));
             testCase.verifyNotEmpty(strfind(src, ...

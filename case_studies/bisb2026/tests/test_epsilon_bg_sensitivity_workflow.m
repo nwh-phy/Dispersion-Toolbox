@@ -39,5 +39,5 @@ verifyNotEmpty(testCase, strfind(txt, '590_gui_history_area_260506'));
 verifyNotEmpty(testCase, strfind(txt, 'n0_PL2_10w_gui_history_area_260506'));
 verifyNotEmpty(testCase, strfind(txt, 'no_PL2_20w_2film_gui_history_area_260506_highq_refined'));
 verifyNotEmpty(testCase, strfind(txt, 'branch1_points.csv'));
-verifyNotEmpty(testCase, strfind(txt, 'branch3_points.csv'));
+verifyEmpty(testCase, strfind(txt, 'branch3_points.csv'));      % B1 only since 18af79b
 end
