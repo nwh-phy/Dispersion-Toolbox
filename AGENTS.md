@@ -37,3 +37,13 @@ Agreed with the user on 2026-10-21, after the clean-up of the BiSb scripts (comm
 6. `src/` holds the GUI toolbox and generic functions only; BiSb-specific code lives in `case_studies/bisb2026/`.
 7. Before committing a change to shared code, run `tests/` and `case_studies/bisb2026/tests` and compare with the previous result. Both suites passed in full on 2026-10-21 (159 and 75 tests).
 8. The momentum calibration was corrected by a factor of 10 on 2026-05-14 (dq 0.0005 1/A per pixel at 10w, 0.00025 at 20w). A q threshold in 1/A written before that date selects 10x more channels than intended; divide it by 10 when reviving older code.
+
+## GUI work
+
+Agreed with the user on 2026-10-22.
+
+1. GUI work (`src/interactive_qe_browser.m`, `src/ui/`, the browser files in `src/io/`, and their tests) goes on the branch `gui-joint-fit`, which starts from `main` and is checked out in the worktree `.claude/worktrees/gui-joint-fit`. Do not put GUI work on `feat/zlp-joint-fit` or start another GUI branch from it: the research scripts of `feat/zlp-joint-fit` must not enter `main`.
+2. The main checkout stays on `feat/zlp-joint-fit`; do not switch it to another branch. Do not merge `gui-joint-fit`, `main` and `feat/zlp-joint-fit` into each other without the user's approval.
+3. `src/fitting/qe_zlp_joint_fit.m` and `src/fitting/qe_kinematic_prefactor.m` exist on both branches. A change to either on one branch is copied to the other.
+4. The worktree has no data, so the real-data GUI tests in `case_studies/bisb2026/tests/test_gui_joint_fit_realdata.m` skip there. Check real data with a temporary script outside the repository that reads the main checkout's data by absolute path; its results stay out of git.
+5. A new GUI control must stay optional when older history and session files are restored: a missing field takes the control's default.
