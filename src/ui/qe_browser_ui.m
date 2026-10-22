@@ -29,7 +29,7 @@ function ui_handles = qe_browser_ui(cb)
         "Color", [0.97 0.975 0.985]);
 
     main_grid = uigridlayout(fig, [3 3]);
-    main_grid.RowHeight = {330, "1x", "1x"};
+    main_grid.RowHeight = {359, "1x", "1x"};
     main_grid.ColumnWidth = {"1x", "1x", 280};
     main_grid.Padding = [10 10 10 10];
     main_grid.RowSpacing = 10;
@@ -76,8 +76,8 @@ function ui_handles = qe_browser_ui(cb)
     control_panel.Layout.Row = 1;
     control_panel.Layout.Column = [1 2];
 
-    control_grid = uigridlayout(control_panel, [10 16]);
-    control_grid.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24};
+    control_grid = uigridlayout(control_panel, [11 16]);
+    control_grid.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24};
     control_grid.ColumnWidth = {80, 80, 62, 100, 62, 80, 62, 80, 62, 80, 80, 80, 62, 80, 80, "1x"};
     control_grid.Padding = [6 4 6 4];
     control_grid.RowSpacing = 5;
@@ -750,8 +750,8 @@ function ui_handles = qe_browser_ui(cb)
     pk_model_lbl.Layout.Row = 9; pk_model_lbl.Layout.Column = 1;
 
     pk_model_dropdown = uidropdown(control_grid, ...
-        "Items", {'Lorentz', 'Gaussian', 'Voigt', 'Damped HO', 'Fano'}, ...
-        "ItemsData", {'lorentz', 'gaussian', 'voigt', 'damped_ho', 'fano'}, ...
+        "Items", {'Drude-Lorentz', 'Sym. Lorentz', 'Gaussian', 'Voigt', 'Damped HO', 'Fano'}, ...
+        "ItemsData", {'lorentz', 'lorentz_symmetric', 'gaussian', 'voigt', 'damped_ho', 'fano'}, ...
         "Value", 'lorentz', ...
         "ValueChangedFcn", cb.on_fit_param_change);
     pk_model_dropdown.Layout.Row = 9; pk_model_dropdown.Layout.Column = [2 3];
@@ -864,6 +864,41 @@ function ui_handles = qe_browser_ui(cb)
         "HorizontalAlignment", "left");
     disp_info_label.Layout.Row = 10;
     disp_info_label.Layout.Column = 16;
+
+    % ═══════════ ROW 11: Single-spectrum fit method ═══════════
+    fit_method_lbl = uilabel(control_grid, "Text", "Fit Method:");
+    fit_method_lbl.Layout.Row = 11; fit_method_lbl.Layout.Column = 1;
+
+    fit_method_dropdown = uidropdown(control_grid, ...
+        "Items", {'BG + peaks', 'ZLP joint'}, ...
+        "ItemsData", {'bg_peaks', 'zlp_joint'}, ...
+        "Value", 'bg_peaks', ...
+        "Tooltip", "ZLP joint: fit the raw counts of the selected channel with the ZLP and the loss peaks together, no background subtraction; window max(E min, 250) to E max, Max Peaks peaks, Drude-Lorentz or Sym. Lorentz", ...
+        "ValueChangedFcn", cb.on_fit_param_change);
+    fit_method_dropdown.Layout.Row = 11; fit_method_dropdown.Layout.Column = [2 3];
+
+    kinematic_cb = uicheckbox(control_grid, ...
+        "Text", "Kinematic factor", ...
+        "Value", true, ...
+        "Tooltip", "ZLP joint: multiply the loss peaks by the 2D q-EELS kinematic prefactor of the channel", ...
+        "ValueChangedFcn", cb.on_fit_param_change);
+    kinematic_cb.Layout.Row = 11; kinematic_cb.Layout.Column = [4 5];
+
+    beam_kv_lbl = uilabel(control_grid, "Text", "Beam kV:");
+    beam_kv_lbl.Layout.Row = 11; beam_kv_lbl.Layout.Column = 6;
+
+    beam_kv_field = uispinner(control_grid, ...
+        "Value", 30, "Step", 10, ...
+        "Limits", [1 300], "ValueDisplayFormat", "%.0f", ...
+        "ValueChangedFcn", cb.on_fit_param_change);
+    beam_kv_field.Layout.Row = 11; beam_kv_field.Layout.Column = 7;
+
+    poisson_cb = uicheckbox(control_grid, ...
+        "Text", "Poisson weights", ...
+        "Value", true, ...
+        "Tooltip", "ZLP joint: weight the residuals by sigma = sqrt(counts)", ...
+        "ValueChangedFcn", cb.on_fit_param_change);
+    poisson_cb.Layout.Row = 11; poisson_cb.Layout.Column = [8 9];
 
     % ═══════════ AXES ═══════════
     qe_axes = uiaxes(main_grid);
@@ -1090,6 +1125,10 @@ function ui_handles = qe_browser_ui(cb)
     ui_handles.PeakModelDropdown = pk_model_dropdown;
     ui_handles.MaxShiftField = max_shift_field;
     ui_handles.BootstrapCiSamplesField = ci_samples_field;
+    ui_handles.FitMethodDropdown = fit_method_dropdown;
+    ui_handles.KinematicCheckbox = kinematic_cb;
+    ui_handles.BeamKVField = beam_kv_field;
+    ui_handles.PoissonWeightsCheckbox = poisson_cb;
     ui_handles.SeedInfoLabel = seed_info_label;
     ui_handles.PickGuessesButton = pick_guesses_btn;
     ui_handles.ReassignButton = reassign_btn;

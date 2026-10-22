@@ -80,7 +80,7 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 **方式 A — 自动拟合**（推荐首选）：
 
 1. 设置 **Prominence**、**Max Peaks**（每个 q 通道最多几个峰）
-2. 选择 **Peak Model**（一般用 Lorentz）
+2. 选择 **Peak Model**（一般用 Drude-Lorentz）
 3. 点击 **Auto Fit ω(q)**
 4. 检查散点和 branch assignment 是否合理
 
@@ -101,6 +101,11 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 4. 点击 **Correct Auto**，再在单谱窗口点击正确峰位；被矫正点会以黄色菱形标出
 5. 如误点，点击 **Undo Corr** 撤销最近一次 correction
 6. 也可先用 **Fit Spectrum** 拟合当前单谱，再用 **Accept Fit** 把拟合峰位写回所选 target branch
+
+**单谱拟合方法**（`Fit Method`，最后一行控件）：
+
+- **BG + peaks**（默认，旧方法）：在预处理后的谱上拟合幂律背景加若干峰（`fit_loss_function`）。
+- **ZLP joint**：直接拟合所选通道的原始计数，ZLP 和损失峰一起拟合，不扣背景，不受归一化、去噪、背景扣除设置影响（`qe_fit_spectrum_joint` → `qe_zlp_joint_fit`）。拟合窗为 max(E min, 250) 到 E max；峰数取 **Max Peaks**（恰好这么多个，不是上限）；峰形只能选 **Drude-Lorentz** 或 **Sym. Lorentz**。**Kinematic factor**（默认开）给损失峰乘上该通道的 2D 运动学因子（`qe_kinematic_prefactor`，按 **Beam kV**），小 q 处不开会让 E0 系统性偏低（30 kV、q = 0.002 Å⁻¹、Γ = 400 meV 的合成谱上偏约 70 meV）；**Poisson weights** 按 σ = √counts 加权。信息栏给出 E0、峰顶（损失函数最大值，阻尼 DL 的峰顶低于 E0）和 χ²_red，比较 1 峰和 2 峰时看 χ²_red。叠加图里灰线是实际拟合的原始计数（按当前显示缩放）。这种拟合还没有误差棒。
 
 **方式 D — 手动选点**（旧式 fallback）：
 
@@ -168,7 +173,8 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 
 | 模型 | 适用场景 |
 |---|---|
-| Lorentz (Drude) | 金属等离激元（默认推荐） |
+| Drude-Lorentz | 金属等离激元（默认推荐）；A·E·Γ/((E²−E0²)²+E²Γ²)，代码里叫 `lorentz` |
+| Sym. Lorentz | 以 E0 为中心的对称 Lorentz 峰（`lorentz_symmetric`） |
 | Gaussian | 分辨率限制的窄峰 |
 | Pseudo-Voigt | Lorentz + Gaussian 混合 |
 | Damped HO | 有限温度声子 |

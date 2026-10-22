@@ -1,4 +1,7 @@
-function app = interactive_qe_browser(startPath, historyFile)
+function [app, hooks] = interactive_qe_browser(startPath, historyFile)
+% [app, hooks] = interactive_qe_browser(...) also returns test hooks: hooks.ui (the
+% widget handles), hooks.state() (the live state), hooks.select_q(k), and
+% hooks.fit_spectrum() / hooks.accept_fit() (the Fit Spectrum / Accept buttons).
 arguments
     startPath {mustBeTextScalar} = ""
     historyFile {mustBeTextScalar} = ""
@@ -37,6 +40,22 @@ end
 if nargout > 0
     app = ui.Figure;
 end
+if nargout > 1
+    hooks = struct('ui', ui, 'state', @local_hook_state, 'select_q', @local_hook_select_q, ...
+        'fit_spectrum', @() local_on_fit_spectrum([], []), 'accept_fit', @() local_on_accept_fit([], []));
+end
+
+
+    function s = local_hook_state()
+        s = state;
+    end
+
+
+    function local_hook_select_q(k)
+        % Select q channel k as a click on the q-E map does.
+        state.selectedQIndex = k;
+        local_update_selected_q_views();
+    end
 
 
     function state_out = local_initial_state()
@@ -489,6 +508,10 @@ end
         snap.maxPeaks = ui.MaxPeaksField.Value;
         snap.peakModel = char(ui.PeakModelDropdown.Value);
         snap.bootstrapCiSamples = ui.BootstrapCiSamplesField.Value;
+        snap.fitMethod = char(ui.FitMethodDropdown.Value);
+        snap.kinematicFactor = ui.KinematicCheckbox.Value;
+        snap.beamKV = ui.BeamKVField.Value;
+        snap.poissonWeights = ui.PoissonWeightsCheckbox.Value;
         snap.maxShift = ui.MaxShiftField.Value;
         snap.guessText = char(string(ui.GuessField.Value));
         snap.branch1Min = ui.Branch1MinField.Value;
@@ -613,6 +636,20 @@ end
         end
         if isfield(snap, 'bootstrapCiSamples')
             ui.BootstrapCiSamplesField.Value = snap.bootstrapCiSamples;
+        end
+        if isfield(snap, 'fitMethod') && any(strcmp(snap.fitMethod, ui.FitMethodDropdown.ItemsData))
+            ui.FitMethodDropdown.Value = snap.fitMethod;
+        else
+            ui.FitMethodDropdown.Value = 'bg_peaks';   % snapshots before the ZLP joint fit
+        end
+        if isfield(snap, 'kinematicFactor')
+            ui.KinematicCheckbox.Value = snap.kinematicFactor;
+        end
+        if isfield(snap, 'beamKV')
+            ui.BeamKVField.Value = snap.beamKV;
+        end
+        if isfield(snap, 'poissonWeights')
+            ui.PoissonWeightsCheckbox.Value = snap.poissonWeights;
         end
         if isfield(snap, 'maxShift')
             ui.MaxShiftField.Value = snap.maxShift;
@@ -872,6 +909,10 @@ end
             'autoFitSmoothWidth', 'Auto smooth W', ...
             'maxPeaks', 'Max peaks', ...
             'peakModel', 'Peak model', ...
+            'fitMethod', 'Fit method', ...
+            'kinematicFactor', 'Kinematic factor', ...
+            'beamKV', 'Beam kV', ...
+            'poissonWeights', 'Poisson weights', ...
             'maxShift', 'Max shift', ...
             'guessText', 'Guesses', ...
             'dispModel', 'Disp model', ...
@@ -1254,7 +1295,9 @@ end
 
 
     function local_on_fit_spectrum(~, ~)
-        % Fit the currently displayed single spectrum with the selected model.
+        % Fit the currently displayed single spectrum with the selected method:
+        % 'bg_peaks' fits the preprocessed spectrum (fit_loss_function), 'zlp_joint'
+        % the raw counts of the channel together with the ZLP (qe_fit_spectrum_joint).
         if isempty(state.physicalQE) && isempty(state.comparisonQE)
             ui.FitInfoLabel.Text = "Load data first";
             return
@@ -1263,19 +1306,9 @@ end
         qe = local_get_active_qe();
         if isempty(qe); return; end
 
-        % Apply same preprocessing as single spectrum display (cached)
-        [qe, ~, ~] = local_get_cached_preprocess(qe, local_preprocess_opts());
-
-        [mask, energy_axis] = local_energy_mask(qe);
         q_index = state.selectedQIndex;
         q_value = qe.q_Ainv(q_index);
         abs_q = abs(q_value);
-        spectrum = double(qe.intensity(mask, q_index));
-
-        if all(spectrum == 0) || all(isnan(spectrum))
-            ui.FitInfoLabel.Text = "Empty spectrum";
-            return
-        end
 
         % Fit using current UI parameters
         E_min = max(ui.EnergyMinField.Value, 50);
@@ -1290,19 +1323,38 @@ end
             guesses = [];
         end
 
-        try
-            result = fit_loss_function(energy_axis, spectrum, ...
-                'E_min', E_min, 'E_max', E_max, ...
-                'min_prominence', ui.PromField.Value, ...
-                'smooth_width', ui.SmoothField.Value, ...
-                'max_peaks', ui.MaxPeaksField.Value, ...
-                'initial_guesses', guesses, ...
-                'peak_model', ui.PeakModelDropdown.Value, ...
-                'pre_subtracted', ui.BgSubCheckbox.Value, ...
-                'bootstrap_ci_samples', ui.BootstrapCiSamplesField.Value);
-        catch ME
-            ui.FitInfoLabel.Text = sprintf("Fit failed: %s", ME.message);
-            return
+        display_scale = 1;   % displayed intensity per unit of the fitted data
+        fit_input = [];      % ZLP joint: the raw counts that were fitted
+        if strcmp(ui.FitMethodDropdown.Value, 'zlp_joint')
+            E_min = max(E_min, 250);
+            [result, fit_input, display_scale] = local_fit_spectrum_joint(qe, q_index, E_min, E_max, guesses);
+            if isempty(result); return; end
+        else
+            % Apply same preprocessing as single spectrum display (cached)
+            [qe, ~, ~] = local_get_cached_preprocess(qe, local_preprocess_opts());
+
+            [mask, energy_axis] = local_energy_mask(qe);
+            spectrum = double(qe.intensity(mask, q_index));
+
+            if all(spectrum == 0) || all(isnan(spectrum))
+                ui.FitInfoLabel.Text = "Empty spectrum";
+                return
+            end
+
+            try
+                result = fit_loss_function(energy_axis, spectrum, ...
+                    'E_min', E_min, 'E_max', E_max, ...
+                    'min_prominence', ui.PromField.Value, ...
+                    'smooth_width', ui.SmoothField.Value, ...
+                    'max_peaks', ui.MaxPeaksField.Value, ...
+                    'initial_guesses', guesses, ...
+                    'peak_model', ui.PeakModelDropdown.Value, ...
+                    'pre_subtracted', ui.BgSubCheckbox.Value, ...
+                    'bootstrap_ci_samples', ui.BootstrapCiSamplesField.Value);
+            catch ME
+                ui.FitInfoLabel.Text = sprintf("Fit failed: %s", ME.message);
+                return
+            end
         end
 
         % Filter out peaks below E_min for display, and keep only reliable
@@ -1337,14 +1389,21 @@ end
         delete(findobj(ax, 'Tag', fit_tag));
         delete(findobj(ax, 'Tag', 'lorentz_fit'));
 
+        % ZLP joint: the raw counts that were fitted, on the display scale
+        if ~isempty(fit_input)
+            plot(ax, fit_input.E, display_scale * fit_input.Y, '-', ...
+                'Color', [0.6 0.6 0.6], 'LineWidth', 1, ...
+                'Tag', fit_tag, 'DisplayName', 'Fit input (raw counts)');
+        end
+
         % Total fit curve
-        plot(ax, result.energy_fit, result.curve_fit, 'r-', ...
+        plot(ax, result.energy_fit, display_scale * result.curve_fit, 'r-', ...
             'LineWidth', 2, 'Tag', fit_tag, ...
             'DisplayName', fit_label);
 
-        % Background curve (power-law)
+        % Background curve (power-law; ZLP + auxiliary peaks for the ZLP joint fit)
         if isfield(result, 'bg_curve')
-            plot(ax, result.energy_fit, result.bg_curve, ':', ...
+            plot(ax, result.energy_fit, display_scale * result.bg_curve, ':', ...
                 'Color', [0.5 0.5 0.5], 'LineWidth', 1.5, ...
                 'Tag', fit_tag, 'DisplayName', 'Background');
         end
@@ -1353,8 +1412,12 @@ end
         peak_colors = [0.1 0.7 0.3; 0.9 0.5 0.1; 0.5 0.2 0.8];
         bg_vals = zeros(size(result.energy_fit));
         if isfield(result, 'bg_curve')
-            bg_vals = result.bg_curve;
+            bg_vals = display_scale * result.bg_curve;
         end
+
+        in_view = result.energy_fit >= min(xlim(ax)) & result.energy_fit <= max(xlim(ax));
+        overlay_y = display_scale * result.curve_fit(in_view);
+        overlay_y = overlay_y(:);
 
         info_parts = {};
         for p = 1:result.n_peaks
@@ -1369,16 +1432,19 @@ end
             end
 
             % Plot peak component + background so it's visible
-            peak_on_bg = result.peak_curves{p} + bg_vals;
+            peak_on_bg = display_scale * result.peak_curves{p} + bg_vals;
             plot(ax, result.energy_fit, peak_on_bg, '--', ...
-                'Color', col, 'LineWidth', 1.5, 'Tag', fit_tag);
+                'Color', col, 'LineWidth', 1.5, 'Tag', fit_tag, ...
+                'DisplayName', sprintf('Peak %d', p));
+            overlay_y = [overlay_y; reshape(peak_on_bg(in_view), [], 1)]; %#ok<AGROW>
 
             % Peak marker at peak position on total fit
             [~, pk_idx] = min(abs(result.energy_fit - peak_energy(p)));
-            marker_y = result.curve_fit(pk_idx);
+            marker_y = display_scale * result.curve_fit(pk_idx);
             plot(ax, peak_energy(p), marker_y, 'v', ...
                 'MarkerSize', 10, 'MarkerFaceColor', col, ...
-                'MarkerEdgeColor', 'k', 'Tag', fit_tag);
+                'MarkerEdgeColor', 'k', 'Tag', fit_tag, ...
+                'HandleVisibility', 'off');
 
             marker_label = sprintf('E0 %.0f', result.omega_p(p));
             if isfield(result, 'apex_energy_meV') && numel(result.apex_energy_meV) >= p
@@ -1416,12 +1482,91 @@ end
         end
         hold(ax, 'off');
 
+        % Auto Y follows the displayed data; widen it so that the fit and every
+        % peak component stay visible (a weak peak can sit below the data range).
+        if ui.AutoYCheckbox.Value
+            local_include_in_y_limits(ax, overlay_y);
+        end
+
         % Update fit info
-        ui.FitInfoLabel.Text = sprintf('q=%.4f | %s | %s | R²=%.3f', ...
+        fit_text = sprintf('q=%.4f | %s | %s | R²=%.3f', ...
             abs_q, fit_label, strjoin(info_parts, ', '), result.R_squared);
+        if isfield(result, 'chi2_red') && isfinite(result.chi2_red)
+            fit_text = sprintf('%s | chi2_red=%.2f', fit_text, result.chi2_red);
+        end
+        ui.FitInfoLabel.Text = fit_text;
 
         % Enable Accept button
         ui.AcceptFitButton.Enable = local_on_off(any(keep));
+    end
+
+
+    function [result, fit_input, scale] = local_fit_spectrum_joint(qe_active, q_index, E_min, E_max, guesses)
+        % ZLP joint fit of the raw counts of channel q_index (no preprocessing). Returns
+        % [] after writing the reason to FitInfoLabel when the fit cannot run.
+        result = []; fit_input = []; scale = 1;
+        qe_raw = state.physicalQE;
+        if isempty(qe_raw), qe_raw = state.eq3dQE; end
+        if isempty(qe_raw) || q_index > size(qe_raw.intensity, 2)
+            ui.FitInfoLabel.Text = "ZLP joint fit needs the physical q-E data";
+            return
+        end
+        model = char(ui.PeakModelDropdown.Value);
+        if ~any(strcmp(model, {'lorentz', 'lorentz_symmetric'}))
+            ui.FitInfoLabel.Text = "ZLP joint fit supports Drude-Lorentz and Sym. Lorentz only";
+            return
+        end
+        E = double(qe_raw.energy_meV(:));
+        Y = double(qe_raw.intensity(:, q_index));
+        if all(Y == 0) || all(isnan(Y))
+            ui.FitInfoLabel.Text = "Empty spectrum";
+            return
+        end
+        q_axis = double(qe_raw.q_Ainv(:));
+        weights = 'none';
+        if ui.PoissonWeightsCheckbox.Value, weights = 'poisson'; end
+        ui.FitInfoLabel.Text = "ZLP joint fit running...";
+        drawnow limitrate;
+        try
+            joint_fit = qe_fit_spectrum_joint(E, Y, q_axis(q_index), ...
+                n_peaks=ui.MaxPeaksField.Value, peak_model=model, signal_window=[E_min E_max], ...
+                kinematic=ui.KinematicCheckbox.Value, beam_kV=ui.BeamKVField.Value, ...
+                dq=median(abs(diff(q_axis)), 'omitnan'), weights=weights, initial_E0=guesses);
+        catch ME
+            ui.FitInfoLabel.Text = sprintf("ZLP joint fit failed: %s", ME.message);
+            return
+        end
+        if ~joint_fit.success
+            ui.FitInfoLabel.Text = sprintf("ZLP joint fit failed (%s)", joint_fit.status);
+            return
+        end
+        result = joint_fit;
+        show = E >= min(joint_fit.energy_fit) & E <= max(joint_fit.energy_fit);
+        fit_input = struct('E', E(show), 'Y', Y(show));
+        scale = local_joint_display_scale(qe_active, qe_raw, q_index);
+    end
+
+
+    function s = local_joint_display_scale(qe_active, qe_raw, q_index)
+        % Displayed intensity per raw count in channel q_index. The display is a
+        % per-channel rescaling of the counts (normalisation, comparison view);
+        % despiking, denoising, background and deconvolution are left out here.
+        s = 1;
+        opts = local_preprocess_opts();
+        opts.do_despike = false;
+        opts.do_denoise = false;
+        opts.do_bg_sub = false;
+        opts.do_deconv = false;
+        try
+            shown = qe_preprocess(qe_active, opts);
+            a = double(shown.intensity(:, q_index));
+            b = double(qe_raw.intensity(:, q_index));
+            if numel(a) ~= numel(b), return; end
+            m = isfinite(a) & isfinite(b) & b > 0;
+            r = sum(a(m)) / sum(b(m));
+            if isfinite(r) && r > 0, s = r; end
+        catch
+        end
     end
 
 
@@ -4051,6 +4196,20 @@ end
 
 
 
+
+
+    function local_include_in_y_limits(ax, values)
+        % Widen the current y limits, if needed, to contain values.
+        values = values(isfinite(values));
+        if strcmpi(ax.YScale, "log")
+            values = values(values > 0);
+        end
+        if isempty(values)
+            return
+        end
+        yl = ylim(ax);
+        ylim(ax, [min(yl(1), min(values)), max(yl(2), max(values))]);
+    end
 
 
     function local_apply_y_limits(ax, values)
