@@ -1,5 +1,9 @@
 # GUI session persistence acceptance — 2026-10-22
 
+> Moved on 2026-10-22 from the local branch `codex/gui-workflow-acceptance` (based on
+> `feat/zlp-joint-fit`) to `gui-joint-fit` (based on `main`): `c09d636`, `68fb373` and
+> `716c171` became `cb03d04`, `dcde0f6` and `5bd31fe`. Commit IDs below are the originals.
+
 ## Scope
 
 This stage builds on `68fb373` on `codex/gui-workflow-acceptance`.
