@@ -55,6 +55,8 @@ xl = xlim(h.ui.SingleAxes); yl = ylim(h.ui.SingleAxes);
 in_view = peak_line.XData >= xl(1) & peak_line.XData <= xl(2);
 verifyGreaterThanOrEqual(testCase, min(peak_line.YData(in_view)), yl(1));   % Auto Y keeps the component visible
 verifyLessThanOrEqual(testCase, max(peak_line.YData(in_view)), yl(2));
+peak_label = findobj(h.ui.SingleAxes, 'Tag', 'spectrum_fit_overlay', 'Type', 'text');
+verifyLessThan(testCase, peak_label.Position(2), yl(2));
 
 h.accept_fit();
 st = h.state();
@@ -355,6 +357,283 @@ verifyEqual(testCase, after.manual_points, before.manual_points);
 verifyEqual(testCase, after.manual_branches, before.manual_branches);
 verifyEqual(testCase, after.branchCorrectionLog, before.branchCorrectionLog);
 verifyEqual(testCase, after.opHistory, before.opHistory);
+end
+
+
+function testCompleteSessionRestoresDataBranchesFitsAndPendingOverlay(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'complete_session.mat');
+h.ui.DqOverrideField.Value = 0.00025;
+h.ui.DqOverrideField.ValueChangedFcn(h.ui.DqOverrideField, []);
+points = fullfile(folder, 'points.mat');
+q = [-0.005; -0.0025; 0.0025; 0.005; 0.0075; 0.010];
+manual_dispersion = struct('branches', {{[q 600+3e4*abs(q)], [q 900+2e4*abs(q)]}});
+save(points, 'manual_dispersion');
+h.load_points(points);
+h.ui.CorrectionBranchDropdown.Value = 'Branch 2';
+h.ui.FitBranchDropdown.Value = 'Branch 2';
+h.ui.EnergyMinField.Value = 300;
+h.ui.EnergyMaxField.Value = 1800;
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.select_q(channelAt(h.state(), -0.0025));
+h.fit_spectrum();
+h.accept_fit();
+h.ui.DispModelDropdown.Value = 'acoustic_linear';
+h.ui.FitDispButton.ButtonPushedFcn(h.ui.FitDispButton, []);
+assertNotEmpty(testCase, h.state().fitResults);
+h.ui.NormMethodDropdown.Value = 'ZLP Peak';
+h.ui.AreaNormCheckbox.Value = true;
+h.ui.ViewModeDropdown.Value = 'Comparison';
+h.ui.BuildViewsButton.ButtonPushedFcn(h.ui.BuildViewsButton, []);
+h.select_q(channelAt(h.state(), 0.005));
+h.fit_spectrum();
+before = h.state();
+assertNotEmpty(testCase, before.pendingFit);
+h.save_session(p);
+verifyEqual(testCase, h.state().pendingFit, before.pendingFit);
+expected_curves = overlayData(h.ui.SingleAxes);
+delete(h.ui.Figure);
+[app, restored] = interactive_qe_browser(p);
+testCase.addTeardown(@delete, app);
+after = restored.state();
+for field = {'dataset', 'eq3dQE', 'physicalQE', 'comparisonQE', 'manual_points', ...
+        'manual_branches', 'branchCorrectionLog', 'fitResults', 'acceptedFits', 'pendingFit', 'sourceIdentity', 'opHistory'}
+    verifyEqual(testCase, after.(field{1}), before.(field{1}));
+end
+verifyEqual(testCase, restored.ui.ViewModeDropdown.Value, 'Comparison');
+verifyEqual(testCase, restored.ui.NormMethodDropdown.Value, 'ZLP Peak');
+verifyEqual(testCase, restored.ui.CorrectionBranchDropdown.Value, 'Branch 2');
+verifyEqual(testCase, restored.ui.FitBranchDropdown.Value, 'Branch 2');
+verifyEqual(testCase, restored.ui.DqOverrideField.Value, 0.00025);
+verifyEqual(testCase, restored.ui.SourceLabel.Text, before.dataset.label);
+verifyEqual(testCase, restored.ui.ResetStageDropdown.Value, 'eq3d');
+verifyEqual(testCase, after.selectedQIndex, before.selectedQIndex);
+verifyEqual(testCase, overlayData(restored.ui.SingleAxes), expected_curves);
+verifyEqual(testCase, char(restored.ui.AcceptFitButton.Enable), 'on');
+restored.accept_fit();
+verifyNumElements(testCase, restored.state().acceptedFits, 2);
+record = restored.state().acceptedFits{end};
+verifyEqual(testCase, record.accepted_energy_meV, before.pendingFit.result.apex_energy_meV);
+verifyEqual(testCase, record.provenance.energy_kind, {'loss_function_apex'});
+verifyEqual(testCase, record.provenance.settings.fitMethod, 'zlp_joint');
+verifyEqual(testCase, record.provenance.signal_window_meV, [300 1800]);
+verifyEqual(testCase, record.provenance.input_kind, 'physical_counts');
+verifyEqual(testCase, record.result.omega_p, before.pendingFit.result.omega_p);
+verifyEqual(testCase, record.result.peak_valid, before.pendingFit.result.peak_valid);
+end
+
+
+function testBackgroundFitPendingSessionRestoresWithoutRefitting(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'background.mat');
+h.ui.FitMethodDropdown.Value = 'bg_peaks';
+h.fit_spectrum();
+before = h.state().pendingFit;
+assertNotEmpty(testCase, before);
+h.save_session(p);
+h.select_q(channelAt(h.state(), -0.005));
+h.load_session(p);
+verifyEqual(testCase, h.state().pendingFit, before);
+verifyEqual(testCase, char(h.ui.AcceptFitButton.Enable), 'on');
+h.accept_fit();
+verifyEqual(testCase, h.state().acceptedFits{end}.provenance.input_kind, 'preprocessed_spectrum');
+end
+
+
+function testAcceptedOverlayRestoresWithoutEnablingAccept(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'accepted.mat');
+h.ui.FitMethodDropdown.Value = 'zlp_joint'; h.fit_spectrum(); h.accept_fit();
+verifyEmpty(testCase, h.state().pendingFit);
+curves = overlayData(h.ui.SingleAxes);
+verifyNotEmpty(testCase, curves);
+h.save_session(p);
+h.select_q(channelAt(h.state(), -0.005));
+h.load_session(p);
+verifyEmpty(testCase, h.state().pendingFit);
+verifyEqual(testCase, char(h.ui.AcceptFitButton.Enable), 'off');
+verifyEqual(testCase, overlayData(h.ui.SingleAxes), curves);
+points = h.state().manual_points;
+h.accept_fit();
+verifyEqual(testCase, h.state().manual_points, points);
+end
+
+
+function testPanelExportContainsTheRestoredSpectrum(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+h.ui.FitMethodDropdown.Value = 'zlp_joint'; h.fit_spectrum();
+p = fullfile(folder, 'session.mat'); h.save_session(p); h.load_session(p);
+paths = qe_export_browser_panel(h.ui.SingleAxes, fullfile(folder, 'spectrum'), ...
+    aspect_ratio=4/3, resolution=100, write_pdf=true);
+pixels = imread(paths.png);
+nonwhite = any(pixels(:,:,1:3) < 240, 3);
+verifyGreaterThan(testCase, mean(nonwhite, 'all'), 0.01);
+verifyEqual(testCase, size(pixels,2)/size(pixels,1), 4/3, 'AbsTol', 0.02);
+verifyTrue(testCase, isfile(paths.pdf));
+verifyNotEmpty(testCase, h.state().pendingFit);
+end
+
+
+function testAutoFitDetailsSurviveSessionRoundTrip(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'auto.mat');
+h.ui.QStartField.Value = 0.005;
+h.ui.QEndField.Value = 0.006;
+h.ui.GuessField.Value = '1000';
+h.ui.AutoFitButton.ButtonPushedFcn(h.ui.AutoFitButton, []);
+before = h.state();
+assertNotEmpty(testCase, before.autoFitResults);
+assertGreaterThan(testCase, before.autoFitResults.n_success, 0);
+h.save_session(p);
+h.ui.ClearPtsButton.ButtonPushedFcn(h.ui.ClearPtsButton, []);
+h.load_session(p);
+verifyEqual(testCase, h.state().autoFitResults, before.autoFitResults);
+verifyEqual(testCase, h.state().manual_branches, before.manual_branches);
+verifyEqual(testCase, h.state().manual_points, before.manual_points);
+end
+
+
+function testUnavailableSourceCanRecoverEmbeddedCounts(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'offline.mat');
+h.save_session(p);
+loaded = load(p); session = loaded.session;
+% The unavailable source is intentional; embedded counts stay fingerprinted.
+session.sources(1).path = fullfile(folder, 'unavailable', 'eq3D.mat');
+save(p, 'session');
+[app, restored] = interactive_qe_browser();
+testCase.addTeardown(@delete, app);
+restored.load_session(p);
+verifyEqual(testCase, restored.state().physicalQE, h.state().physicalQE);
+verifySubstring(testCase, char(restored.ui.InfoLabel.Text), 'using embedded q-E counts');
+end
+
+
+function testChangedSourceIsRejectedWithoutLosingPendingFit(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'session.mat');
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.fit_spectrum(); h.save_session(p);
+loaded = load(p); session = loaded.session;
+copy = fullfile(folder, 'changed.mat');
+copyfile(session.sources(1).path, copy);
+session.sources(1).path = copy;
+fid = fopen(copy, 'ab'); fwrite(fid, uint8(42)); fclose(fid);
+save(p, 'session');
+before = h.state();
+verifyError(testCase, @() h.load_session(p), 'qe_check_browser_sources:SourceChanged');
+verifyEqual(testCase, h.state().pendingFit, before.pendingFit);
+verifyEqual(testCase, h.state().physicalQE, before.physicalQE);
+verifyEqual(testCase, char(h.ui.AcceptFitButton.Enable), 'on');
+end
+
+
+function testSessionUIFailureRollsBackDataControlsAndOverlay(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'bad_control.mat');
+h.save_session(p);
+loaded = load(p); session = loaded.session;
+session.snapshot.yScale = 'unsupported';
+save(p, 'session');
+h.ui.DqOverrideField.Value = 0.00025;
+h.ui.DqOverrideField.ValueChangedFcn(h.ui.DqOverrideField, []);
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.fit_spectrum();
+before = h.state();
+curves = overlayData(h.ui.SingleAxes);
+try
+    h.load_session(p);
+    verifyFail(testCase, 'Invalid control value unexpectedly restored');
+catch ME
+    verifyNotEmpty(testCase, ME.identifier);
+end
+verifyEqual(testCase, h.state().pendingFit, before.pendingFit);
+verifyEqual(testCase, h.state().dataset, before.dataset);
+verifyEqual(testCase, h.state().manual_points, before.manual_points);
+verifyEqual(testCase, h.state().opHistory, before.opHistory);
+verifyEqual(testCase, char(h.ui.AcceptFitButton.Enable), 'on');
+verifyEqual(testCase, overlayData(h.ui.SingleAxes), curves);
+verifyEqual(testCase, h.ui.YScaleDropdown.Value, 'linear');
+end
+
+
+function testInvalidSessionCountsVersionAndPendingChannelAreRejected(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'invalid.mat');
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.fit_spectrum(); h.save_session(p);
+loaded = load(p); original = loaded.session;
+before = h.state();
+for scenario = 1:5
+    session = original;
+    switch scenario
+        case 1, session.data.physicalQE.intensity(1) = session.data.physicalQE.intensity(1) + 1;
+        case 2, session.version = 999;
+        case 3, session.pending_fit.q_index = 1;
+        case 4, session.snapshot.normMethod = 'unsupported';
+        case 5, session.pending_fit.keep = ~session.pending_fit.keep;
+    end
+    save(p, 'session');
+    verifyError(testCase, @() h.load_session(p), 'qe_validate_browser_session:InvalidSession');
+    verifyEqual(testCase, h.state().pendingFit, before.pendingFit);
+    verifyEqual(testCase, h.state().physicalQE, before.physicalQE);
+end
+end
+
+
+function testSessionCancellationAndFailedSavePreserveExistingFile(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'existing.mat');
+h.save_session(p);
+original_hash = qe_file_sha256(p);
+before = h.state();
+h.save_session(''); h.load_session('');
+verifyEqual(testCase, h.state(), before);
+h.ui.FitMethodDropdown.Value = 'zlp_joint'; h.fit_spectrum();
+% Changing a fit control without its callback must not persist a stale fit.
+h.ui.BeamKVField.Value = 60;
+verifyError(testCase, @() h.save_session(p), 'qe_validate_browser_session:InvalidSession');
+verifyEqual(testCase, qe_file_sha256(p), original_hash);
+verifyEqual(testCase, numel(dir(fullfile(folder, '*.mat'))), 1);
+source = h.state().dataset.source_path;
+verifyError(testCase, @() qe_write_browser_session(source, loadSession(p)), ...
+    'qe_write_browser_session:SourceOverwrite');
+end
+
+
+function testAcceptedFitProvenanceSurvivesPointsExportAndLegacyImport(testCase)
+h = testCase.TestData.hooks;
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'points.mat');
+h.ui.FitMethodDropdown.Value = 'zlp_joint'; h.fit_spectrum(); h.accept_fit();
+records = h.state().acceptedFits;
+h.save_points(p); h.load_points(p);
+verifyEqual(testCase, h.state().acceptedFits, records);
+loaded = load(p); manual_dispersion = rmfield(loaded.manual_dispersion, 'accepted_fits');
+save(p, 'manual_dispersion'); h.load_points(p);
+verifyEmpty(testCase, h.state().acceptedFits);
+verifyNotEmpty(testCase, h.state().manual_points);
+end
+
+
+function session = loadSession(path)
+loaded = load(path); session = loaded.session;
+end
+
+
+function values = overlayData(ax)
+lines = findobj(ax, 'Type', 'line', 'Tag', 'spectrum_fit_overlay');
+values = arrayfun(@(line) struct('X', line.XData, 'Y', line.YData, 'name', line.DisplayName), lines);
 end
 
 

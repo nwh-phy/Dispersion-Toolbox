@@ -4,7 +4,7 @@ function ui_handles = qe_browser_ui(cb)
 %   ui_handles = qe_browser_ui(cb)
 %
 %   cb  — struct of callback function handles:
-%         .on_load_data, .on_build_views, .on_undo, .on_reset_stage,
+%         .on_load_data, .on_save_session, .on_load_session, .on_build_views, .on_undo, .on_reset_stage,
 %         .on_display_change, .on_normalization_change, .on_dq_override_changed,
 %         .on_qnorm_changed, .on_norm_method_changed, .on_auto_y_changed,
 %         .on_fit_param_change, .on_export_param_change, .on_correction_target_change,
@@ -39,19 +39,30 @@ function ui_handles = qe_browser_ui(cb)
     history_panel = uipanel(main_grid, "Title", "Operation History");
     history_panel.Layout.Row = [1 3];
     history_panel.Layout.Column = 3;
-    history_grid = uigridlayout(history_panel, [3 1]);
-    history_grid.RowHeight = {"1x", 28, 28};
+    history_grid = uigridlayout(history_panel, [4 1]);
+    history_grid.RowHeight = {28, "1x", 28, 28};
+    session_grid = uigridlayout(history_grid, [1 2]);
+    session_grid.Layout.Row = 1;
+    session_grid.Padding = [0 0 0 0];
+    session_grid.ColumnWidth = {"1x", "1x"};
+    session_grid.ColumnSpacing = 4;
+    save_session = uibutton(session_grid, 'Text', 'Save Session', ...
+        'Tooltip', 'Save data, controls, points, and fit results together.', ...
+        'ButtonPushedFcn', cb.on_save_session);
+    load_session = uibutton(session_grid, 'Text', 'Load Session', ...
+        'Tooltip', 'Restore a complete saved session.', ...
+        'ButtonPushedFcn', cb.on_load_session);
     history_grid.Padding = [4 4 4 4];
     history_grid.RowSpacing = 4;
 
     history_list = uilistbox(history_grid, ...
         "Items", {}, ...
         "ValueChangedFcn", cb.on_history_select);
-    history_list.Layout.Row = 1;
+    history_list.Layout.Row = 2;
 
     % Save / Load row
     history_btn_grid = uigridlayout(history_grid, [1 2]);
-    history_btn_grid.Layout.Row = 2;
+    history_btn_grid.Layout.Row = 3;
     history_btn_grid.ColumnWidth = {"1x", "1x"};
     history_btn_grid.Padding = [0 0 0 0];
     history_btn_grid.ColumnSpacing = 4;
@@ -69,7 +80,7 @@ function ui_handles = qe_browser_ui(cb)
     history_clear_btn = uibutton(history_grid, ...
         "Text", "Clear History", ...
         "ButtonPushedFcn", cb.on_clear_history);
-    history_clear_btn.Layout.Row = 3;
+    history_clear_btn.Layout.Row = 4;
 
     % ═══════════ CONTROL PANEL ═══════════
     control_panel = uipanel(main_grid, "Title", "Controls");
@@ -77,6 +88,7 @@ function ui_handles = qe_browser_ui(cb)
     control_panel.Layout.Column = [1 2];
 
     control_grid = uigridlayout(control_panel, [11 16]);
+    control_grid.Scrollable = 'on';  % keep all controls reachable on laptop screens
     control_grid.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24};
     control_grid.ColumnWidth = {80, 80, 62, 100, 62, 80, 62, 80, 62, 80, 80, 80, 62, 80, 80, "1x"};
     control_grid.Padding = [6 4 6 4];
@@ -1032,6 +1044,8 @@ function ui_handles = qe_browser_ui(cb)
     % ═══════════ PACK HANDLES ═══════════
     ui_handles = struct();
     ui_handles.Figure = fig;
+    ui_handles.SaveSessionButton = save_session;
+    ui_handles.LoadSessionButton = load_session;
     ui_handles.LoadEq3DButton = load_eq3d;
     ui_handles.BuildViewsButton = build_button;
     ui_handles.UndoButton = undo_button;

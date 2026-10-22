@@ -127,15 +127,22 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 
 | 控件 | 导出内容 |
 |---|---|
-| **Export** (📷) | 当前显示的图像（q-E map / 单谱 / 色散图） |
+| **Export Panels** | 当前图像（q-E map / 单谱 / 色散图）；Publication 模式同时写 PNG 和 PDF，保留所选比例 |
 | **Export Data** (📦) | 预处理后的数据 `.mat`（含 axes、预处理参数、背景诊断） |
 | **Export Disp.** | 色散拟合结果 |
-| **Save Pts** | curated 峰位点数据：包含 signed `q_Ainv`、`energy_meV`、`branches`、`corrections` 和当前 GUI `snapshot` |
+| **Save Session / Load Session** | 一份 `.mat` 保存/恢复当前 q–E 数据、标定和控件、分支点/修正、自动/色散拟合、单谱拟合记录及当前曲线 |
+| **Save Curated / Load Curated**（原 Save Pts / Load Pts） | 单独交换峰位点：signed `q_Ainv`、`energy_meV`、`branches`、`corrections`、GUI `snapshot` 和新增的 `accepted_fits` 来源记录 |
 | History 面板 **Save** | 操作历史 `op_history.mat`，可在下次加载时恢复 |
 
-> **保存手动调参状态时建议同时保存两类文件**：先点 **Save Pts** 保存被接受/矫正的 branch 点，再点 History 面板 **Save** 保存 `op_history.mat`。History 保存前会强制追加当前 live GUI snapshot，因此即使某个控件没有单独生成一条 history 记录，最后保存的 `opHistory{end}.snapshot` 仍应包含当前状态。该 snapshot 会记录预处理/显示参数，也会记录自动拟合与 curated workflow 的关键控件，例如 `Prominence`、`Smooth W`、`Max Peaks`、`Peak Model`、`Guesses`、correction target、`Disp Model`、导出比例和当前选中 q 通道。
+**日常保存与重开优先使用 Save Session / Load Session。** 会话文件内嵌当前投影后的物理 q–E 计数和坐标，不必重新选择数据、点文件和历史文件。也可以直接运行 `interactive_qe_browser('qe_session.mat')` 打开会话。尚未接受的单谱拟合会恢复曲线和 Accept 状态；已接受且仍在显示的曲线也会恢复，Accept 保持禁用。
 
-恢复完整的 curated 工作状态时，先加载原始数据，再用 **Load Pts** 恢复分支点和修正记录，最后用 History **Load** 恢复控件、目标分支和选中 q。历史文件只保存参数，不保存峰位点、原始数据或尚未接受的单谱拟合。新历史也保存归一化方法、自动/手动堆叠偏移模式和 ZLP joint 设置；不含归一化方法的旧历史按原默认 `Area` 恢复。
+会话格式有明确版本号，保存时用同目录临时文件完成写入后再替换目标。加载会检查数据/标定指纹和记录的来源文件 SHA-256；可访问的来源若有变化，会拒绝加载并保留当前工作。来源暂不可访问时，可使用内嵌 q–E 数据恢复，并在界面明确提示。保存的是 q–E 工作阶段，不包含原始 4D 张量及其裁剪/对齐/分箱的完整中间态。
+
+每次接受单谱拟合还会保留完整数值结果、signed q、dq、拟合时的设置、实际信号窗/拟合窗、输入类型、来源指纹、有效性标记和所接受能量的定义（损失函数峰顶或模型 E0）。`accepted_fits` 是历史接受记录；之后删除、重分配或修正点，不会让旧记录变成当前点的重新验证。旧点文件没有这些信息时保持为空，不补造来源。
+
+旧的点文件与 History 文件仍可单独使用：先加载数据，再 **Load Curated**，最后 History **Load**。History 只保存参数，保存时会追加当前 live snapshot；不含归一化方法的旧历史按原默认 `Area` 恢复。
+
+会话格式、测试结果及原生对话框验证边界见 [会话验收报告](reports/gui_session_acceptance_20261022.md)。
 
 重新拟合、切换通道或修改拟合/预处理设置会使待接受的单谱结果失效。拟合失败后，**Accept Fit** 不会继续接受上一次结果。
 调整导出模式或导出比例会保留拟合曲线和待接受结果。历史文件缺少必需字段时会在修改界面前拒绝加载；恢复过程若遇到无效参数等错误，会回退数据和控件，并清除待接受拟合，避免使用与当前标定不一致的旧结果。
@@ -152,7 +159,7 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 4. 先做单谱拟合（**Fit Spectrum**），确认不扣背景时峰位仍清楚
 5. 再做全局自动拟合（**Auto Fit Branches**，目前使用 BG + peaks 路径；**ZLP joint** 用于单谱 **Fit Spectrum**）
 6. 逐 q 检查 branch assignment；对少数明显错误点，用 **Correct Auto** + target branch 下拉框做局部矫正，必要时用 **Undo Corr** 回退误操作
-7. 保存 **Save Pts**（curated branches + correction log）和操作历史，确保可复现、可审计
+7. 用 **Save Session** 保存整个工作状态；如需单独交换分支点，再用 **Save Curated**
 8. 可选：开启 QE BG 作为稳健性检查，确认主 branch 峰位没有被背景模型显著改变
 
 ---

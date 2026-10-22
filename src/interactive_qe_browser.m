@@ -3,7 +3,8 @@ function [app, hooks] = interactive_qe_browser(startPath, historyFile)
 % widget handles), hooks.state() (the live state), hooks.select_q(k), and
 % hooks.fit_spectrum() / hooks.accept_fit() (the Fit Spectrum / Accept buttons).
 % File hooks save_history/load_history/save_points/load_points/export_data(path)
-% run the same callbacks without file dialogs; an empty path cancels the action.
+% and save_session/load_session(path) run the same callbacks without file
+% dialogs; an empty path cancels the action. A session file can be startPath.
 arguments
     startPath {mustBeTextScalar} = ""
     historyFile {mustBeTextScalar} = ""
@@ -40,7 +41,9 @@ if nargout > 1
         'load_history', @(path) local_on_load_history([], [], path), ...
         'save_points', @(path) local_on_save_pts([], [], path), ...
         'load_points', @(path) local_on_load_pts([], [], path), ...
-        'export_data', @(path) local_on_export_data([], [], path));
+        'export_data', @(path) local_on_export_data([], [], path), ...
+        'save_session', @(path) local_on_save_session([], [], path), ...
+        'load_session', @(path) local_on_load_session([], [], path));
 end
 
 
@@ -59,6 +62,8 @@ end
     function state_out = local_initial_state()
         state_out = struct();
         state_out.dataset = [];
+        state_out.sourceIdentity = [];
+        state_out.acceptedFits = {};  % immutable audit records, not current-point membership
         state_out.raw4d = [];
         state_out.cropped4d = [];
         state_out.aligned4d = [];
@@ -81,6 +86,7 @@ end
         state_out.fitResults = {};       % cell array of fit_quasi2d_plasmon results
         state_out.autoFitResults = [];   % struct array from auto spectrum fits
         state_out.pendingFit = [];       % pending single-spectrum fit result
+        state_out.displayedFit = [];     % overlay can remain after Accept
         state_out.qeImage = gobjects(1);
         state_out.selectionMarker = gobjects(1);
         state_out.stackOffsetMode = "auto";
@@ -95,6 +101,8 @@ end
         % Build callbacks struct — maps to local nested functions
         cb = struct();
         cb.on_load_data = @local_on_load_data;
+        cb.on_save_session = @local_on_save_session;
+        cb.on_load_session = @local_on_load_session;
         cb.on_build_views = @local_on_build_views;
         cb.on_undo = @local_on_undo;
         cb.on_reset_stage = @local_on_reset_stage;
@@ -138,6 +146,13 @@ end
 
 
     function local_load_start_path(path_to_load)
+        if isfile(path_to_load) && endsWith(path_to_load, '.mat', 'IgnoreCase', true)
+            vars = whos('-file', char(path_to_load));
+            if any(strcmp({vars.name}, 'session'))
+                local_load_session_file(path_to_load);
+                return
+            end
+        end
         local_load_dataset(path_to_load, true);
     end
 
@@ -217,7 +232,7 @@ end
                 dataset = load_qe_dataset(full_path, dq_val, ...
                     q_crop=[q_lo q_hi]);
                 ui.DqOverrideField.Value = dataset.dq_Ainv;
-                state.dataset = dataset;
+                local_begin_dataset(dataset);
                 state.selectedQIndex = 1;
                 state.eq3dQE = [];
                 state.physicalQE = [];
@@ -252,7 +267,7 @@ end
                 ui.DqOverrideField.Value = inferred_dq_Ainv;
             end
             dataset = load_qe_dataset(path_to_load, ui.DqOverrideField.Value);
-            state.dataset = dataset;
+            local_begin_dataset(dataset);
             state.selectedQIndex = 1;
             state.eq3dQE = [];
             state.physicalQE = [];
@@ -277,6 +292,17 @@ end
         catch ME
             local_show_error(ME, throw_on_error);
         end
+    end
+
+
+    function local_begin_dataset(dataset)
+        % Bind source bytes at import; never associate old points with new data.
+        sources = qe_browser_source_identity(dataset);
+        state = local_initial_state();
+        state.dataset = dataset;
+        state.sourceIdentity = sources;
+        local_sync_correction_controls();
+        ui.PtsLabel.Text = "0 pts";
     end
 
 
@@ -763,6 +789,138 @@ end
     end
 
 
+    function local_on_save_session(~, ~, path)
+        if nargin >= 3 && strlength(string(path)) == 0, return; end
+        if isempty(state.physicalQE)
+            ui.InfoLabel.Text = 'Load data before saving a session';
+            ui.InfoLabel.Visible = 'on';
+            return
+        end
+        if nargin < 3
+            [name, folder] = uiputfile('*.mat', 'Save Complete Session', ...
+                fullfile(local_get_dialog_folder(), 'qe_session.mat'));
+            if isequal(name, 0), return; end
+            path = fullfile(folder, name);
+        end
+        try
+            session = struct('format', 'qe_browser_session', 'version', 1, ...
+                'saved_at', char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss')));
+            session.sources = state.sourceIdentity;
+            session.data = struct('dataset', state.dataset, 'eq3dQE', state.eq3dQE, ...
+                'physicalQE', state.physicalQE, 'activeStage', char(state.activeStage));
+            session.snapshot = local_capture_snapshot();
+            session.history = state.opHistory;
+            session.analysis = struct();
+            names = {'manual_points', 'manual_branches', 'branchCorrectionLog', ...
+                'fitResults', 'autoFitResults', 'acceptedFits'};
+            for k = 1:numel(names)
+                session.analysis.(names{k}) = state.(names{k});
+            end
+            session.pending_fit = state.pendingFit;
+            session.display_fit = state.displayedFit;
+            session.data_hashes = struct('physical', qe_data_fingerprint(state.physicalQE), ...
+                'eq3d', qe_data_fingerprint(state.eq3dQE));
+            qe_write_browser_session(path, session);
+            ui.InfoLabel.Text = sprintf('Session saved: %s', path);
+            ui.InfoLabel.Visible = 'on';
+        catch ME
+            if nargin >= 3, rethrow(ME); end
+            local_show_error(ME, false);
+        end
+    end
+
+
+    function local_on_load_session(~, ~, path)
+        if nargin >= 3 && strlength(string(path)) == 0, return; end
+        if nargin < 3
+            [name, folder] = uigetfile('*.mat', 'Load Complete Session', local_get_dialog_folder());
+            if isequal(name, 0), return; end
+            path = fullfile(folder, name);
+        end
+        try
+            local_load_session_file(path);
+        catch ME
+            if nargin >= 3, rethrow(ME); end
+            local_show_error(ME, false);
+        end
+    end
+
+
+    function local_load_session_file(path)
+        % Read/verify before mutation; restore every visible/data state on error.
+        [session, missing] = qe_read_browser_session(path);
+        previous_state = state;
+        previous_snapshot = local_capture_snapshot();
+        try
+            state = local_initial_state();
+            state.sourceIdentity = session.sources;
+            names = {'dataset', 'eq3dQE', 'physicalQE', 'activeStage'};
+            for k = 1:numel(names)
+                state.(names{k}) = session.data.(names{k});
+            end
+            names = {'manual_points', 'manual_branches', 'branchCorrectionLog', ...
+                'fitResults', 'autoFitResults', 'acceptedFits'};
+            for k = 1:numel(names)
+                state.(names{k}) = session.analysis.(names{k});
+            end
+            state.opHistory = session.history;
+            local_restore_param_snapshot(session.snapshot);
+            if ~isequaln(local_capture_snapshot(), session.snapshot)
+                error('qe_validate_browser_session:InvalidSession', ...
+                    'Session controls cannot be restored exactly by this version.');
+            end
+            local_rebuild_comparison(false);
+            local_update_all_views();
+            local_finish_session_restore(session.pending_fit, session.display_fit);
+            ui.InfoLabel.Text = sprintf('Session loaded: %s', path);
+            if ~isempty(missing)
+                ui.InfoLabel.Text = sprintf('%s | %d source file(s) unavailable; using embedded q-E counts', ...
+                    ui.InfoLabel.Text, numel(missing));
+            end
+            ui.InfoLabel.Visible = 'on';
+        catch ME
+            state = previous_state;
+            local_restore_param_snapshot(previous_snapshot);
+            local_update_all_views();
+            local_finish_session_restore(previous_state.pendingFit, previous_state.displayedFit);
+            rethrow(ME);
+        end
+    end
+
+
+    function local_finish_session_restore(pending, displayed)
+        local_refresh_history_list();
+        local_sync_correction_controls();
+        ui.PtsLabel.Text = sprintf('%d pts', size(state.manual_points, 1));
+        state.pendingFit = pending;
+        ui.FitInfoLabel.Text = '';
+        local_render_spectrum_fit(displayed);
+        if isempty(pending) && ~isempty(displayed)
+            ui.FitInfoLabel.Text = sprintf('%s  ✓ Accepted', ui.FitInfoLabel.Text);
+        end
+        ui.PickPtsButton.Text = 'Pick Peaks';
+        ui.PickGuessesButton.Text = 'Pick Guesses';
+        ui.CorrectAutoButton.Text = 'Correct Peak';
+        ui.PickPtsButton.BackgroundColor = [0.96 0.96 0.96];
+        ui.PickGuessesButton.BackgroundColor = [0.96 0.96 0.96];
+        ui.CorrectAutoButton.BackgroundColor = [0.96 0.96 0.96];
+        ui.SeedInfoLabel.Text = sprintf('Guesses: %s', ui.GuessField.Value);
+        if state.manualPickArmed
+            ui.PickPtsButton.Text = 'Picking...';
+            ui.PickPtsButton.BackgroundColor = [1 0.9 0.85];
+        end
+        if state.guessPickArmed
+            ui.PickGuessesButton.Text = 'Picking...';
+            ui.PickGuessesButton.BackgroundColor = [1 0.9 0.85];
+            ui.SeedInfoLabel.Text = 'Click on spectrum peaks to add guesses';
+        end
+        if state.autoCorrectionArmed
+            ui.CorrectAutoButton.Text = 'Click peak...';
+            ui.CorrectAutoButton.BackgroundColor = [1.0 0.92 0.55];
+        end
+    end
+
+
     function local_on_save_history(~, ~, save_path)
         % Save opHistory to a .mat file in the data folder.  Always append a
         % final live snapshot first so manually tuned controls are captured
@@ -1011,6 +1169,7 @@ end
             return
         end
         state.dataset.dq_Ainv = dq_Ainv;
+        state.dataset.qe = local_reaxis_qe(state.dataset.qe, dq_Ainv);
         state.eq3dQE = local_reaxis_qe(state.eq3dQE, dq_Ainv);
         state.physicalQE = local_reaxis_qe(state.physicalQE, dq_Ainv);
         state.comparisonQE = local_reaxis_qe(state.comparisonQE, dq_Ainv);
@@ -1178,6 +1337,7 @@ end
         manual_dispersion.energy_meV = pts(:, 2);
         manual_dispersion.branches = state.manual_branches;
         manual_dispersion.corrections = state.branchCorrectionLog;
+        manual_dispersion.accepted_fits = state.acceptedFits;
         manual_dispersion.snapshot = local_capture_snapshot();
         manual_dispersion.source = 'gui_auto_fit_with_manual_corrections';
         manual_dispersion.timestamp = datestr(now);
@@ -1212,6 +1372,10 @@ end
             else
                 warning('File does not contain q/energy dispersion data.');
                 return
+            end
+            state.acceptedFits = {};  % legacy points do not prove a fit provenance
+            if isfield(md, 'accepted_fits')
+                state.acceptedFits = md.accepted_fits;
             end
             if isfield(md, 'corrections')
                 state.branchCorrectionLog = md.corrections;
@@ -1433,6 +1597,11 @@ end
         end
 
         % Store pending fit
+        if isfield(result, 'joint')
+            % Keep numeric prefactor_grid and kinematic metadata. The solver's
+            % anonymous prefactor closure is an execution detail, not a result.
+            result.joint.effective_options.prefactor = [];
+        end
         state.pendingFit = struct();
         state.pendingFit.abs_q = abs_q;
         state.pendingFit.q_Ainv = q_value;
@@ -1441,6 +1610,40 @@ end
         state.pendingFit.keep = keep;
         state.pendingFit.display_keep = display_keep;
 
+        state.pendingFit.fit_input = fit_input;
+        state.pendingFit.display_scale = display_scale;
+        snap = local_capture_snapshot();
+        kind = repmat({'model_E0'}, result.n_peaks, 1);
+        if isfield(result, 'apex_energy_meV')
+            kind(isfinite(result.apex_energy_meV(:))) = {'loss_function_apex'};
+        end
+        input_kind = 'preprocessed_spectrum';
+        fit_window = [E_min E_max];
+        if strcmp(snap.fitMethod, 'zlp_joint')
+            input_kind = 'physical_counts';
+            fit_window = [-Inf E_max];  % includes the gain side and ZLP
+        end
+        state.pendingFit.provenance = struct('snapshot', snap, ...
+            'settings', qe_browser_fit_settings(snap), ...
+            'sources', state.sourceIdentity, 'data_sha256', qe_data_fingerprint(state.physicalQE), ...
+            'signal_window_meV', [E_min E_max], 'fit_window_meV', fit_window, ...
+            'input_kind', input_kind, 'energy_kind', {kind}, ...
+            'fitted_at', char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss')));
+        local_render_spectrum_fit(state.pendingFit);
+    end
+
+
+    function local_render_spectrum_fit(pf)
+        % Draw saved numeric results; never re-fit while loading a session.
+        if isempty(pf), return; end
+        state.displayedFit = pf;
+        result = pf.result;
+        keep = pf.keep;
+        display_keep = pf.display_keep;
+        fit_input = pf.fit_input;
+        display_scale = pf.display_scale;
+        abs_q = pf.abs_q;
+        peak_energy = local_fit_peak_energy(result);
         % Overlay fit on spectrum axes
         ax = ui.SingleAxes;
         hold(ax, 'on');
@@ -1503,6 +1706,7 @@ end
             % Peak marker at peak position on total fit
             [~, pk_idx] = min(abs(result.energy_fit - peak_energy(p)));
             marker_y = display_scale * result.curve_fit(pk_idx);
+            overlay_y(end+1, 1) = marker_y * 1.15;  % headroom for the E0/apex label
             plot(ax, peak_energy(p), marker_y, 'v', ...
                 'MarkerSize', 10, 'MarkerFaceColor', col, ...
                 'MarkerEdgeColor', 'k', 'Tag', fit_tag, ...
@@ -1559,7 +1763,7 @@ end
         ui.FitInfoLabel.Text = fit_text;
 
         % Enable Accept button
-        ui.AcceptFitButton.Enable = local_on_off(any(keep));
+        ui.AcceptFitButton.Enable = local_on_off(~isempty(state.pendingFit) && any(keep));
     end
 
 
@@ -1649,6 +1853,7 @@ end
 
     function local_clear_pending_fit()
         state.pendingFit = [];
+        state.displayedFit = [];
         ui.AcceptFitButton.Enable = "off";
         delete(findobj(ui.SingleAxes, 'Tag', local_fit_overlay_tag()));
         delete(findobj(ui.SingleAxes, 'Tag', 'lorentz_fit'));
@@ -1665,6 +1870,16 @@ end
     end
 
 
+    function local_archive_accepted_fit(pf, target)
+        pf.accepted_at = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+        pf.accepted_peak_indices = find(pf.keep);
+        energies = local_fit_peak_energy(pf.result);
+        pf.accepted_energy_meV = energies(pf.keep);
+        pf.target = target;
+        state.acceptedFits{end+1} = pf;
+    end
+
+
     function local_on_accept_fit(~, ~)
         % Accept the pending fit and add peaks to dispersion
         if isempty(state.pendingFit)
@@ -1675,6 +1890,7 @@ end
         result = pf.result;
         peak_energy = local_fit_peak_energy(result);
         keep = pf.keep;
+        if ~any(keep), return; end
         abs_q = pf.abs_q;
         if isfield(pf, 'q_Ainv')
             q_value = pf.q_Ainv;
@@ -1696,6 +1912,7 @@ end
                 local_append_branch_correction(correction);
                 n_corrected = n_corrected + 1;
             end
+            local_archive_accepted_fit(pf, char(ui.CorrectionBranchDropdown.Value));
             local_sync_manual_points_from_branches();
             local_update_all_views();
             ui.AcceptFitButton.Enable = "off";
@@ -1717,6 +1934,8 @@ end
                 state.manual_points(end+1, :) = new_pt;
             end
         end
+
+        local_archive_accepted_fit(pf, 'unbranched');
 
         % Plot on dispersion axes
         ax = ui.DispersionAxes;
@@ -2429,9 +2648,8 @@ end
 
     function local_on_export(~, ~)
         % Export axes panels as publication-quality images.
-        % Copies uiaxes content to a temporary invisible regular figure
-        % for reliable export (avoids uiaxes rendering quirks).
-        % Aspect ratio is applied via post-processing (white padding).
+        % Recreate ordinary axes from the UI graphics through the shared
+        % exporter, with a fixed canvas for the requested aspect ratio.
         panel_axes  = {ui.QEAxes, ui.ComparisonAxes, ui.SingleAxes, ui.DispersionAxes};
         panel_names = {'qE_map',  'comparison',      'spectrum',     'dispersion'};
         panel_labels = {'q-E Map', 'Comparison Map', 'Single Spectrum', 'Dispersion'};
@@ -2483,53 +2701,13 @@ end
             fname = panel_names{k};
 
             try
-                % --- Create temp figure sized to target aspect ratio ---
-                fig_h_px = 600;
-                fig_w_px = round(fig_h_px * target_ratio);
-                tmp_fig = figure('Visible', 'off', 'Color', 'w', ...
-                    'Units', 'pixels', ...
-                    'Position', [100 100 fig_w_px fig_h_px]);
-
-                % Copy axes content to temp figure
-                tmp_ax = copyobj(src_ax, tmp_fig);
-                set(tmp_ax, 'Units', 'normalized', ...
-                    'Position', [0.12 0.14 0.82 0.78], ...
-                    'ActivePositionProperty', 'position');
-                % Ensure colormap matches source
-                try
-                    colormap(tmp_ax, colormap(src_ax));
-                catch
-                end
-                % Copy CLim if applicable
-                try
-                    tmp_ax.CLim = src_ax.CLim;
-                catch
-                end
-
-                % --- Export PNG ---
-                png_path = fullfile(out_dir, sprintf('%s_%s_%s_%s.png', ...
+                prefix = fullfile(out_dir, sprintf('%s_%s_%s_%s', ...
                     ts, fname, ratio_file, settings.file_tag));
-                exportgraphics(tmp_fig, png_path, ...
-                    'Resolution', settings.resolution, 'BackgroundColor', 'white');
-
+                qe_export_browser_panel(src_ax, prefix, aspect_ratio=target_ratio, ...
+                    resolution=settings.resolution, write_pdf=settings.write_pdf);
                 exported{end+1} = fname; %#ok<AGROW>
-
-                % --- Also export vector PDF for publication mode ---
-                if settings.write_pdf
-                    try
-                        pdf_path = fullfile(out_dir, sprintf('%s_%s_%s_%s.pdf', ...
-                            ts, fname, ratio_file, settings.file_tag));
-                        exportgraphics(tmp_fig, pdf_path, ...
-                            'ContentType', 'vector', 'BackgroundColor', 'white');
-                    catch
-                    end
-                end
-
-                % --- Clean up temp figure ---
-                close(tmp_fig);
             catch ME
                 fprintf('  Export failed for %s: %s\n', fname, ME.message);
-                try close(tmp_fig); catch, end  %#ok<CTCH>
             end
         end
 
@@ -3759,11 +3937,16 @@ end
 
 
     function local_update_stage_label()
+        ui.SaveSessionButton.Enable = local_on_off(~isempty(state.dataset));
         if isempty(state.dataset)
             ui.StageLabel.Text = "Stage: none";
+            ui.SourceLabel.Text = 'No data loaded';
+            local_sync_reset_stage_items();
             return
         end
         ui.StageLabel.Text = sprintf("Stage: %s", char(state.activeStage));
+        ui.SourceLabel.Text = state.dataset.label;
+        local_sync_reset_stage_items();
     end
 
 
