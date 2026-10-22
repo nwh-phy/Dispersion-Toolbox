@@ -12,7 +12,7 @@ run(fullfile(project_root, 'startup.m'));
 folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
 data_dir = fullfile(folder, 'synth 10w smoke');   % '10w' in the path gives dq = 0.0005 1/A
 mkdir(data_dir);
-[a3, e] = synthDataset();
+[a3, e] = synth_joint_dataset(E0={@truthE0});
 save(fullfile(data_dir, 'eq3D.mat'), 'a3', 'e');
 testCase.TestData.data_dir = data_dir;
 end
@@ -718,29 +718,4 @@ end
 
 function E0 = truthE0(q)
 E0 = 700 + 6e4 * abs(q);
-end
-
-
-function [a3, e] = synthDataset()
-% 101 channels around q = 0, |q| <= 0.025 (covers the default comparison reference
-% range 0.010-0.020); the ZLP is strongest in the centre channel, where
-% make_qe_struct puts q = 0. Gaussian-approximated Poisson noise, fixed seed.
-e = (-300:4:2400).';
-nq = 101; q0 = 51; dq = 0.0005;
-rng(20261022, 'twister');
-a3 = zeros(numel(e), nq);
-for j = 1:nq
-    q = (j - q0) * dq;
-    zlp = 1e6 * (1 + 0.2 * exp(-(j - q0) ^ 2 / 8)) * (1 + (e / 18) .^ 2 / 1.5) .^ (-1.5);
-    E0 = truthE0(q); G = 400;
-    pos = e > 0;
-    peak = zeros(size(e));
-    peak(pos) = e(pos) * G ./ ((e(pos) .^ 2 - E0 ^ 2) .^ 2 + e(pos) .^ 2 * G ^ 2);
-    K = qe_kinematic_prefactor(abs(q), dq=dq, form='2d', beam_kV=30);
-    peak(pos) = peak(pos) .* K(e(pos));
-    kernel = zlp / sum(zlp);
-    peak = conv(peak, kernel(e >= -120 & e <= 120), 'same');
-    mu = zlp + peak / max(peak) * 2e3 + 20;
-    a3(:, j) = mu + sqrt(mu) .* randn(size(mu));
-end
 end
