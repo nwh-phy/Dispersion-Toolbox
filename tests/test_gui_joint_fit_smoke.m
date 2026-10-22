@@ -693,6 +693,46 @@ verifyEqual(testCase, h.state().pendingFit, before.pendingFit);
 end
 
 
+function testZlpJointAutoFitBuildsTheBranchFromE0(testCase)
+% Auto Fit with Fit Method 'ZLP joint' tracks the plasmon from the selected
+% channel over the q range of the controls; its branch holds model E0 and
+% survives a session round trip.
+h = testCase.TestData.hooks;
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.ui.QStartField.Value = -0.006;
+h.ui.QEndField.Value = 0.006;
+h.ui.AutoFitButton.ButtonPushedFcn(h.ui.AutoFitButton, []);
+st = h.state();
+verifyEqual(testCase, st.autoFitResults.method, 'zlp_joint');
+verifyNumElements(testCase, st.manual_branches, 1);
+pts = st.manual_branches{1};
+verifyGreaterThanOrEqual(testCase, size(pts, 1), 20);
+verifyLessThanOrEqual(testCase, max(abs(pts(:, 1))), 0.006 + 1e-9);
+verifyLessThan(testCase, max(abs(pts(:, 2) - truthE0(pts(:, 1)))), 30);
+verifyEqual(testCase, st.manual_points, sortrows(pts(:, 1:2), [1 2]));
+verifySubstring(testCase, char(h.ui.InfoLabel.Text), 'Auto-fit candidates ready');
+
+folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+p = fullfile(folder, 'auto_session.mat');
+h.save_session(p);
+delete(h.ui.Figure);
+[app, restored] = interactive_qe_browser(p);
+testCase.addTeardown(@delete, app);
+verifyEqual(testCase, restored.state().autoFitResults, st.autoFitResults);
+verifyEqual(testCase, restored.state().manual_branches, st.manual_branches);
+end
+
+
+function testZlpJointAutoFitReportsAnUnusableSeed(testCase)
+h = testCase.TestData.hooks;
+h.ui.FitMethodDropdown.Value = 'zlp_joint';
+h.select_q(channelAt(h.state(), 0));
+h.ui.AutoFitButton.ButtonPushedFcn(h.ui.AutoFitButton, []);
+verifySubstring(testCase, char(h.ui.InfoLabel.Text), 'q = 0');
+verifyEmpty(testCase, h.state().manual_branches);
+end
+
+
 function changeControl(control, value)
 % Set a control as the user does: new value, then its ValueChangedFcn.
 control.Value = value;

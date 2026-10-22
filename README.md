@@ -107,6 +107,14 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 - **BG + peaks**（默认，旧方法）：在预处理后的谱上拟合幂律背景加若干峰（`fit_loss_function`）。
 - **ZLP joint**：直接拟合所选通道的原始计数，ZLP 和损失峰一起拟合，不扣背景，不受归一化、去噪、背景扣除设置影响（`qe_fit_spectrum_joint` → `qe_zlp_joint_fit`）。拟合窗为 max(E min, 250) 到 E max；峰数取 **Max Peaks**（恰好这么多个，不是上限）；峰形只能选 **Drude-Lorentz** 或 **Sym. Lorentz**。**Kinematic factor**（默认开）给损失峰乘上该通道的 2D 运动学因子（`qe_kinematic_prefactor`，按 **Beam kV**），小 q 处不开会让 E0 系统性偏低（30 kV、q = 0.002 Å⁻¹、Γ = 400 meV 的合成谱上偏约 70 meV）；**Poisson weights** 按 σ = √counts 加权。信息栏给出 E0、峰顶（损失函数最大值，阻尼 DL 的峰顶低于 E0）和 χ²_red，比较 1 峰和 2 峰时看 χ²_red。**Accept Fit** 写进色散的是 E0：色散模型描述的是 E0，阻尼大时峰顶明显偏低（590 在 q = 0.005 的两个峰：E0 726/1594 meV，峰顶 651/1355 meV）。BG + peaks 仍写入峰顶，和论文期结果一致；每个被接受的拟合都记录了自己用的是哪一个（`energy_kind`）。叠加图里灰线是实际拟合的原始计数（按当前显示缩放）。这种拟合还没有误差棒。
 
+**ZLP joint 自动拟合**：Fit Method 选 ZLP joint 时，**Auto Fit Branches** 改用 `qe_auto_fit_joint`，逐通道拟合原始计数，峰数、峰形、拟合窗和运动学因子同单谱拟合：
+
+- 从当前选中的通道出发（**Guesses** 填了 Max Peaks 个值时作为这一通道的初值），沿 |q| 向外、向内推进，再从 −q 侧的镜像通道出发做同样两次推进；范围取 **q start / q end**，q = 0 通道不拟合。每个通道从同一次推进里上一个完整跟上的通道的参数起步，只用一个初值。
+- 每个通道的峰按 E0 排序，第 k 个峰进 Branch k，分支点是 E0，峰顶记在分支矩阵第 14 列。
+- 下列情况的峰标为待复查，在色散图上画成灰色空心圈，不进分支：拟合失败、两峰重合、参数顶到边界、振幅为零、跳变（E0 离上一次跟上的值和最近三次的中位数都超过 **Max Shift**，中间每隔一个没跟上的通道多允许一个 Max Shift）、拟合差（χ²_red 超过种子通道的 2 倍）、R² < 0.3、Γ/E0 > 2。前六种或 χ²_red 明显上升时，这个通道会用 4 个初值（含原起点）再拟合一次，取代价低的；R² < 0.3 的通道被噪声主导，不再重拟合。
+- 590 数据在 |q| ≤ 0.03 范围内约 2 分钟（120 个通道），有进度条，可以中途取消，取消后分支不变。全范围更慢，先用 q start / q end 收窄范围。
+- 被标记的点可以用 **Correct Peak** 或单谱 **Fit Spectrum → Accept Fit** 逐个处理。
+
 **方式 D — 手动选点**（旧式 fallback）：
 
 1. 点击 **Pick Peaks**，在 q-E map 上逐点选取
@@ -157,7 +165,7 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 2. 在不同 q 通道浏览原始谱，了解数据质量
 3. 开启 Normalize (ZLP Peak) + Denoise (Wiener2D)，保持 **QE BG** 关闭
 4. 先做单谱拟合（**Fit Spectrum**），确认不扣背景时峰位仍清楚
-5. 再做全局自动拟合（**Auto Fit Branches**，目前使用 BG + peaks 路径；**ZLP joint** 用于单谱 **Fit Spectrum**）
+5. 再做全局自动拟合（**Auto Fit Branches**，方法跟着 **Fit Method** 走：BG + peaks 或 ZLP joint）
 6. 逐 q 检查 branch assignment；对少数明显错误点，用 **Correct Auto** + target branch 下拉框做局部矫正，必要时用 **Undo Corr** 回退误操作
 7. 用 **Save Session** 保存整个工作状态；如需单独交换分支点，再用 **Save Curated**
 8. 可选：开启 QE BG 作为稳健性检查，确认主 branch 峰位没有被背景模型显著改变

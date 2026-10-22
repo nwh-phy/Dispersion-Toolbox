@@ -1555,15 +1555,7 @@ end
         % Fit using current UI parameters
         E_min = max(ui.EnergyMinField.Value, 50);
         E_max = ui.EnergyMaxField.Value;
-
-        % Parse manual peak guesses (comma-separated meV values)
-        guess_str = strtrim(ui.GuessField.Value);
-        if ~isempty(guess_str)
-            guesses = str2double(strsplit(guess_str, {',', ' ', ';'}));
-            guesses = guesses(~isnan(guesses) & guesses > 0);
-        else
-            guesses = [];
-        end
+        guesses = local_parse_guesses();
 
         display_scale = 1;   % displayed intensity per unit of the fitted data
         fit_input = [];      % ZLP joint: the raw counts that were fitted
@@ -1855,6 +1847,17 @@ end
     end
 
 
+    function guesses = local_parse_guesses()
+        % Peak guesses typed into the Guesses field (meV, comma/space separated).
+        guesses = [];
+        guess_str = strtrim(ui.GuessField.Value);
+        if ~isempty(guess_str)
+            guesses = str2double(strsplit(guess_str, {',', ' ', ';'}));
+            guesses = guesses(~isnan(guesses) & guesses > 0);
+        end
+    end
+
+
     function tag = local_fit_overlay_tag()
         tag = 'spectrum_fit_overlay';
     end
@@ -2015,6 +2018,10 @@ end
             ui.InfoLabel.Visible = "on";
             return
         end
+        if strcmp(ui.FitMethodDropdown.Value, 'zlp_joint')
+            local_auto_fit_joint();
+            return
+        end
 
         qe = local_get_active_qe();
         if isempty(qe), return; end
@@ -2029,15 +2036,7 @@ end
         qe_raw = qe_preprocess(qe_raw, raw_opts);
 
         [mask, energy_axis] = local_energy_mask(qe);
-
-        % Parse manual peak guesses
-        guess_str = strtrim(ui.GuessField.Value);
-        if ~isempty(guess_str)
-            guesses = str2double(strsplit(guess_str, {',', ' ', ';'}));
-            guesses = guesses(~isnan(guesses) & guesses > 0);
-        else
-            guesses = [];
-        end
+        guesses = local_parse_guesses();
 
         try
             branch_specs = local_branch_specs_from_ui();
@@ -2091,19 +2090,92 @@ end
         branch_filter_opts.max_gamma_ratio = 2.0;
         branch_filter_opts.score_column = 12;
         branch_assignment = qe_assign_peak_branches_by_windows(peaks, branch_specs, branch_filter_opts);
-        branches = branch_assignment.branches;
-        n_branches = numel(branches);
 
         autoResults = struct();
+        autoResults.method = 'bg_peaks';
         autoResults.all_peaks = peaks;
         autoResults.raw_branches = results.branches;
-        autoResults.branches = branches;
+        autoResults.branches = branch_assignment.branches;
         autoResults.branch_assignment = branch_assignment;
         autoResults.branch_specs = branch_assignment.specs;
         autoResults.fit_details = results.fit_details;
         autoResults.n_success = results.n_success;
+        local_show_auto_fit(autoResults);
+
+        function local_auto_fit_progress(~, message)
+            ui.InfoLabel.Text = char(message);
+            drawnow;
+        end
+    end
+
+
+    function local_auto_fit_joint()
+        % Auto Fit with Fit Method 'ZLP joint': qe_auto_fit_joint on the raw counts,
+        % tracked from the selected channel. Peak k is branch k at its model E0;
+        % flagged peaks stay out of the branches and are drawn for review.
+        qe_raw = state.physicalQE;
+        if isempty(qe_raw), qe_raw = state.eq3dQE; end
+        model = char(ui.PeakModelDropdown.Value);
+        if ~any(strcmp(model, {'lorentz', 'lorentz_symmetric'}))
+            ui.InfoLabel.Text = "ZLP joint fit supports Drude-Lorentz and Sym. Lorentz only";
+            ui.InfoLabel.Visible = "on";
+            return
+        end
+        weights = 'none';
+        if ui.PoissonWeightsCheckbox.Value, weights = 'poisson'; end
+        dlg = uiprogressdlg(ui.Figure, 'Title', 'Auto Fit (ZLP joint)', ...
+            'Message', 'Fitting the seed channel...', 'Cancelable', 'on');
+        cleanup = onCleanup(@() delete(dlg));
+        try
+            auto = qe_auto_fit_joint(qe_raw, state.selectedQIndex, ...
+                n_peaks=ui.MaxPeaksField.Value, peak_model=model, ...
+                signal_window=[max(ui.EnergyMinField.Value, 250), ui.EnergyMaxField.Value], ...
+                kinematic=ui.KinematicCheckbox.Value, beam_kV=ui.BeamKVField.Value, weights=weights, ...
+                q_range=[ui.QStartField.Value, ui.QEndField.Value], initial_E0=local_parse_guesses(), ...
+                max_shift=ui.MaxShiftField.Value, progress_fn=@local_progress, ...
+                cancel_fn=@() dlg.CancelRequested);
+        catch ME
+            ui.InfoLabel.Text = ME.message;
+            ui.InfoLabel.Visible = "on";
+            return
+        end
+        if auto.cancelled
+            ui.InfoLabel.Text = "Auto fit cancelled; the branches are unchanged.";
+            ui.InfoLabel.Visible = "on";
+            return
+        end
+        assignment = auto.branch_assignment;
+        autoResults = struct();
+        autoResults.method = 'zlp_joint';
+        autoResults.all_peaks = auto.peaks;
+        autoResults.raw_branches = assignment.branches;
+        autoResults.branches = assignment.branches;
+        autoResults.branch_assignment = assignment;
+        autoResults.branch_specs = assignment.specs;
+        autoResults.fit_details = auto.channels;
+        autoResults.n_success = auto.n_success;
+        autoResults.review = auto.review;
+        autoResults.review_reason = auto.review_reason;
+        autoResults.settings = auto.settings;
+        local_show_auto_fit(autoResults);
+
+        function local_progress(fraction, message)
+            dlg.Value = min(max(fraction, 0), 1);
+            dlg.Message = char(message);
+        end
+    end
+
+
+    function local_show_auto_fit(autoResults)
+        % Make the auto-fit branches the curated branches and draw them.
+        peaks = autoResults.all_peaks;
+        branches = autoResults.branches;
+        n_branches = numel(branches);
         state.autoFitResults = autoResults;
-        state.autoFitResults.ppHash = local_opts_hash(local_preprocess_opts(), local_get_active_qe());
+        if strcmp(autoResults.method, 'bg_peaks')
+            % Fitted on the preprocessed data, which the Gamma and I_kin views check.
+            state.autoFitResults.ppHash = local_opts_hash(local_preprocess_opts(), local_get_active_qe());
+        end
         state.manual_branches = branches;
         state.manual_points = qe_flatten_branch_points(branches);
         state.branchCorrectionLog = [];
@@ -2119,7 +2191,7 @@ end
         for b = 1:n_branches
             br = branches{b};
             col = qe_plot_helpers.branch_color(b);
-            spec = branch_assignment.specs(b);
+            spec = autoResults.branch_specs(b);
             win = spec.energy_window_meV;
             branch_label = sprintf('%s [%.0f-%.0f meV] (%d pts)', ...
                 char(string(spec.name)), win(1), win(2), size(br,1));
@@ -2129,6 +2201,7 @@ end
             qe_plot_helpers.plot_branch_scatter(ax, br, col, branch_label);
             plotted = true;
         end
+        plotted = local_plot_auto_fit_review(ax) || plotted;
 
         hold(ax, 'off');
         if plotted
@@ -2136,23 +2209,36 @@ end
         end
         xlabel(ax, 'q (1/A)');
         ylabel(ax, 'Energy (meV)');
-        title(ax, sprintf('Auto candidates: %d branches, %d assigned / %d peaks', ...
-            n_branches, size(state.manual_points, 1), size(peaks,1)));
+        review_text = '';
+        if isfield(autoResults, 'review') && ~isempty(autoResults.review)
+            review_text = sprintf(', %d to review', size(autoResults.review, 1));
+        end
+        title(ax, sprintf('Auto candidates: %d branches, %d assigned / %d peaks%s', ...
+            n_branches, size(state.manual_points, 1), size(peaks,1), review_text));
         grid(ax, 'on');
 
         ui.PtsLabel.Text = sprintf('%d pts', size(state.manual_points, 1));
-        ui.InfoLabel.Text = sprintf('Auto-fit candidates ready: %d assigned / %d peaks. Correct peaks, then Fit Curated.', ...
-            size(state.manual_points, 1), size(peaks,1));
+        ui.InfoLabel.Text = sprintf('Auto-fit candidates ready: %d assigned / %d peaks%s. Correct peaks, then Fit Curated.', ...
+            size(state.manual_points, 1), size(peaks,1), review_text);
         ui.InfoLabel.Visible = "on";
         ui.DispInfoLabel.Text = "Candidates only. Use Correct Peak or Fit Curated.";
-        local_log_operation(sprintf('Auto fit candidates: %d branches / %d assigned / %d peaks', ...
-            n_branches, size(state.manual_points,1), size(peaks,1)));
+        local_log_operation(sprintf('Auto fit candidates: %d branches / %d assigned / %d peaks%s', ...
+            n_branches, size(state.manual_points,1), size(peaks,1), review_text));
         local_update_heatmap_branch_overlays();
+    end
 
-        function local_auto_fit_progress(~, message)
-            ui.InfoLabel.Text = char(message);
-            drawnow;
+
+    function drawn = local_plot_auto_fit_review(ax)
+        % Peaks the ZLP joint auto fit flagged: open grey circles, not in any branch.
+        drawn = false;
+        if isempty(state.autoFitResults) || ~isfield(state.autoFitResults, 'review') ...
+                || isempty(state.autoFitResults.review)
+            return
         end
+        review = state.autoFitResults.review;
+        scatter(ax, review(:, 1), review(:, 2), 30, [0.55 0.55 0.55], 'LineWidth', 1, ...
+            'DisplayName', sprintf('Review (%d)', size(review, 1)), 'Tag', 'auto_fit_review');
+        drawn = true;
     end
 
 
@@ -3499,6 +3585,7 @@ end
                 col = qe_plot_helpers.branch_color(bi);
                 qe_plot_helpers.plot_branch_scatter(ax, bpts, col, sprintf('Branch %d', bi));
             end
+            local_plot_auto_fit_review(ax);
             local_plot_correction_markers(ax);
         elseif ~isempty(state.manual_points)
             pts = sortrows(state.manual_points, 1);
