@@ -1,0 +1,24 @@
+version = 1
+q_reference_Ainv = 0.005
+beam_kV = 30.0
+# Deliberately illustrative. The two target E0 values are read from the existing
+# empirical fits and matched analytically; neither is a new material prediction.
+transition_demo_eV = 1.05
+screening_demo_A = 500.0
+gamma_demo_eV = 0.65
+gamma_resolved_eV = 0.12
+screening_scan_A = [0.0, 20.0, 100.0, 500.0, 2000.0]
+transition_fraction_scan = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+gamma_scan_eV = [0.12, 0.4, 0.65, 0.9]
+distance_scan_A = [3.0, 10.0, 30.0, 100.0, 300.0]
+momentum_scan_Ainv = [0.0025, 0.005, 0.01, 0.015]
+
+[standalone]
+# Frozen numerical example from the mean empirical E0 targets and 590 geometry.
+# These are reference scales, not independently measured plasmon poles.
+low_target_eV = 0.8354508868867471
+high_target_eV = 1.4173610285648435
+slot_halfwidth_Ainv = 0.0066
+bin_width_Ainv = 0.0015
+probe_sigma_Ainv = 0.00041404870644345455
+energy_fwhm_meV = 23.012955034523788

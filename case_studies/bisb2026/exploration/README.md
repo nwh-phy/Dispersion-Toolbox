@@ -9,6 +9,12 @@ and [the reproducible Python comparison](composition/README.md). Its full-Q
 measurement model tests two spectral contributions against a single broad
 response; spectral components are not automatically distinct plasmons.
 
+Two-mode theory follow-up: [derivation](two_mode_theory/DERIVATION.md),
+[simulation results](two_mode_theory/RESULTS.md), and
+[standalone reproduction](two_mode_theory/README.md). This compares coupled
+conducting sheets with a self-consistent Drude plus dynamic polarization model,
+including normal-incidence visibility and full-Q relative component weights.
+
 This isolated experiment starts at research commit `3d66386`. It processes
 the existing C20 MoS2/Bi-rich BiSb/MoS2 sequences; it does not assume pure Bi,
 a crystal structure, independently verified layer counts, carrier density,
