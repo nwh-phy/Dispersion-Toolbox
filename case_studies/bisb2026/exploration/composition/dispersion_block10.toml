@@ -1,0 +1,7 @@
+version = 1
+seed = 20261024
+bootstrap_replicates = 60
+bootstrap_models = ["D"]
+bootstrap_starts = 2
+block_length = 10
+interpretation = "Block-length sensitivity only; main fits referenced from the signed primary run. Same operator and fitting model."

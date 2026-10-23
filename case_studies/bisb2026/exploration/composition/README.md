@@ -41,3 +41,39 @@ OPENBLAS_NUM_THREADS=1 .venv/bin/python3 -m pytest tests/python -q
     .venv/bin/python3 case_studies/bisb2026/exploration/composition/real_data_figures.py
 
 它从原始帧重建图片并核对既有正 q 分箱，复用 v3 拟合；不再优化参数，不以理论示意谱代替真实数据。
+
+## 后续：低、高能成分公平放开色散
+
+最新判断见 [DISPERSION_REPORT.md](DISPERSION_REPORT.md)，公式、参数语义和统计边界见
+[DISPERSION_METHODS.md](DISPERSION_METHODS.md)。这轮保留冻结的 `models.py`，
+`dispersion_models.py` 调用同一个测量算子和背景函数，实现有序的 A/B/C/D 双成分假设与单振子 S。
+`dispersion_protocol.toml` 管理主比较和敏感性条件；`dispersion_block10.toml` 只改变时间块检查。
+
+以下是已经实际运行的复现入口，用户无需再手动执行。在根目录的现有 `.venv` 中：
+
+```bash
+for sid in 590 n0 20w; do
+  for stage in main sensitivity bootstrap; do
+    OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 .venv/bin/python3 \
+      case_studies/bisb2026/exploration/composition/dispersion_run.py \
+      --source paper_results/b1_composition_20261023 \
+      --output paper_results/b1_ordered_dispersion_20261023 \
+      --session "$sid" --stage "$stage"
+  done
+  OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 .venv/bin/python3 \
+    case_studies/bisb2026/exploration/composition/dispersion_block_check.py \
+    --source paper_results/b1_composition_20261023 \
+    --reference paper_results/b1_ordered_dispersion_20261023 \
+    --output paper_results/b1_ordered_dispersion_block10_20261023 --session "$sid"
+done
+.venv/bin/python3 case_studies/bisb2026/exploration/composition/dispersion_summary.py \
+  --source paper_results/b1_composition_20261023 --output paper_results/b1_ordered_dispersion_20261023
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 .venv/bin/python3 \
+  case_studies/bisb2026/exploration/composition/dispersion_verify.py \
+  --source paper_results/b1_composition_20261023 --output paper_results/b1_ordered_dispersion_20261023 \
+  --block-output paper_results/b1_ordered_dispersion_block10_20261023
+```
+
+每个已完成拟合都会保存独立结果；数据或计算源码签名不一致时拒绝复用缓存。
+长时间块检查通过相对符号链接引用主拟合，并另外核验其哈希。
+摘要脚本仅读取结果，不调整曲线以得到预期趋势。它把振子 E0、模型损失峰顶与实际计数分开绘制。

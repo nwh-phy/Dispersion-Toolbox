@@ -1,0 +1,40 @@
+version = 1
+seed = 20261023
+models = ["A", "B", "C", "D", "S"]
+sessions = ["590", "n0", "20w"]
+main_starts = 12
+sensitivity_starts = 6
+bootstrap_replicates = 120
+bootstrap_models = ["B", "D"]
+bootstrap_starts = 2
+block_length = 5
+train_frames = 250
+test_frames = 50
+energy_window_meV = [500, 3400]
+b1_window_meV = [500, 1800]
+delta_q_Ainv = [0.0025, 0.015]
+interpretation = "Exploratory, reused held-out frames. Conditional uncertainty of ordered two-oscillator linear-E0 model, not proof of two microscopic plasmons. Bootstrap refits nonlinear parameters and NNLS amplitudes; noise/calibration fixed."
+
+[[conditions]]
+name = "main"
+[[conditions]]
+name = "no_constant"
+include_constant = false
+[[conditions]]
+name = "half_h"
+h_scale = 0.5
+[[conditions]]
+name = "lower350"
+window = [350, 3400]
+[[conditions]]
+name = "upper3000"
+window = [500, 3000]
+[[conditions]]
+name = "fixed_width"
+fixed_width = true
+[[conditions]]
+name = "ep2_numerator"
+numerator = "ep2"
+[[conditions]]
+name = "holdout1100_1500"
+exclude = [1100, 1500]
