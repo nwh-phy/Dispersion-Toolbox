@@ -10,9 +10,16 @@ arguments
     options.write_pdf (1,1) logical = false
 end
 fig = figure('Visible', 'off', 'Color', 'white', 'Units', 'pixels', ...
-    'Position', [100 100 round(600 * options.aspect_ratio) 600]);
+    'Position', [100 100 round(600 * options.aspect_ratio) 600], ...
+    'InvertHardcopy', 'off');
 cleanup = onCleanup(@() close(fig));
-ax = axes(fig, 'Units', 'normalized', 'Position', [0.14 0.14 0.80 0.74]);
+% Export on white paper independently of desktop theme and root defaults.
+% Theme is unavailable on older supported MATLAB releases.
+if isprop(fig, 'Theme'), fig.Theme = 'light'; end
+ink = [0.15 0.15 0.15];
+ax = axes(fig, 'Units', 'normalized', 'Position', [0.14 0.14 0.80 0.74], ...
+    'Color', 'white', 'XColor', ink, 'YColor', ink, 'ZColor', ink, ...
+    'GridColor', ink, 'MinorGridColor', ink);
 % Include peak markers with HandleVisibility='off', but recreate labels and
 % leave the interactive toolbar in the browser.
 children = allchild(source);
@@ -27,9 +34,10 @@ properties = {'XLim', 'YLim', 'XScale', 'YScale', 'XDir', 'YDir', 'CLim', ...
     'FontName', 'FontSize', 'XGrid', 'YGrid', 'Box', 'TickLabelInterpreter'};
 for k = 1:numel(properties), ax.(properties{k}) = source.(properties{k}); end
 colormap(ax, colormap(source));
-xlabel(ax, source.XLabel.String, 'Interpreter', source.XLabel.Interpreter);
-ylabel(ax, source.YLabel.String, 'Interpreter', source.YLabel.Interpreter);
-title(ax, wrapTitle(source.Title.String, 70), 'Interpreter', source.Title.Interpreter);
+xlabel(ax, source.XLabel.String, 'Interpreter', source.XLabel.Interpreter, 'Color', ink);
+ylabel(ax, source.YLabel.String, 'Interpreter', source.YLabel.Interpreter, 'Color', ink);
+title(ax, wrapTitle(source.Title.String, 70), ...
+    'Interpreter', source.Title.Interpreter, 'Color', ink);
 if ~isempty(source.Legend) && isgraphics(source.Legend)
     labels = source.Legend.String;
     handles = gobjects(0); names = {};
@@ -41,7 +49,8 @@ if ~isempty(source.Legend) && isgraphics(source.Legend)
     end
     if ~isempty(handles)
         legend(ax, handles, names, 'Location', source.Legend.Location, ...
-            'Interpreter', source.Legend.Interpreter, 'FontSize', source.Legend.FontSize);
+            'Interpreter', source.Legend.Interpreter, 'FontSize', source.Legend.FontSize, ...
+            'Color', 'white', 'TextColor', ink, 'EdgeColor', ink);
     end
 end
 drawnow;

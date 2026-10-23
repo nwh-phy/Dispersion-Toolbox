@@ -246,9 +246,9 @@ end
                 state.eq3dQE = dataset.qe;
                 state.physicalQE = dataset.qe;
                 state.activeStage = "eq3d";
-                local_rebuild_comparison(false);
                 ui.ViewModeDropdown.Value = 'Physical';
                 local_sync_controls_from_qe(local_get_reference_qe());
+                local_rebuild_comparison(false);
                 [~, fname] = fileparts(char(full_path));
                 local_log_operation(sprintf('Loaded raw: %s (dq=%.4f)', fname, dataset.dq_Ainv));
                 local_update_all_views();
@@ -282,10 +282,11 @@ end
             state.eq3dQE = dataset.qe;
             state.physicalQE = dataset.qe;
             state.activeStage = "eq3d";
-            local_rebuild_comparison(false);
             ui.ViewModeDropdown.Value = 'Physical';
 
+            % Comparison must use the reference band shown by these controls.
             local_sync_controls_from_qe(local_get_reference_qe());
+            local_rebuild_comparison(false);
 
             % Log to operation history
             [~, fname] = fileparts(char(path_to_load));
@@ -1174,6 +1175,7 @@ end
         local_apply_dq(dq_Ainv);
 
         local_sync_controls_from_qe(local_get_reference_qe());
+        local_rebuild_comparison(false);
 
         local_log_operation(local_describe_changes());
         local_update_all_views();
