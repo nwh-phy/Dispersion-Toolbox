@@ -4,6 +4,11 @@ Completed findings: [RESULTS.md](RESULTS.md). The strongest processing result
 is relative q-drift correction validated against temporal holdout spectra.
 The model/uncertainty limitations and proposed GUI adoption are explicit.
 
+B1 composition follow-up: [the research judgment](composition/REPORT.md)
+and [the reproducible Python comparison](composition/README.md). Its full-Q
+measurement model tests two spectral contributions against a single broad
+response; spectral components are not automatically distinct plasmons.
+
 This isolated experiment starts at research commit `3d66386`. It processes
 the existing C20 MoS2/Bi-rich BiSb/MoS2 sequences; it does not assume pure Bi,
 a crystal structure, independently verified layer counts, carrier density,

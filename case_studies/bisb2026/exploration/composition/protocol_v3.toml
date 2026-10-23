@@ -1,0 +1,11 @@
+version = 3
+seed = 20261024
+models = ["single", "skew_single", "double", "continuum"]
+main_window_meV = [500, 3400]
+include_high_tail = true
+upper_dispersion = true
+band_limited = true
+starts = 10
+fit_directory = "fits_v3"
+reason = "v2 allowed the nominal second B1 oscillator to move to 3.1 eV and repair the incorrectly nondispersive B3. Its apparent improvement was not B1 decomposition. Bound B1 E0/mode to 0.3-1.8 eV (all models); model the upper neighbor with E3(Q)=E3_ref+s3*(Q/0.005-1)."
+interpretation = "Empirical model discrimination after exploratory revisions; held-out bins/frames are excluded from parameter fitting, but not blinded during design. No exact significance or microscopic mode count."

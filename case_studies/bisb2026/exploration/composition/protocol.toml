@@ -1,0 +1,20 @@
+version = 1
+seed = 20261024
+purpose = "Discriminate the empirical composition of B1; microscopic assignments remain hypotheses"
+q_targets_Ainv = [-0.015, -0.010, -0.005, -0.0025, 0.0025, 0.005, 0.010, 0.015]
+energy_sum_channels = 4
+prepared_energy_range_meV = [200, 3400]
+main_fit_window_meV = [500, 2600]
+window_checks_meV = [[350, 2600], [500, 1800], [500, 2200], [500, 3000]]
+train_frames = 250
+test_frames = 50
+spectral_holdouts_meV = [[600, 800], [1100, 1500], [1800, 2200]]
+models = ["single", "double", "continuum"]
+geometry = "Full average of K(Q,E)*L(Q,E), uniform slit and isotropic Gaussian probe; conditional on measured/recorded geometry"
+low_mode = "Screened Drude pole E0(Q)^2=A*Q/(1+r0*Q), Gamma(Q)=Gamma_ref*(Q/Qref)^eta"
+high_resonance = "Nonnegative Drude-Lorentz response with Q-independent position and width"
+continuum = "Positive log-normal spectral density, two shape parameters and finite moments; phenomenological, not calculated ImPi0"
+common_nuisance = "Nonnegative E^-3 tail, constant detector baseline, plus a Q-independent 1.7-2.4 eV oscillator fitted using extended energy range"
+selection = "Same data/window/noise for all models; held-out time and contiguous energy windows; simulation calibration; no exact chi-square p-values"
+energy_semantics = "E0 is an oscillator parameter, loss apex and measured count maximum are distinct"
+microscopic_boundary = "Neither a second oscillator nor a successful continuum fit alone identifies a second plasmon or single-particle excitations"

@@ -1,0 +1,13 @@
+version = 2
+seed = 20261024
+status = "Exploratory follow-up to v1, retained in fits/. No claim of blinded model selection."
+reason = "The v1 2.6-eV fit omitted the visible 3-eV tail; its inclusion improved all models. The continuum hit its pilot lower width bound (0.25), expanded to 0.10 before v1 production."
+main_window_meV = [500, 3400]
+models = ["single", "skew_single", "double", "continuum"]
+common_nuisance = "Same positive E^-3 tail, constant, near-2-eV oscillator and near-3-eV oscillator in every model and window"
+single_skew_control = "One unimodal log-normal spectral density with the same four Q-shape parameters as the single oscillator. This challenges a lineshape-induced false decomposition."
+component_semantics = "The screened response may optimize ABOVE the additional response; labels are not energy ordering or microscopic identities. Report components by their intrinsic apex at Q=0.005."
+window_checks_meV = [[350, 3400], [500, 1800], [500, 2200], [500, 2600], [500, 3000]]
+spectral_holdouts_meV = [[600, 800], [1100, 1500], [1800, 2200]]
+geometry_checks = ["half_h", "point", "no_constant", "flat_E", "flat_E_and_width"]
+interpretation = "A preferred spectral family ranks empirical explanations. It does not count dielectric eigenmodes or assign free-carrier versus interband origin."
