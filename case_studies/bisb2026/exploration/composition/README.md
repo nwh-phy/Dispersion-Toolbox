@@ -34,3 +34,10 @@ OPENBLAS_NUM_THREADS=1 .venv/bin/python3 -m pytest tests/python -q
 ```
 
 没有修改 MATLAB 公共拟合器、GUI、研究主分支或原始数据。要移植进 GUI，先做通用接口与独立数据验收，不能将本个案的 0.3–1.8 eV 范围和邻近能带约束直接套用所有 q-EELS。
+
+真实 q–E 图、留出实测谱与分量、观测峰脊与条件裸峰顶的图片见
+[REAL_DATA_FIGURES.md](REAL_DATA_FIGURES.md)。独立重现入口：
+
+    .venv/bin/python3 case_studies/bisb2026/exploration/composition/real_data_figures.py
+
+它从原始帧重建图片并核对既有正 q 分箱，复用 v3 拟合；不再优化参数，不以理论示意谱代替真实数据。
