@@ -34,6 +34,37 @@ python3 -m venv .venv
   --data-root '/path/to/20260120 BiSb' --output '/path/to/new/output'
 ```
 
+For the complete pipeline (preparation, checks, all variants, synthesis,
+bootstrap, plots and final raw-input integrity audit), run:
+
+```sh
+.venv/bin/python3 case_studies/bisb2026/exploration/run_all.py \
+  --data-root '/path/to/20260120 BiSb' --output '/path/to/new/output' \
+  --matlab '/Applications/MATLAB_R2026a.app/bin/matlab' --jobs 3
+```
+
+Repeat with `--resume` after interruption. A changed preparation config,
+raw input, fitter or cached synthetic model is rejected rather than silently
+mixed into the same run. Per-fit checkpoints keep numerical failures and
+boundary states. Python does frame processing, minimal physics and reporting;
+MATLAB supplies the existing joint optimizer. This is not a Python-only port
+of that optimizer.
+
+Individual MATLAB stages can also be called after `startup` and adding this
+directory to the path:
+
+```matlab
+bisb_explore_fit(output_dir, 'check');
+bisb_explore_fit(output_dir, 'fit', '590'); % also 'n0', '20w'
+bisb_explore_fit(output_dir, 'bootstrap', '590');
+bisb_explore_synthetic(fullfile(output_dir, 'synthetic'));
+```
+
+`summarize.py --output ...` rebuilds tables and plots from saved fits.
+`verify_run.py --output ...` re-hashes the original files and checks fit
+coverage/signatures. [METHODS.md](METHODS.md) gives equations, assumptions,
+energy definitions, verified literature and the route to band/DFT response.
+
 The data root is an explicit read-only input. Outputs must be outside that
 root. The input JSON gives energy dispersion and exposure; the checked
 dataset configuration gives q calibration and its provenance. Filenames are

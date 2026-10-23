@@ -72,3 +72,32 @@ def measured_loss(energy_meV, q_center, components, dq=0., h=0., sigma_probe=0.,
     if not half:return result
     lag=np.arange(-half,half+1)*de;kernel=np.exp(-.5*(lag/s)**2);kernel/=kernel.sum()
     return np.convolve(result,kernel,mode='valid')
+
+
+def screened_plasmon_energy(q_Ainv, stiffness_meV2_A, screening_length_A):
+    """Long-wavelength Drude/RPA pole: E_p^2 = A*q/(1+r0*q).
+
+    A has units meV^2 Å and absorbs n_2D/m* and environmental screening.
+    Neither A nor r0 is assigned to any material by this function.
+    """
+    q=np.asarray(q_Ainv)
+    if np.any(q<0) or stiffness_meV2_A<=0 or screening_length_A<0:
+        raise ValueError('Nonnegative momentum/screening and positive stiffness required')
+    return np.sqrt(stiffness_meV2_A*q/(1+screening_length_A*q))
+
+
+def dispersive_aperture_loss(energy_meV,q_center,stiffness_meV2_A,screening_length_A,
+                            gamma_meV,dq=0.,h=0.,n=35,beam_kV=30.):
+    """Integrate K(Q,E)*[-Im 1/epsilon(Q,E)] over the aperture.
+
+    Epsilon = 1-E_p(Q)^2/[E(E+i*gamma)]. This computes the *positive*
+    energy response before resolution broadening. Both the pole and its
+    spectral weight vary with Q; averaging K alone cannot reproduce this.
+    """
+    e=np.asarray(energy_meV)
+    if np.any(e<=0) or gamma_meV<=0:
+        raise ValueError('Positive loss energy and damping required')
+    q,w=acceptance_nodes(q_center,dq=dq,h=h,n=n)
+    ep2=screened_plasmon_energy(q,stiffness_meV2_A,screening_length_A)**2
+    loss=e[:,None]*gamma_meV*ep2/((e[:,None]**2-ep2)**2+(e[:,None]*gamma_meV)**2)
+    return (kinematic_2d(q[None,:],e[:,None],beam_kV)*loss)@w
