@@ -62,3 +62,8 @@ graphene/
 docs/
 figures/
 references/
+
+# Local Python processing environment and test caches
+/.venv/
+__pycache__/
+.pytest_cache/

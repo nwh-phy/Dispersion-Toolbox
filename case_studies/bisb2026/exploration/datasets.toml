@@ -1,0 +1,47 @@
+version = 1
+sample = "C20, Bi-rich BiSb with MoS2 encapsulation; composition from repository records"
+q_calibration_source = "20260120 BiSb/README.md; corrected 2026-05-14; q-zero columns are one-based"
+reference_abs_q_Ainv = 0.001
+raw_elastic_search_window_meV = [-350.0, 100.0]
+alignment_window_meV = [-100.0, 100.0]
+targets_abs_q_Ainv = [0.0025, 0.005, 0.010, 0.015, 0.025]
+signal_window_meV = [300.0, 1800.0]
+fit_energy_range_meV = [-300.0, 2200.0]
+invalid_count_threshold = 4294967295.0
+seed = 20261023
+
+[[sessions]]
+id = "590"
+folder = "590 PL2 10w 0.004 10sx300"
+file = "Sequence EELS Image 274.npy"
+dq_Ainv = 0.0005
+q_zero_column = 236
+bin_channels = 3
+beam_kV = 30.0
+nominal_h_Ainv = 0.0066
+h_source = "0.125 mm slot, recorded h-scan geometry; transmission profile not measured"
+sample_label = "1film label; not an independent thickness measurement"
+
+[[sessions]]
+id = "n0"
+folder = "n0 pl2 10w 0.004 10s x300"
+file = "Sequence EELS Image 272.npy"
+dq_Ainv = 0.0005
+q_zero_column = 235
+bin_channels = 3
+beam_kV = 30.0
+nominal_h_Ainv = 0.0066
+h_source = "same nominal 10w geometry; transmission profile not measured"
+sample_label = "repeat/nearby region; not statistically independent sample replication"
+
+[[sessions]]
+id = "20w"
+folder = "no pl2 20w 0.004 10sx300 2film"
+file = "Sequence EELS Image 273.npy"
+dq_Ainv = 0.00025
+q_zero_column = 236
+bin_channels = 5
+beam_kV = 30.0
+nominal_h_Ainv = 0.0033
+h_source = "scaled from 10w by defocus ratio; sensitivity assumption, not measured transmission"
+sample_label = "2film filename; layer count requires independent structural confirmation"
