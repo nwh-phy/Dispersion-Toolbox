@@ -11,7 +11,10 @@
 ```matlab
 cd('path/to/Dispersion-Toolbox')
 startup   % 自动加载 src/ 和 lib/ 路径
+interactive_qe_browser
 ```
+
+日常从主目录启动即可：新版 GUI 已整合到主目录的 `feat/zlp-joint-fit`，同时保留在稳定分支 `main`。不再使用 `.claude/worktrees/gui-joint-fit` 作为启动入口。若 MATLAB 此前加载过旧工作树，请关闭旧 GUI，在新的 MATLAB 会话中从主目录运行以上命令。完整工作进度用 **Save Session / Load Session** 保存和恢复。
 
 如需外部 Nion 工具箱，复制 `toolbox_config.m.template` → `toolbox_config.m` 并设置路径。
 

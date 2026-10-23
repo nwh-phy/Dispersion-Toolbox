@@ -40,10 +40,10 @@ Agreed with the user on 2026-10-21, after the clean-up of the BiSb scripts (comm
 
 ## GUI work
 
-Agreed with the user on 2026-10-22.
+Updated with user approval on 2026-10-23 after integrating `gui-joint-fit`.
 
-1. GUI work (`src/interactive_qe_browser.m`, `src/ui/`, the browser files in `src/io/`, and their tests) goes on the branch `gui-joint-fit`, which starts from `main` and is checked out in the worktree `.claude/worktrees/gui-joint-fit`. Do not put GUI work on `feat/zlp-joint-fit` or start another GUI branch from it: the research scripts of `feat/zlp-joint-fit` must not enter `main`.
-2. The main checkout stays on `feat/zlp-joint-fit`; do not switch it to another branch. Do not merge `gui-joint-fit`, `main` and `feat/zlp-joint-fit` into each other without the user's approval.
-3. `src/fitting/qe_zlp_joint_fit.m` and `src/fitting/qe_kinematic_prefactor.m` exist on both branches. A change to either on one branch is copied to the other.
-4. The worktree has no data, so the real-data GUI tests in `case_studies/bisb2026/tests/test_gui_joint_fit_realdata.m` skip there. Check real data with a temporary script outside the repository that reads the main checkout's data by absolute path; its results stay out of git.
+1. The main checkout stays on `feat/zlp-joint-fit` and is the daily entry point for both GUI and research. The accepted GUI changes are also on `main`; research-only scripts must not be merged into `main` without approval.
+2. Future generic GUI work starts from `main` on a short-lived branch/worktree. After verification and user authorization, merge into `main`, then integrate into the research branch. Retire completed worktrees after checking for uncommitted and ignored files. Do not recreate the retired `.claude/worktrees/gui-joint-fit` as a permanent GUI entry point.
+3. Shared fitting functions must remain consistent across the stable and research lines. Prefer integrating reviewed commits over maintaining manual copies.
+4. Run both `tests/` and `case_studies/bisb2026/tests/` after integration. Worktrees without data may skip real-data tests; run those in the main checkout or through a temporary external script, and keep generated results out of git.
 5. A new GUI control must stay optional when older history and session files are restored: a missing field takes the control's default.
