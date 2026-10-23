@@ -1,4 +1,10 @@
-function app = interactive_qe_browser(startPath, historyFile)
+function [app, hooks] = interactive_qe_browser(startPath, historyFile)
+% [app, hooks] = interactive_qe_browser(...) also returns test hooks: hooks.ui (the
+% widget handles), hooks.state() (the live state), hooks.select_q(k), and
+% hooks.fit_spectrum() / hooks.accept_fit() (the Fit Spectrum / Accept buttons).
+% File hooks save_history/load_history/save_points/load_points/export_data(path)
+% and save_session/load_session(path) run the same callbacks without file
+% dialogs; an empty path cancels the action. A session file can be startPath.
 arguments
     startPath {mustBeTextScalar} = ""
     historyFile {mustBeTextScalar} = ""
@@ -10,6 +16,9 @@ ui = local_build_ui();
 
 local_sync_manual_y_state();
 local_sync_denoise_profile_controls();
+% Controls of a fresh browser. A session saved before a control existed
+% restores that control to this default.
+default_snapshot = local_capture_snapshot();
 
 if strlength(string(startPath)) > 0
     local_load_start_path(string(startPath));
@@ -17,19 +26,10 @@ end
 
 % Auto-load history if provided
 if strlength(string(historyFile)) > 0 && isfile(historyFile)
-    loaded = load(char(historyFile));
-    if isfield(loaded, 'opHistory') && ~isempty(loaded.opHistory)
-        state.opHistory = loaded.opHistory;
-        local_refresh_history_list();
-        % Restore the last snapshot
-        last_snap = state.opHistory{end}.snapshot;
-        try
-            local_restore_param_snapshot(last_snap);
-            local_rebuild_comparison(false);
-            local_update_all_views();
-        catch
-        end
-        ui.InfoLabel.Text = sprintf('History restored (%d entries)', numel(state.opHistory));
+    try
+        local_load_history_file(char(historyFile));
+    catch ME
+        ui.InfoLabel.Text = sprintf('History restore failed: %s', ME.message);
         ui.InfoLabel.Visible = "on";
     end
 end
@@ -37,11 +37,36 @@ end
 if nargout > 0
     app = ui.Figure;
 end
+if nargout > 1
+    hooks = struct('ui', ui, 'state', @local_hook_state, 'select_q', @local_hook_select_q, ...
+        'fit_spectrum', @() local_on_fit_spectrum([], []), 'accept_fit', @() local_on_accept_fit([], []), ...
+        'save_history', @(path) local_on_save_history([], [], path), ...
+        'load_history', @(path) local_on_load_history([], [], path), ...
+        'save_points', @(path) local_on_save_pts([], [], path), ...
+        'load_points', @(path) local_on_load_pts([], [], path), ...
+        'export_data', @(path) local_on_export_data([], [], path), ...
+        'save_session', @(path) local_on_save_session([], [], path), ...
+        'load_session', @(path) local_on_load_session([], [], path));
+end
+
+
+    function s = local_hook_state()
+        s = state;
+    end
+
+
+    function local_hook_select_q(k)
+        % Select q channel k as a click on the q-E map does.
+        state.selectedQIndex = k;
+        local_update_selected_q_views();
+    end
 
 
     function state_out = local_initial_state()
         state_out = struct();
         state_out.dataset = [];
+        state_out.sourceIdentity = [];
+        state_out.acceptedFits = {};  % immutable audit records, not current-point membership
         state_out.raw4d = [];
         state_out.cropped4d = [];
         state_out.aligned4d = [];
@@ -64,6 +89,7 @@ end
         state_out.fitResults = {};       % cell array of fit_quasi2d_plasmon results
         state_out.autoFitResults = [];   % struct array from auto spectrum fits
         state_out.pendingFit = [];       % pending single-spectrum fit result
+        state_out.displayedFit = [];     % overlay can remain after Accept
         state_out.qeImage = gobjects(1);
         state_out.selectionMarker = gobjects(1);
         state_out.stackOffsetMode = "auto";
@@ -78,6 +104,8 @@ end
         % Build callbacks struct — maps to local nested functions
         cb = struct();
         cb.on_load_data = @local_on_load_data;
+        cb.on_save_session = @local_on_save_session;
+        cb.on_load_session = @local_on_load_session;
         cb.on_build_views = @local_on_build_views;
         cb.on_undo = @local_on_undo;
         cb.on_reset_stage = @local_on_reset_stage;
@@ -88,6 +116,7 @@ end
         cb.on_norm_method_changed = @local_on_norm_method_changed;
         cb.on_auto_y_changed = @local_on_auto_y_changed;
         cb.on_fit_param_change = @local_on_fit_param_change;
+        cb.on_export_param_change = @local_on_export_param_change;
         cb.on_correction_target_change = @local_on_correction_target_change;
         cb.on_pick_peaks = @local_on_pick_peaks;
         cb.on_undo_pt = @local_on_undo_pt;
@@ -120,6 +149,13 @@ end
 
 
     function local_load_start_path(path_to_load)
+        if isfile(path_to_load) && endsWith(path_to_load, '.mat', 'IgnoreCase', true)
+            vars = whos('-file', char(path_to_load));
+            if any(strcmp({vars.name}, 'session'))
+                local_load_session_file(path_to_load);
+                return
+            end
+        end
         local_load_dataset(path_to_load, true);
     end
 
@@ -199,7 +235,7 @@ end
                 dataset = load_qe_dataset(full_path, dq_val, ...
                     q_crop=[q_lo q_hi]);
                 ui.DqOverrideField.Value = dataset.dq_Ainv;
-                state.dataset = dataset;
+                local_begin_dataset(dataset);
                 state.selectedQIndex = 1;
                 state.eq3dQE = [];
                 state.physicalQE = [];
@@ -210,9 +246,9 @@ end
                 state.eq3dQE = dataset.qe;
                 state.physicalQE = dataset.qe;
                 state.activeStage = "eq3d";
-                local_rebuild_comparison(false);
                 ui.ViewModeDropdown.Value = 'Physical';
                 local_sync_controls_from_qe(local_get_reference_qe());
+                local_rebuild_comparison(false);
                 [~, fname] = fileparts(char(full_path));
                 local_log_operation(sprintf('Loaded raw: %s (dq=%.4f)', fname, dataset.dq_Ainv));
                 local_update_all_views();
@@ -234,7 +270,7 @@ end
                 ui.DqOverrideField.Value = inferred_dq_Ainv;
             end
             dataset = load_qe_dataset(path_to_load, ui.DqOverrideField.Value);
-            state.dataset = dataset;
+            local_begin_dataset(dataset);
             state.selectedQIndex = 1;
             state.eq3dQE = [];
             state.physicalQE = [];
@@ -246,10 +282,11 @@ end
             state.eq3dQE = dataset.qe;
             state.physicalQE = dataset.qe;
             state.activeStage = "eq3d";
-            local_rebuild_comparison(false);
             ui.ViewModeDropdown.Value = 'Physical';
 
+            % Comparison must use the reference band shown by these controls.
             local_sync_controls_from_qe(local_get_reference_qe());
+            local_rebuild_comparison(false);
 
             % Log to operation history
             [~, fname] = fileparts(char(path_to_load));
@@ -259,6 +296,17 @@ end
         catch ME
             local_show_error(ME, throw_on_error);
         end
+    end
+
+
+    function local_begin_dataset(dataset)
+        % Bind source bytes at import; never associate old points with new data.
+        sources = qe_browser_source_identity(dataset);
+        state = local_initial_state();
+        state.dataset = dataset;
+        state.sourceIdentity = sources;
+        local_sync_correction_controls();
+        ui.PtsLabel.Text = "0 pts";
     end
 
 
@@ -452,6 +500,7 @@ end
         snap.yMin = ui.YMinField.Value;
         snap.yMax = ui.YMaxField.Value;
         snap.offset = ui.OffsetField.Value;
+        snap.stackOffsetMode = char(state.stackOffsetMode);
         snap.traceMode = char(ui.TraceModeDropdown.Value);
         snap.waterfallMin = ui.WaterfallMinField.Value;
         snap.waterfallMax = ui.WaterfallMaxField.Value;
@@ -462,6 +511,7 @@ end
         snap.waterfallResidual = ui.WaterfallResidualCheckbox.Value;
         snap.baseLambda = ui.BaselineLambdaField.Value;
         snap.areaNorm = ui.AreaNormCheckbox.Value;
+        snap.normMethod = char(ui.NormMethodDropdown.Value);
         snap.areaNormMin = ui.AreaNormMinField.Value;
         snap.areaNormMax = ui.AreaNormMaxField.Value;
         snap.bgSub = ui.BgSubCheckbox.Value;
@@ -489,6 +539,10 @@ end
         snap.maxPeaks = ui.MaxPeaksField.Value;
         snap.peakModel = char(ui.PeakModelDropdown.Value);
         snap.bootstrapCiSamples = ui.BootstrapCiSamplesField.Value;
+        snap.fitMethod = char(ui.FitMethodDropdown.Value);
+        snap.kinematicFactor = ui.KinematicCheckbox.Value;
+        snap.beamKV = ui.BeamKVField.Value;
+        snap.poissonWeights = ui.PoissonWeightsCheckbox.Value;
         snap.maxShift = ui.MaxShiftField.Value;
         snap.guessText = char(string(ui.GuessField.Value));
         snap.branch1Min = ui.Branch1MinField.Value;
@@ -521,6 +575,9 @@ end
         ui.QEndField.Value = snap.qEnd;
         ui.QStepField.Value = snap.qStep;
         ui.DqOverrideField.Value = snap.dqOverride;
+        % Reaxis before resolving the saved signed q selection. Otherwise a
+        % nondefault dq selects a channel on the dataset's original q axis.
+        local_apply_dq(local_current_dq());
         ui.EnergyMinField.Value = snap.energyMin;
         ui.EnergyMaxField.Value = snap.energyMax;
         ui.ZlpMinField.Value = snap.zlpMin;
@@ -538,6 +595,9 @@ end
         ui.OffsetField.Value = snap.offset;
         ui.TraceModeDropdown.Value = snap.traceMode;
         state.stackOffsetMode = "manual";
+        if isfield(snap, 'stackOffsetMode') && ismember(string(snap.stackOffsetMode), ["auto", "manual"])
+            state.stackOffsetMode = string(snap.stackOffsetMode);
+        end
         state.lastAutoStackOffset = snap.offset;
         if isfield(snap, 'waterfallMin')
             ui.WaterfallMinField.Value = snap.waterfallMin;
@@ -552,6 +612,11 @@ end
         end
         ui.BaselineLambdaField.Value = snap.baseLambda;
         ui.AreaNormCheckbox.Value = snap.areaNorm;
+        if isfield(snap, 'normMethod') && any(strcmp(snap.normMethod, ui.NormMethodDropdown.Items))
+            ui.NormMethodDropdown.Value = snap.normMethod;
+        else
+            ui.NormMethodDropdown.Value = 'Area';  % historical default; old files did not record it
+        end
         ui.AreaNormMinField.Value = snap.areaNormMin;
         ui.AreaNormMaxField.Value = snap.areaNormMax;
         ui.BgSubCheckbox.Value = snap.bgSub;
@@ -613,6 +678,20 @@ end
         end
         if isfield(snap, 'bootstrapCiSamples')
             ui.BootstrapCiSamplesField.Value = snap.bootstrapCiSamples;
+        end
+        if isfield(snap, 'fitMethod') && any(strcmp(snap.fitMethod, ui.FitMethodDropdown.ItemsData))
+            ui.FitMethodDropdown.Value = snap.fitMethod;
+        else
+            ui.FitMethodDropdown.Value = 'bg_peaks';   % snapshots before the ZLP joint fit
+        end
+        if isfield(snap, 'kinematicFactor')
+            ui.KinematicCheckbox.Value = snap.kinematicFactor;
+        end
+        if isfield(snap, 'beamKV')
+            ui.BeamKVField.Value = snap.beamKV;
+        end
+        if isfield(snap, 'poissonWeights')
+            ui.PoissonWeightsCheckbox.Value = snap.poissonWeights;
         end
         if isfield(snap, 'maxShift')
             ui.MaxShiftField.Value = snap.maxShift;
@@ -698,14 +777,10 @@ end
 
         entry = state.opHistory{sel_idx};
 
-        % Trim all entries AFTER the selected one
-        state.opHistory = state.opHistory(1:sel_idx);
-
         try
-            local_restore_param_snapshot(entry.snapshot);
-            local_rebuild_comparison(false);
+            local_restore_snapshot_transaction(entry.snapshot);
+            state.opHistory = state.opHistory(1:sel_idx);
             local_refresh_history_list();
-            local_update_all_views();
         catch ME
             local_show_error(ME, false);
         end
@@ -718,14 +793,154 @@ end
     end
 
 
-    function local_on_save_history(~, ~)
+    function local_on_save_session(~, ~, path)
+        if nargin >= 3 && strlength(string(path)) == 0, return; end
+        if isempty(state.physicalQE)
+            ui.InfoLabel.Text = 'Load data before saving a session';
+            ui.InfoLabel.Visible = 'on';
+            return
+        end
+        if nargin < 3
+            [name, folder] = uiputfile('*.mat', 'Save Complete Session', ...
+                fullfile(local_get_dialog_folder(), 'qe_session.mat'));
+            if isequal(name, 0), return; end
+            path = fullfile(folder, name);
+        end
+        try
+            session = struct('format', 'qe_browser_session', 'version', 1, ...
+                'saved_at', char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss')));
+            session.sources = state.sourceIdentity;
+            session.data = struct('dataset', state.dataset, 'eq3dQE', state.eq3dQE, ...
+                'physicalQE', state.physicalQE, 'activeStage', char(state.activeStage));
+            session.snapshot = local_capture_snapshot();
+            session.history = state.opHistory;
+            session.analysis = struct();
+            names = {'manual_points', 'manual_branches', 'branchCorrectionLog', ...
+                'fitResults', 'autoFitResults', 'acceptedFits'};
+            for k = 1:numel(names)
+                session.analysis.(names{k}) = state.(names{k});
+            end
+            session.pending_fit = state.pendingFit;
+            session.display_fit = state.displayedFit;
+            session.data_hashes = struct('physical', qe_data_fingerprint(state.physicalQE), ...
+                'eq3d', qe_data_fingerprint(state.eq3dQE));
+            qe_write_browser_session(path, session);
+            ui.InfoLabel.Text = sprintf('Session saved: %s', path);
+            ui.InfoLabel.Visible = 'on';
+        catch ME
+            if nargin >= 3, rethrow(ME); end
+            local_show_error(ME, false);
+        end
+    end
+
+
+    function local_on_load_session(~, ~, path)
+        if nargin >= 3 && strlength(string(path)) == 0, return; end
+        if nargin < 3
+            [name, folder] = uigetfile('*.mat', 'Load Complete Session', local_get_dialog_folder());
+            if isequal(name, 0), return; end
+            path = fullfile(folder, name);
+        end
+        try
+            local_load_session_file(path);
+        catch ME
+            if nargin >= 3, rethrow(ME); end
+            local_show_error(ME, false);
+        end
+    end
+
+
+    function local_load_session_file(path)
+        % Read/verify before mutation; restore every visible/data state on error.
+        [session, missing] = qe_read_browser_session(path);
+        unknown = setdiff(fieldnames(session.snapshot), fieldnames(default_snapshot));
+        if ~isempty(unknown)
+            error('qe_validate_browser_session:InvalidSession', ...
+                'Session was saved by a newer browser (unknown controls: %s).', strjoin(unknown, ', '));
+        end
+        % Controls added since the session was saved take their defaults.
+        saved_controls = default_snapshot;
+        names = fieldnames(session.snapshot);
+        for k = 1:numel(names)
+            saved_controls.(names{k}) = session.snapshot.(names{k});
+        end
+        previous_state = state;
+        previous_snapshot = local_capture_snapshot();
+        try
+            state = local_initial_state();
+            state.sourceIdentity = session.sources;
+            names = {'dataset', 'eq3dQE', 'physicalQE', 'activeStage'};
+            for k = 1:numel(names)
+                state.(names{k}) = session.data.(names{k});
+            end
+            names = {'manual_points', 'manual_branches', 'branchCorrectionLog', ...
+                'fitResults', 'autoFitResults', 'acceptedFits'};
+            for k = 1:numel(names)
+                state.(names{k}) = session.analysis.(names{k});
+            end
+            state.opHistory = session.history;
+            local_restore_param_snapshot(saved_controls);
+            if ~isequaln(local_capture_snapshot(), saved_controls)
+                error('qe_validate_browser_session:InvalidSession', ...
+                    'Session controls cannot be restored exactly by this version.');
+            end
+            local_rebuild_comparison(false);
+            local_update_all_views();
+            local_finish_session_restore(session.pending_fit, session.display_fit);
+            ui.InfoLabel.Text = sprintf('Session loaded: %s', path);
+            if ~isempty(missing)
+                ui.InfoLabel.Text = sprintf('%s | %d source file(s) unavailable; using embedded q-E counts', ...
+                    ui.InfoLabel.Text, numel(missing));
+            end
+            ui.InfoLabel.Visible = 'on';
+        catch ME
+            state = previous_state;
+            local_restore_param_snapshot(previous_snapshot);
+            local_update_all_views();
+            local_finish_session_restore(previous_state.pendingFit, previous_state.displayedFit);
+            rethrow(ME);
+        end
+    end
+
+
+    function local_finish_session_restore(pending, displayed)
+        local_refresh_history_list();
+        local_sync_correction_controls();
+        ui.PtsLabel.Text = sprintf('%d pts', size(state.manual_points, 1));
+        state.pendingFit = pending;
+        ui.FitInfoLabel.Text = '';
+        local_render_spectrum_fit(displayed);
+        if isempty(pending) && ~isempty(displayed)
+            ui.FitInfoLabel.Text = sprintf('%s  ✓ Accepted', ui.FitInfoLabel.Text);
+        end
+        ui.PickPtsButton.Text = 'Pick Peaks';
+        ui.PickGuessesButton.Text = 'Pick Guesses';
+        ui.CorrectAutoButton.Text = 'Correct Peak';
+        ui.PickPtsButton.BackgroundColor = [0.96 0.96 0.96];
+        ui.PickGuessesButton.BackgroundColor = [0.96 0.96 0.96];
+        ui.CorrectAutoButton.BackgroundColor = [0.96 0.96 0.96];
+        ui.SeedInfoLabel.Text = sprintf('Guesses: %s', ui.GuessField.Value);
+        if state.manualPickArmed
+            ui.PickPtsButton.Text = 'Picking...';
+            ui.PickPtsButton.BackgroundColor = [1 0.9 0.85];
+        end
+        if state.guessPickArmed
+            ui.PickGuessesButton.Text = 'Picking...';
+            ui.PickGuessesButton.BackgroundColor = [1 0.9 0.85];
+            ui.SeedInfoLabel.Text = 'Click on spectrum peaks to add guesses';
+        end
+        if state.autoCorrectionArmed
+            ui.CorrectAutoButton.Text = 'Click peak...';
+            ui.CorrectAutoButton.BackgroundColor = [1.0 0.92 0.55];
+        end
+    end
+
+
+    function local_on_save_history(~, ~, save_path)
         % Save opHistory to a .mat file in the data folder.  Always append a
         % final live snapshot first so manually tuned controls are captured
         % even when an individual widget did not emit a history callback.
-        local_ensure_latest_history_snapshot("Saved current GUI state");
-        if isempty(state.opHistory)
-            ui.InfoLabel.Text = "No history to save";
-            ui.InfoLabel.Visible = "on";
+        if nargin >= 3 && strlength(string(save_path)) == 0
             return
         end
 
@@ -737,12 +952,18 @@ end
         end
         default_file = fullfile(default_dir, 'op_history.mat');
 
-        [fname, fpath] = uiputfile('*.mat', 'Save Operation History', default_file);
-        if isequal(fname, 0)
-            return
+        if nargin < 3
+            [fname, fpath] = uiputfile('*.mat', 'Save Operation History', default_file);
+            if isequal(fname, 0)
+                return
+            end
+            save_path = fullfile(fpath, fname);
+        else
+            [~, name, ext] = fileparts(save_path);
+            fname = [name ext];
         end
 
-        save_path = fullfile(fpath, fname);
+        local_ensure_latest_history_snapshot("Saved current GUI state");
         opHistory = state.opHistory; %#ok<NASGU>
         save(save_path, 'opHistory');
         ui.InfoLabel.Text = sprintf('History saved → %s', fname);
@@ -751,46 +972,72 @@ end
     end
 
 
-    function local_on_load_history(~, ~)
+    function local_on_load_history(~, ~, load_path)
         % Load opHistory from a .mat file and restore the last state
+        if nargin >= 3 && strlength(string(load_path)) == 0
+            return
+        end
         default_dir = pwd;
         if ~isempty(state.dataset) && isfield(state.dataset, 'source_path') ...
                 && strlength(string(state.dataset.source_path)) > 0
             default_dir = fileparts(char(state.dataset.source_path));
         end
 
-        [fname, fpath] = uigetfile('*.mat', 'Load Operation History', ...
-            fullfile(default_dir, 'op_history.mat'));
-        if isequal(fname, 0)
-            return
-        end
-
-        load_path = fullfile(fpath, fname);
-        loaded = load(load_path);
-        if ~isfield(loaded, 'opHistory')
-            ui.InfoLabel.Text = "File does not contain opHistory";
-            ui.InfoLabel.Visible = "on";
-            return
-        end
-
-        state.opHistory = loaded.opHistory;
-        local_refresh_history_list();
-
-        % Restore the last snapshot if available
-        if ~isempty(state.opHistory)
-            last_entry = state.opHistory{end};
-            try
-                local_restore_param_snapshot(last_entry.snapshot);
-                local_rebuild_comparison(false);
-                local_update_all_views();
-            catch ME
-                fprintf('  Warning: could not fully restore state: %s\n', ME.message);
+        if nargin < 3
+            [fname, fpath] = uigetfile('*.mat', 'Load Operation History', ...
+                fullfile(default_dir, 'op_history.mat'));
+            if isequal(fname, 0)
+                return
             end
+            load_path = fullfile(fpath, fname);
         end
+        try
+            local_load_history_file(load_path);
+        catch ME
+            if nargin >= 3
+                rethrow(ME);
+            end
+            local_show_error(ME, false);
+        end
+    end
 
+
+    function local_load_history_file(load_path)
+        % Validate every entry before touching controls, axes, or pending fits.
+        opHistory = qe_read_browser_history(load_path);
+        if ~isempty(opHistory)
+            local_restore_snapshot_transaction(opHistory{end}.snapshot);
+        end
+        state.opHistory = opHistory;
+        local_refresh_history_list();
+        [~, name, ext] = fileparts(load_path);
+        fname = [name ext];
         ui.InfoLabel.Text = sprintf('History loaded ← %s (%d entries)', fname, numel(state.opHistory));
         ui.InfoLabel.Visible = "on";
         fprintf('  History loaded from: %s (%d entries)\n', load_path, numel(state.opHistory));
+    end
+
+
+    function local_restore_snapshot_transaction(snap)
+        previous_state = state;
+        previous_snapshot = local_capture_snapshot();
+        % Once restoration starts, no earlier fit may survive a failed attempt.
+        local_clear_pending_fit();
+        try
+            local_restore_param_snapshot(snap);
+            local_rebuild_comparison(false);
+            local_update_all_views();
+        catch ME
+            % Roll back both the data/calibration and the controls. Reuse the
+            % saved views rather than rebuilding from the rejected settings.
+            state = previous_state;
+            state.pendingFit = [];
+            state.displayedFit = [];
+            local_restore_param_snapshot(previous_snapshot);
+            local_update_all_views();
+            local_refresh_history_list();
+            rethrow(ME);
+        end
     end
 
 
@@ -803,13 +1050,10 @@ end
 
         target_idx = numel(state.opHistory) - 1;
         entry = state.opHistory{target_idx};
-        state.opHistory = state.opHistory(1:target_idx);
-
         try
-            local_restore_param_snapshot(entry.snapshot);
-            local_rebuild_comparison(false);
+            local_restore_snapshot_transaction(entry.snapshot);
+            state.opHistory = state.opHistory(1:target_idx);
             local_refresh_history_list();
-            local_update_all_views();
         catch ME
             local_show_error(ME, false);
         end
@@ -872,6 +1116,10 @@ end
             'autoFitSmoothWidth', 'Auto smooth W', ...
             'maxPeaks', 'Max peaks', ...
             'peakModel', 'Peak model', ...
+            'fitMethod', 'Fit method', ...
+            'kinematicFactor', 'Kinematic factor', ...
+            'beamKV', 'Beam kV', ...
+            'poissonWeights', 'Poisson weights', ...
             'maxShift', 'Max shift', ...
             'guessText', 'Guesses', ...
             'dispModel', 'Disp model', ...
@@ -924,15 +1172,26 @@ end
         end
 
         dq_Ainv = local_current_dq();
-        state.dataset.dq_Ainv = dq_Ainv;
-        state.eq3dQE = local_reaxis_qe(state.eq3dQE, dq_Ainv);
-        state.physicalQE = local_reaxis_qe(state.physicalQE, dq_Ainv);
-        state.comparisonQE = local_reaxis_qe(state.comparisonQE, dq_Ainv);
+        local_apply_dq(dq_Ainv);
 
         local_sync_controls_from_qe(local_get_reference_qe());
+        local_rebuild_comparison(false);
 
         local_log_operation(local_describe_changes());
         local_update_all_views();
+    end
+
+
+    function local_apply_dq(dq_Ainv)
+        if isempty(state.dataset)
+            return
+        end
+        state.dataset.dq_Ainv = dq_Ainv;
+        state.dataset.qe = local_reaxis_qe(state.dataset.qe, dq_Ainv);
+        state.eq3dQE = local_reaxis_qe(state.eq3dQE, dq_Ainv);
+        state.physicalQE = local_reaxis_qe(state.physicalQE, dq_Ainv);
+        state.comparisonQE = local_reaxis_qe(state.comparisonQE, dq_Ainv);
+        ui.DqDisplay.Value = sprintf("%.6f", dq_Ainv);
     end
 
 
@@ -1016,8 +1275,15 @@ end
 
 
     function local_on_fit_param_change(~, ~)
-        % Auto-fit/dispersion/export parameters may not redraw the view, but
+        % Auto-fit/dispersion parameters may not redraw the view, but
         % they are part of a reusable GUI profile and must enter history.
+        local_refresh_spectrum_fit();
+        local_log_operation(local_describe_changes());
+    end
+
+
+    function local_on_export_param_change(~, ~)
+        % Export presets change neither fit inputs nor fitted curve overlays.
         local_log_operation(local_describe_changes());
     end
 
@@ -1064,13 +1330,19 @@ end
     end
 
 
-    function local_on_save_pts(~, ~)
+    function local_on_save_pts(~, ~, save_path)
+        if nargin >= 3 && strlength(string(save_path)) == 0
+            return
+        end
         if isempty(state.manual_points) && isempty(state.manual_branches)
             return
         end
-        [file, path] = uiputfile('*.mat', 'Save dispersion points', 'dispersion_points.mat');
-        if isequal(file, 0)
-            return
+        if nargin < 3
+            [file, path] = uiputfile('*.mat', 'Save dispersion points', 'dispersion_points.mat');
+            if isequal(file, 0)
+                return
+            end
+            save_path = fullfile(path, file);
         end
         if ~isempty(state.manual_branches)
             pts = qe_flatten_branch_points(state.manual_branches);
@@ -1083,20 +1355,27 @@ end
         manual_dispersion.energy_meV = pts(:, 2);
         manual_dispersion.branches = state.manual_branches;
         manual_dispersion.corrections = state.branchCorrectionLog;
+        manual_dispersion.accepted_fits = state.acceptedFits;
         manual_dispersion.snapshot = local_capture_snapshot();
         manual_dispersion.source = 'gui_auto_fit_with_manual_corrections';
         manual_dispersion.timestamp = datestr(now);
-        save(fullfile(path, file), 'manual_dispersion');
+        save(save_path, 'manual_dispersion');
         ui.PtsLabel.Text = sprintf("%d pts (saved)", size(pts, 1));
     end
 
 
-    function local_on_load_pts(~, ~)
-        [file, path] = uigetfile('*.mat', 'Load dispersion points');
-        if isequal(file, 0)
+    function local_on_load_pts(~, ~, load_path)
+        if nargin >= 3 && strlength(string(load_path)) == 0
             return
         end
-        loaded = load(fullfile(path, file));
+        if nargin < 3
+            [file, path] = uigetfile('*.mat', 'Load dispersion points');
+            if isequal(file, 0)
+                return
+            end
+            load_path = fullfile(path, file);
+        end
+        loaded = load(load_path);
         if isfield(loaded, 'manual_dispersion')
             md = loaded.manual_dispersion;
             if isfield(md, 'branches') && ~isempty(md.branches)
@@ -1112,6 +1391,10 @@ end
                 warning('File does not contain q/energy dispersion data.');
                 return
             end
+            state.acceptedFits = {};  % legacy points do not prove a fit provenance
+            if isfield(md, 'accepted_fits')
+                state.acceptedFits = md.accepted_fits;
+            end
             if isfield(md, 'corrections')
                 state.branchCorrectionLog = md.corrections;
             else
@@ -1122,6 +1405,7 @@ end
             return
         end
         ui.PtsLabel.Text = sprintf("%d pts (loaded)", size(state.manual_points, 1));
+        state.fitResults = {};  % curves from the previous points are no longer valid
         local_sync_correction_controls();
         local_update_all_views();
     end
@@ -1254,7 +1538,10 @@ end
 
 
     function local_on_fit_spectrum(~, ~)
-        % Fit the currently displayed single spectrum with the selected model.
+        % Fit the currently displayed single spectrum with the selected method:
+        % 'bg_peaks' fits the preprocessed spectrum (fit_loss_function), 'zlp_joint'
+        % the raw counts of the channel together with the ZLP (qe_fit_spectrum_joint).
+        local_clear_pending_fit();
         if isempty(state.physicalQE) && isempty(state.comparisonQE)
             ui.FitInfoLabel.Text = "Load data first";
             return
@@ -1263,51 +1550,52 @@ end
         qe = local_get_active_qe();
         if isempty(qe); return; end
 
-        % Apply same preprocessing as single spectrum display (cached)
-        [qe, ~, ~] = local_get_cached_preprocess(qe, local_preprocess_opts());
-
-        [mask, energy_axis] = local_energy_mask(qe);
         q_index = state.selectedQIndex;
         q_value = qe.q_Ainv(q_index);
         abs_q = abs(q_value);
-        spectrum = double(qe.intensity(mask, q_index));
-
-        if all(spectrum == 0) || all(isnan(spectrum))
-            ui.FitInfoLabel.Text = "Empty spectrum";
-            return
-        end
 
         % Fit using current UI parameters
         E_min = max(ui.EnergyMinField.Value, 50);
         E_max = ui.EnergyMaxField.Value;
+        guesses = local_parse_guesses();
 
-        % Parse manual peak guesses (comma-separated meV values)
-        guess_str = strtrim(ui.GuessField.Value);
-        if ~isempty(guess_str)
-            guesses = str2double(strsplit(guess_str, {',', ' ', ';'}));
-            guesses = guesses(~isnan(guesses) & guesses > 0);
+        display_scale = 1;   % displayed intensity per unit of the fitted data
+        fit_input = [];      % ZLP joint: the raw counts that were fitted
+        if strcmp(ui.FitMethodDropdown.Value, 'zlp_joint')
+            E_min = max(E_min, 250);
+            [result, fit_input, display_scale] = local_fit_spectrum_joint(qe, q_index, E_min, E_max, guesses);
+            if isempty(result); return; end
         else
-            guesses = [];
-        end
+            % Apply same preprocessing as single spectrum display (cached)
+            [qe, ~, ~] = local_get_cached_preprocess(qe, local_preprocess_opts());
 
-        try
-            result = fit_loss_function(energy_axis, spectrum, ...
-                'E_min', E_min, 'E_max', E_max, ...
-                'min_prominence', ui.PromField.Value, ...
-                'smooth_width', ui.SmoothField.Value, ...
-                'max_peaks', ui.MaxPeaksField.Value, ...
-                'initial_guesses', guesses, ...
-                'peak_model', ui.PeakModelDropdown.Value, ...
-                'pre_subtracted', ui.BgSubCheckbox.Value, ...
-                'bootstrap_ci_samples', ui.BootstrapCiSamplesField.Value);
-        catch ME
-            ui.FitInfoLabel.Text = sprintf("Fit failed: %s", ME.message);
-            return
+            [mask, energy_axis] = local_energy_mask(qe);
+            spectrum = double(qe.intensity(mask, q_index));
+
+            if all(spectrum == 0) || all(isnan(spectrum))
+                ui.FitInfoLabel.Text = "Empty spectrum";
+                return
+            end
+
+            try
+                result = fit_loss_function(energy_axis, spectrum, ...
+                    'E_min', E_min, 'E_max', E_max, ...
+                    'min_prominence', ui.PromField.Value, ...
+                    'smooth_width', ui.SmoothField.Value, ...
+                    'max_peaks', ui.MaxPeaksField.Value, ...
+                    'initial_guesses', guesses, ...
+                    'peak_model', ui.PeakModelDropdown.Value, ...
+                    'pre_subtracted', ui.BgSubCheckbox.Value, ...
+                    'bootstrap_ci_samples', ui.BootstrapCiSamplesField.Value);
+            catch ME
+                ui.FitInfoLabel.Text = sprintf("Fit failed: %s", ME.message);
+                return
+            end
         end
 
         % Filter out peaks below E_min for display, and keep only reliable
         % peaks for acceptance into curated branches.
-        peak_energy = local_fit_peak_energy(result);
+        [peak_energy, kind] = qe_fit_point_energy(result);
         display_keep = peak_energy >= E_min;
         if ~any(display_keep)
             ui.FitInfoLabel.Text = "No valid peaks found above E_min";
@@ -1319,6 +1607,11 @@ end
         end
 
         % Store pending fit
+        if isfield(result, 'joint')
+            % Keep numeric prefactor_grid and kinematic metadata. The solver's
+            % anonymous prefactor closure is an execution detail, not a result.
+            result.joint.effective_options.prefactor = [];
+        end
         state.pendingFit = struct();
         state.pendingFit.abs_q = abs_q;
         state.pendingFit.q_Ainv = q_value;
@@ -1327,6 +1620,36 @@ end
         state.pendingFit.keep = keep;
         state.pendingFit.display_keep = display_keep;
 
+        state.pendingFit.fit_input = fit_input;
+        state.pendingFit.display_scale = display_scale;
+        snap = local_capture_snapshot();
+        input_kind = 'preprocessed_spectrum';
+        fit_window = [E_min E_max];
+        if strcmp(snap.fitMethod, 'zlp_joint')
+            input_kind = 'physical_counts';
+            fit_window = [-Inf E_max];  % includes the gain side and ZLP
+        end
+        state.pendingFit.provenance = struct('snapshot', snap, ...
+            'settings', qe_browser_fit_settings(snap), ...
+            'sources', state.sourceIdentity, 'data_sha256', qe_data_fingerprint(state.physicalQE), ...
+            'signal_window_meV', [E_min E_max], 'fit_window_meV', fit_window, ...
+            'input_kind', input_kind, 'energy_kind', {kind}, ...
+            'fitted_at', char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss')));
+        local_render_spectrum_fit(state.pendingFit);
+    end
+
+
+    function local_render_spectrum_fit(pf)
+        % Draw saved numeric results; never re-fit while loading a session.
+        if isempty(pf), return; end
+        state.displayedFit = pf;
+        result = pf.result;
+        keep = pf.keep;
+        display_keep = pf.display_keep;
+        fit_input = pf.fit_input;
+        display_scale = pf.display_scale;
+        abs_q = pf.abs_q;
+        peak_energy = local_point_energy(pf);
         % Overlay fit on spectrum axes
         ax = ui.SingleAxes;
         hold(ax, 'on');
@@ -1337,14 +1660,21 @@ end
         delete(findobj(ax, 'Tag', fit_tag));
         delete(findobj(ax, 'Tag', 'lorentz_fit'));
 
+        % ZLP joint: the raw counts that were fitted, on the display scale
+        if ~isempty(fit_input)
+            plot(ax, fit_input.E, display_scale * fit_input.Y, '-', ...
+                'Color', [0.6 0.6 0.6], 'LineWidth', 1, ...
+                'Tag', fit_tag, 'DisplayName', 'Fit input (raw counts)');
+        end
+
         % Total fit curve
-        plot(ax, result.energy_fit, result.curve_fit, 'r-', ...
+        plot(ax, result.energy_fit, display_scale * result.curve_fit, 'r-', ...
             'LineWidth', 2, 'Tag', fit_tag, ...
             'DisplayName', fit_label);
 
-        % Background curve (power-law)
+        % Background curve (power-law; ZLP + auxiliary peaks for the ZLP joint fit)
         if isfield(result, 'bg_curve')
-            plot(ax, result.energy_fit, result.bg_curve, ':', ...
+            plot(ax, result.energy_fit, display_scale * result.bg_curve, ':', ...
                 'Color', [0.5 0.5 0.5], 'LineWidth', 1.5, ...
                 'Tag', fit_tag, 'DisplayName', 'Background');
         end
@@ -1353,8 +1683,12 @@ end
         peak_colors = [0.1 0.7 0.3; 0.9 0.5 0.1; 0.5 0.2 0.8];
         bg_vals = zeros(size(result.energy_fit));
         if isfield(result, 'bg_curve')
-            bg_vals = result.bg_curve;
+            bg_vals = display_scale * result.bg_curve;
         end
+
+        in_view = result.energy_fit >= min(xlim(ax)) & result.energy_fit <= max(xlim(ax));
+        overlay_y = display_scale * result.curve_fit(in_view);
+        overlay_y = overlay_y(:);
 
         info_parts = {};
         for p = 1:result.n_peaks
@@ -1369,16 +1703,20 @@ end
             end
 
             % Plot peak component + background so it's visible
-            peak_on_bg = result.peak_curves{p} + bg_vals;
+            peak_on_bg = display_scale * result.peak_curves{p} + bg_vals;
             plot(ax, result.energy_fit, peak_on_bg, '--', ...
-                'Color', col, 'LineWidth', 1.5, 'Tag', fit_tag);
+                'Color', col, 'LineWidth', 1.5, 'Tag', fit_tag, ...
+                'DisplayName', sprintf('Peak %d', p));
+            overlay_y = [overlay_y; reshape(peak_on_bg(in_view), [], 1)]; %#ok<AGROW>
 
             % Peak marker at peak position on total fit
             [~, pk_idx] = min(abs(result.energy_fit - peak_energy(p)));
-            marker_y = result.curve_fit(pk_idx);
+            marker_y = display_scale * result.curve_fit(pk_idx);
+            overlay_y(end+1, 1) = marker_y * 1.15;  % headroom for the E0/apex label
             plot(ax, peak_energy(p), marker_y, 'v', ...
                 'MarkerSize', 10, 'MarkerFaceColor', col, ...
-                'MarkerEdgeColor', 'k', 'Tag', fit_tag);
+                'MarkerEdgeColor', 'k', 'Tag', fit_tag, ...
+                'HandleVisibility', 'off');
 
             marker_label = sprintf('E0 %.0f', result.omega_p(p));
             if isfield(result, 'apex_energy_meV') && numel(result.apex_energy_meV) >= p
@@ -1416,27 +1754,156 @@ end
         end
         hold(ax, 'off');
 
+        % Auto Y follows the displayed data; widen it so that the fit and every
+        % peak component stay visible (a weak peak can sit below the data range).
+        if ui.AutoYCheckbox.Value
+            local_include_in_y_limits(ax, overlay_y);
+        end
+
         % Update fit info
-        ui.FitInfoLabel.Text = sprintf('q=%.4f | %s | %s | R²=%.3f', ...
+        fit_text = sprintf('q=%.4f | %s | %s | R²=%.3f', ...
             abs_q, fit_label, strjoin(info_parts, ', '), result.R_squared);
+        if isfield(result, 'chi2_red') && isfinite(result.chi2_red)
+            fit_text = sprintf('%s | chi2_red=%.2f', fit_text, result.chi2_red);
+        end
+        ui.FitInfoLabel.Text = fit_text;
 
         % Enable Accept button
-        ui.AcceptFitButton.Enable = local_on_off(any(keep));
+        ui.AcceptFitButton.Enable = local_on_off(~isempty(state.pendingFit) && any(keep));
     end
 
 
-    function peak_energy = local_fit_peak_energy(result)
-        peak_energy = result.omega_p(:);
-        if isfield(result, 'apex_energy_meV')
-            apex = result.apex_energy_meV(:);
-            use_apex = isfinite(apex);
-            peak_energy(use_apex) = apex(use_apex);
+    function [result, fit_input, scale] = local_fit_spectrum_joint(qe_active, q_index, E_min, E_max, guesses)
+        % ZLP joint fit of the raw counts of channel q_index (no preprocessing). Returns
+        % [] after writing the reason to FitInfoLabel when the fit cannot run.
+        result = []; fit_input = []; scale = 1;
+        qe_raw = state.physicalQE;
+        if isempty(qe_raw), qe_raw = state.eq3dQE; end
+        if isempty(qe_raw) || q_index > size(qe_raw.intensity, 2)
+            ui.FitInfoLabel.Text = "ZLP joint fit needs the physical q-E data";
+            return
+        end
+        model = char(ui.PeakModelDropdown.Value);
+        if ~any(strcmp(model, {'lorentz', 'lorentz_symmetric'}))
+            ui.FitInfoLabel.Text = "ZLP joint fit supports Drude-Lorentz and Sym. Lorentz only";
+            return
+        end
+        E = double(qe_raw.energy_meV(:));
+        Y = double(qe_raw.intensity(:, q_index));
+        if all(Y == 0) || all(isnan(Y))
+            ui.FitInfoLabel.Text = "Empty spectrum";
+            return
+        end
+        q_axis = double(qe_raw.q_Ainv(:));
+        weights = 'none';
+        if ui.PoissonWeightsCheckbox.Value, weights = 'poisson'; end
+        ui.FitInfoLabel.Text = "ZLP joint fit running...";
+        drawnow limitrate;
+        try
+            joint_fit = qe_fit_spectrum_joint(E, Y, q_axis(q_index), ...
+                n_peaks=ui.MaxPeaksField.Value, peak_model=model, signal_window=[E_min E_max], ...
+                kinematic=ui.KinematicCheckbox.Value, beam_kV=ui.BeamKVField.Value, ...
+                dq=median(abs(diff(q_axis)), 'omitnan'), weights=weights, initial_E0=guesses);
+        catch ME
+            ui.FitInfoLabel.Text = sprintf("ZLP joint fit failed: %s", ME.message);
+            return
+        end
+        if ~joint_fit.success
+            ui.FitInfoLabel.Text = sprintf("ZLP joint fit failed (%s)", joint_fit.status);
+            return
+        end
+        result = joint_fit;
+        show = E >= min(joint_fit.energy_fit) & E <= max(joint_fit.energy_fit);
+        fit_input = struct('E', E(show), 'Y', Y(show));
+        scale = local_joint_display_scale(qe_active, qe_raw, q_index);
+    end
+
+
+    function s = local_joint_display_scale(qe_active, qe_raw, q_index)
+        % Displayed intensity per raw count in channel q_index. The display is a
+        % per-channel rescaling of the counts (normalisation, comparison view);
+        % despiking, denoising, background and deconvolution are left out here.
+        s = 1;
+        opts = local_preprocess_opts();
+        opts.do_despike = false;
+        opts.do_denoise = false;
+        opts.do_bg_sub = false;
+        opts.do_deconv = false;
+        try
+            shown = qe_preprocess(qe_active, opts);
+            a = double(shown.intensity(:, q_index));
+            b = double(qe_raw.intensity(:, q_index));
+            if numel(a) ~= numel(b), return; end
+            m = isfinite(a) & isfinite(b) & b > 0;
+            r = sum(a(m)) / sum(b(m));
+            if isfinite(r) && r > 0, s = r; end
+        catch
+        end
+    end
+
+
+    function energy = local_point_energy(pf)
+        % Energies a pending or displayed fit puts into the dispersion, by the
+        % kind recorded when it was fitted (a restored session keeps its own).
+        energy = qe_fit_point_energy(pf.result, pf.provenance.energy_kind);
+    end
+
+
+    function guesses = local_parse_guesses()
+        % Peak guesses typed into the Guesses field (meV, comma/space separated).
+        guesses = [];
+        guess_str = strtrim(ui.GuessField.Value);
+        if ~isempty(guess_str)
+            guesses = str2double(strsplit(guess_str, {',', ' ', ';'}));
+            guesses = guesses(~isnan(guesses) & guesses > 0);
         end
     end
 
 
     function tag = local_fit_overlay_tag()
         tag = 'spectrum_fit_overlay';
+    end
+
+
+    function local_clear_pending_fit()
+        state.pendingFit = [];
+        state.displayedFit = [];
+        ui.AcceptFitButton.Enable = "off";
+        delete(findobj(ui.SingleAxes, 'Tag', local_fit_overlay_tag()));
+        delete(findobj(ui.SingleAxes, 'Tag', 'lorentz_fit'));
+    end
+
+
+    function local_refresh_spectrum_fit()
+        % After a redraw or a control change, draw the displayed fit again while
+        % it still belongs to this channel, these counts and these fit inputs;
+        % otherwise drop it, so that it can no longer be accepted.
+        pf = state.displayedFit;
+        if isempty(pf) || ~local_fit_matches_view(pf)
+            local_clear_pending_fit();
+            return
+        end
+        local_render_spectrum_fit(pf);
+        if isempty(state.pendingFit)
+            ui.FitInfoLabel.Text = sprintf('%s  ✓ Accepted', ui.FitInfoLabel.Text);
+        end
+    end
+
+
+    function valid = local_fit_matches_view(pf)
+        % Display, auto-fit, branch, dispersion and export controls do not enter
+        % a single-spectrum fit; every other control saved at fit time must be
+        % unchanged. Controls added after the fit was saved are not compared.
+        view_only = {'qStart', 'qEnd', 'qStep', 'smoothMode', 'smoothWidth', 'yScale', ...
+            'autoY', 'yMin', 'yMax', 'offset', 'stackOffsetMode', 'maxShift', 'dispModel', ...
+            'fitBranchTarget', 'correctionBranchTarget', 'exportMode', 'exportRatio'};
+        fitted = pf.provenance.snapshot;
+        current = local_capture_snapshot();
+        names = fieldnames(fitted);
+        names = names(~ismember(names, view_only) & ~startsWith(names, {'waterfall', 'branch'}));
+        valid = all(isfield(current, names)) && ...
+            all(cellfun(@(n) isequaln(fitted.(n), current.(n)), names)) && ...
+            strcmp(qe_data_fingerprint(state.physicalQE), pf.provenance.data_sha256);
     end
 
 
@@ -1450,6 +1917,16 @@ end
     end
 
 
+    function local_archive_accepted_fit(pf, target)
+        pf.accepted_at = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+        pf.accepted_peak_indices = find(pf.keep);
+        energies = local_point_energy(pf);
+        pf.accepted_energy_meV = energies(pf.keep);
+        pf.target = target;
+        state.acceptedFits{end+1} = pf;
+    end
+
+
     function local_on_accept_fit(~, ~)
         % Accept the pending fit and add peaks to dispersion
         if isempty(state.pendingFit)
@@ -1458,8 +1935,9 @@ end
 
         pf = state.pendingFit;
         result = pf.result;
-        peak_energy = local_fit_peak_energy(result);
+        peak_energy = local_point_energy(pf);
         keep = pf.keep;
+        if ~any(keep), return; end
         abs_q = pf.abs_q;
         if isfield(pf, 'q_Ainv')
             q_value = pf.q_Ainv;
@@ -1481,6 +1959,7 @@ end
                 local_append_branch_correction(correction);
                 n_corrected = n_corrected + 1;
             end
+            local_archive_accepted_fit(pf, char(ui.CorrectionBranchDropdown.Value));
             local_sync_manual_points_from_branches();
             local_update_all_views();
             ui.AcceptFitButton.Enable = "off";
@@ -1502,6 +1981,8 @@ end
                 state.manual_points(end+1, :) = new_pt;
             end
         end
+
+        local_archive_accepted_fit(pf, 'unbranched');
 
         % Plot on dispersion axes
         ax = ui.DispersionAxes;
@@ -1539,6 +2020,10 @@ end
             ui.InfoLabel.Visible = "on";
             return
         end
+        if strcmp(ui.FitMethodDropdown.Value, 'zlp_joint')
+            local_auto_fit_joint();
+            return
+        end
 
         qe = local_get_active_qe();
         if isempty(qe), return; end
@@ -1553,15 +2038,7 @@ end
         qe_raw = qe_preprocess(qe_raw, raw_opts);
 
         [mask, energy_axis] = local_energy_mask(qe);
-
-        % Parse manual peak guesses
-        guess_str = strtrim(ui.GuessField.Value);
-        if ~isempty(guess_str)
-            guesses = str2double(strsplit(guess_str, {',', ' ', ';'}));
-            guesses = guesses(~isnan(guesses) & guesses > 0);
-        else
-            guesses = [];
-        end
+        guesses = local_parse_guesses();
 
         try
             branch_specs = local_branch_specs_from_ui();
@@ -1615,19 +2092,92 @@ end
         branch_filter_opts.max_gamma_ratio = 2.0;
         branch_filter_opts.score_column = 12;
         branch_assignment = qe_assign_peak_branches_by_windows(peaks, branch_specs, branch_filter_opts);
-        branches = branch_assignment.branches;
-        n_branches = numel(branches);
 
         autoResults = struct();
+        autoResults.method = 'bg_peaks';
         autoResults.all_peaks = peaks;
         autoResults.raw_branches = results.branches;
-        autoResults.branches = branches;
+        autoResults.branches = branch_assignment.branches;
         autoResults.branch_assignment = branch_assignment;
         autoResults.branch_specs = branch_assignment.specs;
         autoResults.fit_details = results.fit_details;
         autoResults.n_success = results.n_success;
+        local_show_auto_fit(autoResults);
+
+        function local_auto_fit_progress(~, message)
+            ui.InfoLabel.Text = char(message);
+            drawnow;
+        end
+    end
+
+
+    function local_auto_fit_joint()
+        % Auto Fit with Fit Method 'ZLP joint': qe_auto_fit_joint on the raw counts,
+        % tracked from the selected channel. Peak k is branch k at its model E0;
+        % flagged peaks stay out of the branches and are drawn for review.
+        qe_raw = state.physicalQE;
+        if isempty(qe_raw), qe_raw = state.eq3dQE; end
+        model = char(ui.PeakModelDropdown.Value);
+        if ~any(strcmp(model, {'lorentz', 'lorentz_symmetric'}))
+            ui.InfoLabel.Text = "ZLP joint fit supports Drude-Lorentz and Sym. Lorentz only";
+            ui.InfoLabel.Visible = "on";
+            return
+        end
+        weights = 'none';
+        if ui.PoissonWeightsCheckbox.Value, weights = 'poisson'; end
+        dlg = uiprogressdlg(ui.Figure, 'Title', 'Auto Fit (ZLP joint)', ...
+            'Message', 'Fitting the seed channel...', 'Cancelable', 'on');
+        cleanup = onCleanup(@() delete(dlg));
+        try
+            auto = qe_auto_fit_joint(qe_raw, state.selectedQIndex, ...
+                n_peaks=ui.MaxPeaksField.Value, peak_model=model, ...
+                signal_window=[max(ui.EnergyMinField.Value, 250), ui.EnergyMaxField.Value], ...
+                kinematic=ui.KinematicCheckbox.Value, beam_kV=ui.BeamKVField.Value, weights=weights, ...
+                q_range=[ui.QStartField.Value, ui.QEndField.Value], initial_E0=local_parse_guesses(), ...
+                max_shift=ui.MaxShiftField.Value, progress_fn=@local_progress, ...
+                cancel_fn=@() dlg.CancelRequested);
+        catch ME
+            ui.InfoLabel.Text = ME.message;
+            ui.InfoLabel.Visible = "on";
+            return
+        end
+        if auto.cancelled
+            ui.InfoLabel.Text = "Auto fit cancelled; the branches are unchanged.";
+            ui.InfoLabel.Visible = "on";
+            return
+        end
+        assignment = auto.branch_assignment;
+        autoResults = struct();
+        autoResults.method = 'zlp_joint';
+        autoResults.all_peaks = auto.peaks;
+        autoResults.raw_branches = assignment.branches;
+        autoResults.branches = assignment.branches;
+        autoResults.branch_assignment = assignment;
+        autoResults.branch_specs = assignment.specs;
+        autoResults.fit_details = auto.channels;
+        autoResults.n_success = auto.n_success;
+        autoResults.review = auto.review;
+        autoResults.review_reason = auto.review_reason;
+        autoResults.settings = auto.settings;
+        local_show_auto_fit(autoResults);
+
+        function local_progress(fraction, message)
+            dlg.Value = min(max(fraction, 0), 1);
+            dlg.Message = char(message);
+        end
+    end
+
+
+    function local_show_auto_fit(autoResults)
+        % Make the auto-fit branches the curated branches and draw them.
+        peaks = autoResults.all_peaks;
+        branches = autoResults.branches;
+        n_branches = numel(branches);
         state.autoFitResults = autoResults;
-        state.autoFitResults.ppHash = local_opts_hash(local_preprocess_opts(), local_get_active_qe());
+        if strcmp(autoResults.method, 'bg_peaks')
+            % Fitted on the preprocessed data, which the Gamma and I_kin views check.
+            state.autoFitResults.ppHash = local_opts_hash(local_preprocess_opts(), local_get_active_qe());
+        end
         state.manual_branches = branches;
         state.manual_points = qe_flatten_branch_points(branches);
         state.branchCorrectionLog = [];
@@ -1643,7 +2193,7 @@ end
         for b = 1:n_branches
             br = branches{b};
             col = qe_plot_helpers.branch_color(b);
-            spec = branch_assignment.specs(b);
+            spec = autoResults.branch_specs(b);
             win = spec.energy_window_meV;
             branch_label = sprintf('%s [%.0f-%.0f meV] (%d pts)', ...
                 char(string(spec.name)), win(1), win(2), size(br,1));
@@ -1653,6 +2203,7 @@ end
             qe_plot_helpers.plot_branch_scatter(ax, br, col, branch_label);
             plotted = true;
         end
+        plotted = local_plot_auto_fit_review(ax) || plotted;
 
         hold(ax, 'off');
         if plotted
@@ -1660,23 +2211,36 @@ end
         end
         xlabel(ax, 'q (1/A)');
         ylabel(ax, 'Energy (meV)');
-        title(ax, sprintf('Auto candidates: %d branches, %d assigned / %d peaks', ...
-            n_branches, size(state.manual_points, 1), size(peaks,1)));
+        review_text = '';
+        if isfield(autoResults, 'review') && ~isempty(autoResults.review)
+            review_text = sprintf(', %d to review', size(autoResults.review, 1));
+        end
+        title(ax, sprintf('Auto candidates: %d branches, %d assigned / %d peaks%s', ...
+            n_branches, size(state.manual_points, 1), size(peaks,1), review_text));
         grid(ax, 'on');
 
         ui.PtsLabel.Text = sprintf('%d pts', size(state.manual_points, 1));
-        ui.InfoLabel.Text = sprintf('Auto-fit candidates ready: %d assigned / %d peaks. Correct peaks, then Fit Curated.', ...
-            size(state.manual_points, 1), size(peaks,1));
+        ui.InfoLabel.Text = sprintf('Auto-fit candidates ready: %d assigned / %d peaks%s. Correct peaks, then Fit Curated.', ...
+            size(state.manual_points, 1), size(peaks,1), review_text);
         ui.InfoLabel.Visible = "on";
         ui.DispInfoLabel.Text = "Candidates only. Use Correct Peak or Fit Curated.";
-        local_log_operation(sprintf('Auto fit candidates: %d branches / %d assigned / %d peaks', ...
-            n_branches, size(state.manual_points,1), size(peaks,1)));
+        local_log_operation(sprintf('Auto fit candidates: %d branches / %d assigned / %d peaks%s', ...
+            n_branches, size(state.manual_points,1), size(peaks,1), review_text));
         local_update_heatmap_branch_overlays();
+    end
 
-        function local_auto_fit_progress(~, message)
-            ui.InfoLabel.Text = char(message);
-            drawnow;
+
+    function drawn = local_plot_auto_fit_review(ax)
+        % Peaks the ZLP joint auto fit flagged: open grey circles, not in any branch.
+        drawn = false;
+        if isempty(state.autoFitResults) || ~isfield(state.autoFitResults, 'review') ...
+                || isempty(state.autoFitResults.review)
+            return
         end
+        review = state.autoFitResults.review;
+        scatter(ax, review(:, 1), review(:, 2), 30, [0.55 0.55 0.55], 'LineWidth', 1, ...
+            'DisplayName', sprintf('Review (%d)', size(review, 1)), 'Tag', 'auto_fit_review');
+        drawn = true;
     end
 
 
@@ -2087,12 +2651,15 @@ end
     end
 
 
-    function local_on_export_data(~, ~)
+    function local_on_export_data(~, ~, out_file)
         % Export preprocessed q-E data as a lossless .mat file.
         %
         % IMPORTANT: Always exports from physicalQE (the true q-E map),
         % regardless of the current view mode. This avoids exporting
         % the comparison view as if it were raw physical data.
+        if nargin >= 3 && strlength(string(out_file)) == 0
+            return
+        end
         if isempty(state.physicalQE)
             ui.InfoLabel.Text = "Load data first";
             ui.InfoLabel.Visible = "on";
@@ -2138,12 +2705,17 @@ end
         end
         default_name = sprintf('%s_preprocessed%s.mat', src_name, pp_summary);
 
-        [fname, fpath] = uiputfile({'*.mat', 'MATLAB data (*.mat)'}, ...
-            'Export preprocessed data', fullfile(default_dir, default_name));
-        if isequal(fname, 0)
-            return
+        if nargin < 3
+            [fname, fpath] = uiputfile({'*.mat', 'MATLAB data (*.mat)'}, ...
+                'Export preprocessed data', fullfile(default_dir, default_name));
+            if isequal(fname, 0)
+                return
+            end
+            out_file = fullfile(fpath, fname);
+        else
+            [~, name, ext] = fileparts(out_file);
+            fname = [name ext];
         end
-        out_file = fullfile(fpath, fname);
 
         try
             % Pack export struct — all fields needed to reconstruct analysis
@@ -2206,9 +2778,8 @@ end
 
     function local_on_export(~, ~)
         % Export axes panels as publication-quality images.
-        % Copies uiaxes content to a temporary invisible regular figure
-        % for reliable export (avoids uiaxes rendering quirks).
-        % Aspect ratio is applied via post-processing (white padding).
+        % Recreate ordinary axes from the UI graphics through the shared
+        % exporter, with a fixed canvas for the requested aspect ratio.
         panel_axes  = {ui.QEAxes, ui.ComparisonAxes, ui.SingleAxes, ui.DispersionAxes};
         panel_names = {'qE_map',  'comparison',      'spectrum',     'dispersion'};
         panel_labels = {'q-E Map', 'Comparison Map', 'Single Spectrum', 'Dispersion'};
@@ -2260,53 +2831,13 @@ end
             fname = panel_names{k};
 
             try
-                % --- Create temp figure sized to target aspect ratio ---
-                fig_h_px = 600;
-                fig_w_px = round(fig_h_px * target_ratio);
-                tmp_fig = figure('Visible', 'off', 'Color', 'w', ...
-                    'Units', 'pixels', ...
-                    'Position', [100 100 fig_w_px fig_h_px]);
-
-                % Copy axes content to temp figure
-                tmp_ax = copyobj(src_ax, tmp_fig);
-                set(tmp_ax, 'Units', 'normalized', ...
-                    'Position', [0.12 0.14 0.82 0.78], ...
-                    'ActivePositionProperty', 'position');
-                % Ensure colormap matches source
-                try
-                    colormap(tmp_ax, colormap(src_ax));
-                catch
-                end
-                % Copy CLim if applicable
-                try
-                    tmp_ax.CLim = src_ax.CLim;
-                catch
-                end
-
-                % --- Export PNG ---
-                png_path = fullfile(out_dir, sprintf('%s_%s_%s_%s.png', ...
+                prefix = fullfile(out_dir, sprintf('%s_%s_%s_%s', ...
                     ts, fname, ratio_file, settings.file_tag));
-                exportgraphics(tmp_fig, png_path, ...
-                    'Resolution', settings.resolution, 'BackgroundColor', 'white');
-
+                qe_export_browser_panel(src_ax, prefix, aspect_ratio=target_ratio, ...
+                    resolution=settings.resolution, write_pdf=settings.write_pdf);
                 exported{end+1} = fname; %#ok<AGROW>
-
-                % --- Also export vector PDF for publication mode ---
-                if settings.write_pdf
-                    try
-                        pdf_path = fullfile(out_dir, sprintf('%s_%s_%s_%s.pdf', ...
-                            ts, fname, ratio_file, settings.file_tag));
-                        exportgraphics(tmp_fig, pdf_path, ...
-                            'ContentType', 'vector', 'BackgroundColor', 'white');
-                    catch
-                    end
-                end
-
-                % --- Clean up temp figure ---
-                close(tmp_fig);
             catch ME
                 fprintf('  Export failed for %s: %s\n', fname, ME.message);
-                try close(tmp_fig); catch, end  %#ok<CTCH>
             end
         end
 
@@ -2357,6 +2888,7 @@ end
         local_update_info_label();
 
         if isempty(state.physicalQE)
+            local_clear_pending_fit();
             local_clear_axes(ui.QEAxes);
             local_clear_axes(ui.ComparisonAxes);
             local_clear_axes(ui.SingleAxes);
@@ -2681,6 +3213,7 @@ end
                 || (~isempty(bg_diag_qi) && pp_opts.do_bg_sub)
             legend(ax, "Location", "best");
         end
+        local_refresh_spectrum_fit();
     end
 
 
@@ -3009,11 +3542,10 @@ end
     function local_plot_dispersion_overlay(ax, qe)
         % --- Manual points overlay ---
         if ~isempty(state.manual_branches)
-            branch_colors = {[0.9 0.15 0.15], [0.15 0.45 0.9], [0.85 0.65 0.0]};
             for bi = 1:numel(state.manual_branches)
                 bpts = state.manual_branches{bi};
                 if isempty(bpts), continue; end
-                bc = branch_colors{min(bi, numel(branch_colors))};
+                bc = qe_plot_helpers.branch_color(bi);   % as in the dispersion panel
                 overlay_handles = qe_plot_helpers.plot_branch_scatter( ...
                     ax, bpts, bc, sprintf('Branch %d', bi));
                 set(overlay_handles, 'HandleVisibility', 'off', ...
@@ -3054,6 +3586,7 @@ end
                 col = qe_plot_helpers.branch_color(bi);
                 qe_plot_helpers.plot_branch_scatter(ax, bpts, col, sprintf('Branch %d', bi));
             end
+            local_plot_auto_fit_review(ax);
             local_plot_correction_markers(ax);
         elseif ~isempty(state.manual_points)
             pts = sortrows(state.manual_points, 1);
@@ -3142,6 +3675,7 @@ end
     function local_update_selected_q_views()
         qe = local_get_active_qe();
         if isempty(qe)
+            local_clear_pending_fit();
             return
         end
         local_plot_single_spectrum(qe);
@@ -3534,11 +4068,16 @@ end
 
 
     function local_update_stage_label()
+        ui.SaveSessionButton.Enable = local_on_off(~isempty(state.dataset));
         if isempty(state.dataset)
             ui.StageLabel.Text = "Stage: none";
+            ui.SourceLabel.Text = 'No data loaded';
+            local_sync_reset_stage_items();
             return
         end
         ui.StageLabel.Text = sprintf("Stage: %s", char(state.activeStage));
+        ui.SourceLabel.Text = state.dataset.label;
+        local_sync_reset_stage_items();
     end
 
 
@@ -4051,6 +4590,20 @@ end
 
 
 
+
+
+    function local_include_in_y_limits(ax, values)
+        % Widen the current y limits, if needed, to contain values.
+        values = values(isfinite(values));
+        if strcmpi(ax.YScale, "log")
+            values = values(values > 0);
+        end
+        if isempty(values)
+            return
+        end
+        yl = ylim(ax);
+        ylim(ax, [min(yl(1), min(values)), max(yl(2), max(values))]);
+    end
 
 
     function local_apply_y_limits(ax, values)

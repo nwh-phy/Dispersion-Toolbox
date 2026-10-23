@@ -80,19 +80,19 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 **方式 A — 自动拟合**（推荐首选）：
 
 1. 设置 **Prominence**、**Max Peaks**（每个 q 通道最多几个峰）
-2. 选择 **Peak Model**（一般用 Lorentz）
-3. 点击 **Auto Fit ω(q)**
+2. 选择 **Peak Model**（一般用 Drude-Lorentz）
+3. 点击 **Auto Fit Branches**
 4. 检查散点和 branch assignment 是否合理
 
 **方式 B — Seed propagation**（峰位漂移大时更稳定）：
 
 1. 在 **Guesses** 文本框输入峰位估计（如 `800,2500`），或点击 **Pick Guesses** 在谱上点选
-2. 点击 **Auto Fit ω(q)**
+2. 点击 **Auto Fit Branches**
 3. 算法会从 seed 点逐通道追踪峰位
 
 **方式 C — 自动拟合 + 局部人工矫正**（论文级 curated workflow 推荐）：
 
-1. 先点击 **Auto Fit ω(q)**，把自动结果作为 branch 底稿
+1. 先点击 **Auto Fit Branches**，把自动结果作为 branch 底稿
 2. 在 q-E map 中选中需要复查的 q 通道，并在单谱窗口确认正确峰位
 3. 用 correction target 下拉框选择 **Auto**、**Branch N** 或 **New Branch N+1**
    - **Auto**：自动选择当前 q 附近、能量最接近的 branch 点
@@ -102,6 +102,19 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 5. 如误点，点击 **Undo Corr** 撤销最近一次 correction
 6. 也可先用 **Fit Spectrum** 拟合当前单谱，再用 **Accept Fit** 把拟合峰位写回所选 target branch
 
+**单谱拟合方法**（`Fit Method`，最后一行控件）：
+
+- **BG + peaks**（默认，旧方法）：在预处理后的谱上拟合幂律背景加若干峰（`fit_loss_function`）。
+- **ZLP joint**：直接拟合所选通道的原始计数，ZLP 和损失峰一起拟合，不扣背景，不受归一化、去噪、背景扣除设置影响（`qe_fit_spectrum_joint` → `qe_zlp_joint_fit`）。拟合窗为 max(E min, 250) 到 E max；峰数取 **Max Peaks**（恰好这么多个，不是上限）；峰形只能选 **Drude-Lorentz** 或 **Sym. Lorentz**。**Kinematic factor**（默认开）给损失峰乘上该通道的 2D 运动学因子（`qe_kinematic_prefactor`，按 **Beam kV**），小 q 处不开会让 E0 系统性偏低（30 kV、q = 0.002 Å⁻¹、Γ = 400 meV 的合成谱上偏约 70 meV）；**Poisson weights** 按 σ = √counts 加权。信息栏给出 E0、峰顶（损失函数最大值，阻尼 DL 的峰顶低于 E0）和 χ²_red，比较 1 峰和 2 峰时看 χ²_red。**Accept Fit** 写进色散的是 E0：色散模型描述的是 E0，阻尼大时峰顶明显偏低（590 在 q = 0.005 的两个峰：E0 726/1594 meV，峰顶 651/1355 meV）。BG + peaks 仍写入峰顶，和论文期结果一致；每个被接受的拟合都记录了自己用的是哪一个（`energy_kind`）。叠加图里灰线是实际拟合的原始计数（按当前显示缩放）。这种拟合还没有误差棒。
+
+**ZLP joint 自动拟合**：Fit Method 选 ZLP joint 时，**Auto Fit Branches** 改用 `qe_auto_fit_joint`，逐通道拟合原始计数，峰数、峰形、拟合窗和运动学因子同单谱拟合：
+
+- 从当前选中的通道出发（**Guesses** 填了 Max Peaks 个值时作为这一通道的初值），沿 |q| 向外、向内推进，再从 −q 侧的镜像通道出发做同样两次推进；范围取 **q start / q end**，q = 0 通道不拟合。每个通道从同一次推进里上一个完整跟上的通道的参数起步，只用一个初值。
+- 每个通道的峰按 E0 排序，第 k 个峰进 Branch k，分支点是 E0，峰顶记在分支矩阵第 14 列。
+- 下列情况的峰标为待复查，在色散图上画成灰色空心圈，不进分支：拟合失败、两峰重合、参数顶到边界、振幅为零、跳变（E0 离上一次跟上的值和最近三次的中位数都超过 **Max Shift**，中间每隔一个没跟上的通道多允许一个 Max Shift）、拟合差（χ²_red 超过种子通道的 2 倍）、R² < 0.3、Γ/E0 > 2。前六种或 χ²_red 明显上升时，这个通道会用 4 个初值（含原起点）再拟合一次，取代价低的；R² < 0.3 的通道被噪声主导，不再重拟合。
+- 590 数据在 |q| ≤ 0.03 范围内约 2 分钟（120 个通道），有进度条，可以中途取消，取消后分支不变。全范围更慢，先用 q start / q end 收窄范围。
+- 被标记的点可以用 **Correct Peak** 或单谱 **Fit Spectrum → Accept Fit** 逐个处理。
+
 **方式 D — 手动选点**（旧式 fallback）：
 
 1. 点击 **Pick Peaks**，在 q-E map 上逐点选取
@@ -110,7 +123,7 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 ### Step 5：色散拟合
 
 1. 选择 **Disp Model**（如 Quasi-2D Plasmon）
-2. 点击 **Fit Dispersion**
+2. 选择要拟合的 branch，点击 **Fit Curated**
 3. 拟合曲线和参数会显示在色散图中
 
 ### Step 6：诊断检查
@@ -122,13 +135,25 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 
 | 控件 | 导出内容 |
 |---|---|
-| **Export** (📷) | 当前显示的图像（q-E map / 单谱 / 色散图） |
+| **Export Panels** | 当前图像（q-E map / 单谱 / 色散图）；Publication 模式同时写 PNG 和 PDF，保留所选比例 |
 | **Export Data** (📦) | 预处理后的数据 `.mat`（含 axes、预处理参数、背景诊断） |
 | **Export Disp.** | 色散拟合结果 |
-| **Save Pts** | curated 峰位点数据：包含 signed `q_Ainv`、`energy_meV`、`branches`、`corrections` 和当前 GUI `snapshot` |
+| **Save Session / Load Session** | 一份 `.mat` 保存/恢复当前 q–E 数据、标定和控件、分支点/修正、自动/色散拟合、单谱拟合记录及当前曲线 |
+| **Save Curated / Load Curated**（原 Save Pts / Load Pts） | 单独交换峰位点：signed `q_Ainv`、`energy_meV`、`branches`、`corrections`、GUI `snapshot` 和新增的 `accepted_fits` 来源记录 |
 | History 面板 **Save** | 操作历史 `op_history.mat`，可在下次加载时恢复 |
 
-> **保存手动调参状态时建议同时保存两类文件**：先点 **Save Pts** 保存被接受/矫正的 branch 点，再点 History 面板 **Save** 保存 `op_history.mat`。History 保存前会强制追加当前 live GUI snapshot，因此即使某个控件没有单独生成一条 history 记录，最后保存的 `opHistory{end}.snapshot` 仍应包含当前状态。该 snapshot 会记录预处理/显示参数，也会记录自动拟合与 curated workflow 的关键控件，例如 `Prominence`、`Smooth W`、`Max Peaks`、`Peak Model`、`Guesses`、correction target、`Disp Model`、导出比例和当前选中 q 通道。
+**日常保存与重开优先使用 Save Session / Load Session。** 会话文件内嵌当前投影后的物理 q–E 计数和坐标，不必重新选择数据、点文件和历史文件。也可以直接运行 `interactive_qe_browser('qe_session.mat')` 打开会话。尚未接受的单谱拟合会恢复曲线和 Accept 状态；已接受且仍在显示的曲线也会恢复，Accept 保持禁用。
+
+会话格式有明确版本号，保存时用同目录临时文件完成写入后再替换目标。加载会检查数据/标定指纹和记录的来源文件 SHA-256；可访问的来源若有变化，会拒绝加载并保留当前工作。来源暂不可访问时，可使用内嵌 q–E 数据恢复，并在界面明确提示。保存的是 q–E 工作阶段，不包含原始 4D 张量及其裁剪/对齐/分箱的完整中间态。旧版本保存的会话缺少后来新增的控件时，这些控件按默认值恢复；新版本保存、含有本版本不认识的控件的会话会被拒绝。
+
+每次接受单谱拟合还会保留完整数值结果、signed q、dq、拟合时的设置、实际信号窗/拟合窗、输入类型、来源指纹、有效性标记和所接受能量的定义（损失函数峰顶或模型 E0）。`accepted_fits` 是历史接受记录；之后删除、重分配或修正点，不会让旧记录变成当前点的重新验证。旧点文件没有这些信息时保持为空，不补造来源。
+
+旧的点文件与 History 文件仍可单独使用：先加载数据，再 **Load Curated**，最后 History **Load**。History 只保存参数，保存时会追加当前 live snapshot；不含归一化方法的旧历史按原默认 `Area` 恢复。
+
+会话格式、测试结果及原生对话框验证边界见 [会话验收报告](reports/gui_session_acceptance_20261022.md)。
+
+重新拟合、切换通道或修改拟合/预处理设置会使待接受的单谱结果失效。拟合失败后，**Accept Fit** 不会继续接受上一次结果。
+只改显示（Y 轴、显示平滑、偏移与堆叠、q 显示范围）、分支能窗、色散模型或导出设置时，拟合曲线和待接受结果保留；已接受的曲线也照样重画。历史文件缺少必需字段时会在修改界面前拒绝加载；恢复过程若遇到无效参数等错误，会回退数据和控件，并清除待接受拟合，避免使用与当前标定不一致的旧结果。
 
 ---
 
@@ -140,9 +165,9 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 2. 在不同 q 通道浏览原始谱，了解数据质量
 3. 开启 Normalize (ZLP Peak) + Denoise (Wiener2D)，保持 **QE BG** 关闭
 4. 先做单谱拟合（**Fit Spectrum**），确认不扣背景时峰位仍清楚
-5. 再做全局自动拟合（**Auto Fit ω(q)**）
+5. 再做全局自动拟合（**Auto Fit Branches**，方法跟着 **Fit Method** 走：BG + peaks 或 ZLP joint）
 6. 逐 q 检查 branch assignment；对少数明显错误点，用 **Correct Auto** + target branch 下拉框做局部矫正，必要时用 **Undo Corr** 回退误操作
-7. 保存 **Save Pts**（curated branches + correction log）和操作历史，确保可复现、可审计
+7. 用 **Save Session** 保存整个工作状态；如需单独交换分支点，再用 **Save Curated**
 8. 可选：开启 QE BG 作为稳健性检查，确认主 branch 峰位没有被背景模型显著改变
 
 ---
@@ -168,7 +193,8 @@ interactive_qe_browser("path/to/data", "path/to/op_history.mat")
 
 | 模型 | 适用场景 |
 |---|---|
-| Lorentz (Drude) | 金属等离激元（默认推荐） |
+| Drude-Lorentz | 金属等离激元（默认推荐）；A·E·Γ/((E²−E0²)²+E²Γ²)，代码里叫 `lorentz` |
+| Sym. Lorentz | 以 E0 为中心的对称 Lorentz 峰（`lorentz_symmetric`） |
 | Gaussian | 分辨率限制的窄峰 |
 | Pseudo-Voigt | Lorentz + Gaussian 混合 |
 | Damped HO | 有限温度声子 |
@@ -221,6 +247,8 @@ fit_result = fit_dispersion_generic( ...
 ```
 
 参数应由具体数据决定，以上仅为示例。
+
+GUI 的单通道 ZLP joint 与 BiSb 的 P2b 多通道前向模型是不同方法。前者的 `apex_energy_meV` 表示损失函数峰顶，`omega_p` 表示模型 E0；它们也不等同于观测谱上的峰顶。GUI 里 ZLP joint 写进色散的是 `omega_p`。数值验收只证明 GUI 和函数接口计算一致，不证明低 q 的模型参数具有物理唯一性。
 
 ---
 

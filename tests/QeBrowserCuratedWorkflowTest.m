@@ -48,20 +48,22 @@ classdef QeBrowserCuratedWorkflowTest < matlab.unittest.TestCase
             testCase.verifyTrue(contains(body, 'gamma_ratio'));
             testCase.verifyTrue(contains(body, 'peak_valid'));
             testCase.verifyTrue(contains(body, 'qF=%.2f'));
-            testCase.verifyTrue(contains(body, 'local_fit_peak_energy'));
+            testCase.verifyTrue(contains(body, 'qe_fit_point_energy(result)'));
             testCase.verifyTrue(contains(body, ...
                 '''bootstrap_ci_samples'', ui.BootstrapCiSamplesField.Value'));
         end
 
-        function testAcceptedSingleSpectrumFitsUseApexEnergy(testCase)
+        function testAcceptedSingleSpectrumFitsUseTheRecordedPointEnergy(testCase)
+            % qe_fit_point_energy decides apex (BG + peaks) or E0 (ZLP joint);
+            % test_qe_fit_point_energy checks that rule.
             projectRoot = fileparts(fileparts(mfilename('fullpath')));
             src = fileread(fullfile(projectRoot, 'src', 'interactive_qe_browser.m'));
 
             body = extractLocalFunctionBody(src, ...
                 'local_on_accept_fit', 'local_on_auto_fit_dispersion');
 
-            testCase.verifyTrue(contains(src, 'function peak_energy = local_fit_peak_energy'));
-            testCase.verifyTrue(contains(body, 'peak_energy = local_fit_peak_energy(result)'));
+            testCase.verifyTrue(contains(src, 'function energy = local_point_energy(pf)'));
+            testCase.verifyTrue(contains(body, 'peak_energy = local_point_energy(pf)'));
             testCase.verifyTrue(contains(body, 'peak_energy(p)'));
             testCase.verifyFalse(contains(body, 'state.manual_branches, q_value, result.omega_p(p)'));
             testCase.verifyFalse(contains(body, 'new_pt = [q_value, result.omega_p(p)]'));

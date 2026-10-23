@@ -4,10 +4,10 @@ function ui_handles = qe_browser_ui(cb)
 %   ui_handles = qe_browser_ui(cb)
 %
 %   cb  — struct of callback function handles:
-%         .on_load_data, .on_build_views, .on_undo, .on_reset_stage,
+%         .on_load_data, .on_save_session, .on_load_session, .on_build_views, .on_undo, .on_reset_stage,
 %         .on_display_change, .on_normalization_change, .on_dq_override_changed,
 %         .on_qnorm_changed, .on_norm_method_changed, .on_auto_y_changed,
-%         .on_fit_param_change, .on_correction_target_change,
+%         .on_fit_param_change, .on_export_param_change, .on_correction_target_change,
 %         .on_pick_peaks, .on_undo_pt, .on_clear_pts, .on_save_pts,
 %         .on_load_pts, .on_split_branches, .on_fit_model, .on_export,
 %         .on_auto_fit_dispersion, .on_fit_spectrum, .on_accept_fit,
@@ -29,7 +29,7 @@ function ui_handles = qe_browser_ui(cb)
         "Color", [0.97 0.975 0.985]);
 
     main_grid = uigridlayout(fig, [3 3]);
-    main_grid.RowHeight = {330, "1x", "1x"};
+    main_grid.RowHeight = {359, "1x", "1x"};
     main_grid.ColumnWidth = {"1x", "1x", 280};
     main_grid.Padding = [10 10 10 10];
     main_grid.RowSpacing = 10;
@@ -39,19 +39,30 @@ function ui_handles = qe_browser_ui(cb)
     history_panel = uipanel(main_grid, "Title", "Operation History");
     history_panel.Layout.Row = [1 3];
     history_panel.Layout.Column = 3;
-    history_grid = uigridlayout(history_panel, [3 1]);
-    history_grid.RowHeight = {"1x", 28, 28};
+    history_grid = uigridlayout(history_panel, [4 1]);
+    history_grid.RowHeight = {28, "1x", 28, 28};
+    session_grid = uigridlayout(history_grid, [1 2]);
+    session_grid.Layout.Row = 1;
+    session_grid.Padding = [0 0 0 0];
+    session_grid.ColumnWidth = {"1x", "1x"};
+    session_grid.ColumnSpacing = 4;
+    save_session = uibutton(session_grid, 'Text', 'Save Session', ...
+        'Tooltip', 'Save data, controls, points, and fit results together.', ...
+        'ButtonPushedFcn', cb.on_save_session);
+    load_session = uibutton(session_grid, 'Text', 'Load Session', ...
+        'Tooltip', 'Restore a complete saved session.', ...
+        'ButtonPushedFcn', cb.on_load_session);
     history_grid.Padding = [4 4 4 4];
     history_grid.RowSpacing = 4;
 
     history_list = uilistbox(history_grid, ...
         "Items", {}, ...
         "ValueChangedFcn", cb.on_history_select);
-    history_list.Layout.Row = 1;
+    history_list.Layout.Row = 2;
 
     % Save / Load row
     history_btn_grid = uigridlayout(history_grid, [1 2]);
-    history_btn_grid.Layout.Row = 2;
+    history_btn_grid.Layout.Row = 3;
     history_btn_grid.ColumnWidth = {"1x", "1x"};
     history_btn_grid.Padding = [0 0 0 0];
     history_btn_grid.ColumnSpacing = 4;
@@ -69,15 +80,16 @@ function ui_handles = qe_browser_ui(cb)
     history_clear_btn = uibutton(history_grid, ...
         "Text", "Clear History", ...
         "ButtonPushedFcn", cb.on_clear_history);
-    history_clear_btn.Layout.Row = 3;
+    history_clear_btn.Layout.Row = 4;
 
     % ═══════════ CONTROL PANEL ═══════════
     control_panel = uipanel(main_grid, "Title", "Controls");
     control_panel.Layout.Row = 1;
     control_panel.Layout.Column = [1 2];
 
-    control_grid = uigridlayout(control_panel, [10 16]);
-    control_grid.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24};
+    control_grid = uigridlayout(control_panel, [11 16]);
+    control_grid.Scrollable = 'on';  % keep all controls reachable on laptop screens
+    control_grid.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24};
     control_grid.ColumnWidth = {80, 80, 62, 100, 62, 80, 62, 80, 62, 80, 80, 80, 62, 80, 80, "1x"};
     control_grid.Padding = [6 4 6 4];
     control_grid.RowSpacing = 5;
@@ -665,7 +677,7 @@ function ui_handles = qe_browser_ui(cb)
         "Items", {'1:1', '4:3', '3:2', '16:9', '2:1'}, ...
         "Value", '16:9', ...
         "Tooltip", "Export panel aspect ratio", ...
-        "ValueChangedFcn", cb.on_fit_param_change);
+        "ValueChangedFcn", cb.on_export_param_change);
     export_ratio.Layout.Row = 10;
     export_ratio.Layout.Column = 15;
 
@@ -673,7 +685,7 @@ function ui_handles = qe_browser_ui(cb)
         "Items", {'Quick PNG', 'PPT PNG', 'Publication'}, ...
         "Value", 'Quick PNG', ...
         "Tooltip", "Quick PNG: 150 DPI PNG only; PPT PNG: 300 DPI PNG only; Publication: 300 DPI PNG + PDF", ...
-        "ValueChangedFcn", cb.on_fit_param_change);
+        "ValueChangedFcn", cb.on_export_param_change);
     export_mode.Layout.Row = 10;
     export_mode.Layout.Column = [13 14];
 
@@ -750,8 +762,8 @@ function ui_handles = qe_browser_ui(cb)
     pk_model_lbl.Layout.Row = 9; pk_model_lbl.Layout.Column = 1;
 
     pk_model_dropdown = uidropdown(control_grid, ...
-        "Items", {'Lorentz', 'Gaussian', 'Voigt', 'Damped HO', 'Fano'}, ...
-        "ItemsData", {'lorentz', 'gaussian', 'voigt', 'damped_ho', 'fano'}, ...
+        "Items", {'Drude-Lorentz', 'Sym. Lorentz', 'Gaussian', 'Voigt', 'Damped HO', 'Fano'}, ...
+        "ItemsData", {'lorentz', 'lorentz_symmetric', 'gaussian', 'voigt', 'damped_ho', 'fano'}, ...
         "Value", 'lorentz', ...
         "ValueChangedFcn", cb.on_fit_param_change);
     pk_model_dropdown.Layout.Row = 9; pk_model_dropdown.Layout.Column = [2 3];
@@ -864,6 +876,41 @@ function ui_handles = qe_browser_ui(cb)
         "HorizontalAlignment", "left");
     disp_info_label.Layout.Row = 10;
     disp_info_label.Layout.Column = 16;
+
+    % ═══════════ ROW 11: Single-spectrum fit method ═══════════
+    fit_method_lbl = uilabel(control_grid, "Text", "Fit Method:");
+    fit_method_lbl.Layout.Row = 11; fit_method_lbl.Layout.Column = 1;
+
+    fit_method_dropdown = uidropdown(control_grid, ...
+        "Items", {'BG + peaks', 'ZLP joint'}, ...
+        "ItemsData", {'bg_peaks', 'zlp_joint'}, ...
+        "Value", 'bg_peaks', ...
+        "Tooltip", "ZLP joint: fit the raw counts of the selected channel with the ZLP and the loss peaks together, no background subtraction; window max(E min, 250) to E max, Max Peaks peaks, Drude-Lorentz or Sym. Lorentz", ...
+        "ValueChangedFcn", cb.on_fit_param_change);
+    fit_method_dropdown.Layout.Row = 11; fit_method_dropdown.Layout.Column = [2 3];
+
+    kinematic_cb = uicheckbox(control_grid, ...
+        "Text", "Kinematic factor", ...
+        "Value", true, ...
+        "Tooltip", "ZLP joint: multiply the loss peaks by the 2D q-EELS kinematic prefactor of the channel", ...
+        "ValueChangedFcn", cb.on_fit_param_change);
+    kinematic_cb.Layout.Row = 11; kinematic_cb.Layout.Column = [4 5];
+
+    beam_kv_lbl = uilabel(control_grid, "Text", "Beam kV:");
+    beam_kv_lbl.Layout.Row = 11; beam_kv_lbl.Layout.Column = 6;
+
+    beam_kv_field = uispinner(control_grid, ...
+        "Value", 30, "Step", 10, ...
+        "Limits", [1 300], "ValueDisplayFormat", "%.0f", ...
+        "ValueChangedFcn", cb.on_fit_param_change);
+    beam_kv_field.Layout.Row = 11; beam_kv_field.Layout.Column = 7;
+
+    poisson_cb = uicheckbox(control_grid, ...
+        "Text", "Poisson weights", ...
+        "Value", true, ...
+        "Tooltip", "ZLP joint: weight the residuals by sigma = sqrt(counts)", ...
+        "ValueChangedFcn", cb.on_fit_param_change);
+    poisson_cb.Layout.Row = 11; poisson_cb.Layout.Column = [8 9];
 
     % ═══════════ AXES ═══════════
     qe_axes = uiaxes(main_grid);
@@ -997,6 +1044,8 @@ function ui_handles = qe_browser_ui(cb)
     % ═══════════ PACK HANDLES ═══════════
     ui_handles = struct();
     ui_handles.Figure = fig;
+    ui_handles.SaveSessionButton = save_session;
+    ui_handles.LoadSessionButton = load_session;
     ui_handles.LoadEq3DButton = load_eq3d;
     ui_handles.BuildViewsButton = build_button;
     ui_handles.UndoButton = undo_button;
@@ -1090,6 +1139,10 @@ function ui_handles = qe_browser_ui(cb)
     ui_handles.PeakModelDropdown = pk_model_dropdown;
     ui_handles.MaxShiftField = max_shift_field;
     ui_handles.BootstrapCiSamplesField = ci_samples_field;
+    ui_handles.FitMethodDropdown = fit_method_dropdown;
+    ui_handles.KinematicCheckbox = kinematic_cb;
+    ui_handles.BeamKVField = beam_kv_field;
+    ui_handles.PoissonWeightsCheckbox = poisson_cb;
     ui_handles.SeedInfoLabel = seed_info_label;
     ui_handles.PickGuessesButton = pick_guesses_btn;
     ui_handles.ReassignButton = reassign_btn;

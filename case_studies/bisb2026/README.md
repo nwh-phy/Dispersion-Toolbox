@@ -36,5 +36,11 @@ output = run_b3_scatter_only_export();
 output = run_q015_linewidth_by_session_export();
 ```
 
+The GUI/API numerical acceptance tests are in `tests/test_gui_joint_fit_realdata.m`.
+They compare six representative channels from the three local eq3D datasets,
+including both signs of q. They require local data and report an explicit skip
+when it is unavailable. Agreement checks the interface, not the physical validity
+of the single-channel model.
+
 Result folders remain under the ignored `paper_results/` tree so existing paths
 and generated artifacts are not broken by this cleanup.
