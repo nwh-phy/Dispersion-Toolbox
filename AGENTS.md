@@ -1,3 +1,7 @@
+# Project instructions
+
+This file is the shared development policy for Codex and Claude Code. `CLAUDE.md` imports it; keep current rules here rather than maintaining a second copy. Daily usage is in `README.md`, detailed GUI help in `docs/toolbox/gui_workflow.md`, and dated software evidence in `reports/README.md`.
+
 # Research progress and results alignment
 
 ## Start from the graduation thesis
@@ -35,7 +39,7 @@ Agreed with the user on 2026-10-21, after the clean-up of the BiSb scripts (comm
 4. Commit at the end of every analysis stage; do not leave scripts untracked across sessions. Find the project root with `bisb_find_project_root`, never an absolute `/Users/...` path. The data and `paper_results/` exist only in the main checkout, so analysis scripts run there; a worktree must not read uncommitted files of another checkout.
 5. When a line of analysis is finished, move its scripts into a `legacy_*` folder (`legacy_202605/`, `legacy_c20/`) and stop editing them.
 6. `src/` holds the GUI toolbox and generic functions only; BiSb-specific code lives in `case_studies/bisb2026/`.
-7. Before committing a change to shared code, run `tests/` and `case_studies/bisb2026/tests` and compare with the previous result. Both suites passed in full on 2026-10-21 (159 and 75 tests).
+7. Before committing a change to shared code, run `tests/` and `case_studies/bisb2026/tests` and compare with the previous result. The latest integrated baseline is 2026-10-23: 205 core and 78 BiSb tests passed, with no failures or skips, on macOS MATLAB R2026a in the main checkout. See `reports/gui_integration_20261023.md`; do not apply this count to older commits or data-free worktrees.
 8. The momentum calibration was corrected by a factor of 10 on 2026-05-14 (dq 0.0005 1/A per pixel at 10w, 0.00025 at 20w). A q threshold in 1/A written before that date selects 10x more channels than intended; divide it by 10 when reviving older code.
 
 ## GUI work
@@ -47,3 +51,11 @@ Updated with user approval on 2026-10-23 after integrating `gui-joint-fit`.
 3. Shared fitting functions must remain consistent across the stable and research lines. Prefer integrating reviewed commits over maintaining manual copies.
 4. Run both `tests/` and `case_studies/bisb2026/tests/` after integration. Worktrees without data may skip real-data tests; run those in the main checkout or through a temporary external script, and keep generated results out of git.
 5. A new GUI control must stay optional when older history and session files are restored: a missing field takes the control's default.
+
+## GUI implementation and result records
+
+- `src/ui/qe_browser_ui.m` declares controls; browser state and callbacks live in `src/interactive_qe_browser.m`. Preserve this separation.
+- In overlapping energy windows, seed-tagged peaks keep their branch; untagged peaks go to the later matching branch. This is the existing tested rule.
+- ZLP-joint fits accept model E0; BG + peaks accepts the peak apex. Preserve `energy_kind` and existing session provenance. GUI/API agreement does not establish scientific model validity.
+- Keep dated reports immutable as historical evidence; update their navigation index instead of rewriting old test counts as current.
+- Local result classification and recovery are indexed by `paper_results/00_INDEX.md`. An old run may still be an input. Check consumers before moving it; preserve hashes, archives, and a restoration route. Raw data and thesis evidence are not disposable build artifacts.

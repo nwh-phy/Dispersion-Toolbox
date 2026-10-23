@@ -7,7 +7,7 @@ Core reusable code stays in `src/`. Scripts here are examples layered on top of
 the toolbox and may require ignored local inputs such as `20260120 BiSb/` and
 ignored outputs under `paper_results/`.
 
-## Analysis Convention
+## Thesis-era Analysis Convention
 
 - The primary peak-position evidence uses the no-BG, area-normalized Fano
   extraction route.
@@ -29,7 +29,7 @@ runtests('case_studies/bisb2026/tests')
 For individual case-study exports:
 
 ```matlab
-addpath('case_studies/bisb2026/scripts')
+addpath(genpath('case_studies/bisb2026/scripts'))
 output = run_b1_physical_fit_analysis();
 output = run_b1_physical_fit_enhancements();
 output = run_b3_scatter_only_export();
@@ -42,5 +42,7 @@ including both signs of q. They require local data and report an explicit skip
 when it is unavailable. Agreement checks the interface, not the physical validity
 of the single-channel model.
 
-Result folders remain under the ignored `paper_results/` tree so existing paths
-and generated artifacts are not broken by this cleanup.
+See [the script index](scripts/README.md) for the analysis entry points. Local outputs,
+retained dependencies and retired trial locations are indexed by `paper_results/00_INDEX.md`
+at the project root. Required inputs retain their paths; retired runs have a recorded
+archive/restore mapping. All result payloads remain ignored by Git.

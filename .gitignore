@@ -62,3 +62,14 @@ graphene/
 docs/
 figures/
 references/
+
+# Shared concise agent entry and public toolbox documentation only
+!/CLAUDE.md
+!docs/
+docs/*
+!docs/toolbox/
+docs/toolbox/*
+!docs/toolbox/*.md
+
+# Local reversible cleanup ledger and archived analysis outputs
+archive/local_cleanup_20261023/
