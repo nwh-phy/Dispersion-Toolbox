@@ -1,5 +1,9 @@
 # q-EELS processing exploration, 2026-10-23
 
+Completed findings: [RESULTS.md](RESULTS.md). The strongest processing result
+is relative q-drift correction validated against temporal holdout spectra.
+The model/uncertainty limitations and proposed GUI adoption are explicit.
+
 This isolated experiment starts at research commit `3d66386`. It processes
 the existing C20 MoS2/Bi-rich BiSb/MoS2 sequences; it does not assume pure Bi,
 a crystal structure, independently verified layer counts, carrier density,
@@ -64,6 +68,8 @@ bisb_explore_synthetic(fullfile(output_dir, 'synthetic'));
 `verify_run.py --output ...` re-hashes the original files and checks fit
 coverage/signatures. [METHODS.md](METHODS.md) gives equations, assumptions,
 energy definitions, verified literature and the route to band/DFT response.
+The figures linked by RESULTS.md are local reproduction outputs; raw arrays,
+fit checkpoints and generated figures are deliberately not Git assets.
 
 The data root is an explicit read-only input. Outputs must be outside that
 root. The input JSON gives energy dispersion and exposure; the checked

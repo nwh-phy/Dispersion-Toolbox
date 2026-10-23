@@ -202,6 +202,7 @@ def summarize(folder):
         numerical_failures=sum(not r['success'] for r in rows),
         status_counts={s:sum(r['status']==s for r in rows) for s in sorted({r['status'] for r in rows})},
         bootstrap_draw_fits=len(bs),bootstrap_expected=2304,synthetic=sstats,
+        bootstrap_status_counts={s:sum(r['status']==s for r in bs) for s in sorted({r['status'] for r in bs})},
         temporal_two_better=sum(r['difference_one_minus_two']>0 for r in prediction),temporal_total=len(prediction),
         raw_frame_summaries=summaries)
     (dest/'audit.json').write_text(json.dumps(audit,indent=2,ensure_ascii=False)+'\n')
