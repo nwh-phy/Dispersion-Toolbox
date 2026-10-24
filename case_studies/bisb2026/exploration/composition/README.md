@@ -92,3 +92,12 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 .venv/bin/python3 \
 3/5 原始 q 通道合并，能量 bin 保持 16 meV。`qbin_protocol.toml` 指定范围，
 `qbin_run.py` 复用准备流程并做独立单谱的单/双成分比较，`qbin_summary.py`
 检查复现与积分并绘图。5 通道提高计数信噪比约 25%–28%，部分分峰仍对窗口敏感。
+
+## 小 q 单通道、高 q 合并后的实测峰顶
+
+[RIDGE_REPORT.md](RIDGE_REPORT.md) 按用户指定策略处理完整 signed-q 曲线：
+|q|≤0.006 Å⁻¹ 用单通道，之外分别合并 3、5 通道，再独立提取计数谱峰顶。
+`ridge_protocol.toml` 配置范围；`ridge_run.py` 复用准备流程并做帧重采样；
+`ridge_verify.py` 检查非空数据交集及峰位复算；`ridge_figures.py` 绘制热图、
+峰位与真实单谱。两组 10w 的实测峰顶上升约 1 eV，高 q 转为宽平台。
+该峰位定义与低能振子的 E₀ 分开保存，无单调上升或双振子约束。

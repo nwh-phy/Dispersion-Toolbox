@@ -14,13 +14,31 @@ from qeels_frames import momentum_axis, noise_from_frames, sha256_file
 from qeels_rebin import fractional_bin_weights
 
 
+def adaptive_q_bins(dq, native_max, q_max, high_channels):
+    """Symmetric, contiguous native-grid bins; omit incomplete outer groups.
+
+    Widths describe integration in q, not errors of the bin centres. Framewise
+    drift translation can fractionally share detector pixels at bin edges.
+    """
+    if high_channels not in (3, 5) or not 0 < native_max < q_max:
+        raise ValueError('Require 3/5 high-q channels and 0 < native_max < q_max')
+    low = int(np.floor(native_max/dq+1e-8))
+    last = int(np.floor(q_max/dq+1e-8))
+    groups = [(i, 1) for i in range(1, low+1)]
+    groups += [(i+(high_channels-1)/2, high_channels)
+               for i in range(low+1, last-high_channels+2, high_channels)]
+    q = np.array([-i*dq for i, n in groups[::-1]]+[0.]+[i*dq for i, n in groups])
+    counts = np.array([n for i, n in groups[::-1]]+[1]+[n for i, n in groups])
+    return q, counts*dq
+
+
 def prepare(previous: Path, output: Path, protocol: Path | None = None,
             bin_channels: int | None = None):
     if previous.resolve() == output.resolve():
         raise ValueError('Use a separate output directory')
     output.mkdir(parents=True, exist_ok=True)
-    if bin_channels is not None and bin_channels not in (3, 5):
-        raise ValueError('This audit supports only the requested 3/5-channel bins')
+    if bin_channels is not None and bin_channels not in (1, 3, 5):
+        raise ValueError('Only native, 3-channel and 5-channel bins are supported')
     protocol = protocol or Path(__file__).with_name('protocol.toml')
     cfg = tomllib.loads(protocol.read_text())
     old = json.loads((previous / 'manifest.json').read_text())
@@ -48,16 +66,22 @@ def prepare(previous: Path, output: Path, protocol: Path | None = None,
         eb = energy[ix].reshape(-1, n).mean(1)
         width = (s['physical_bin_width_Ainv'] if bin_channels is None
                  else bin_channels*float(d['dq']))
-        targets = np.array(cfg['q_targets_Ainv'])
+        if 'native_q_max_Ainv' in cfg:
+            targets, widths = adaptive_q_bins(float(d['dq']), cfg['native_q_max_Ainv'],
+                                              cfg['q_max_Ainv'], bin_channels)
+            width = widths
+        else:
+            targets = np.array(cfg['q_targets_Ainv'])
+            widths = np.full(len(targets), width)
         blocks = []; weight_error = 0
-        for target in targets:
+        for target, local_width in zip(targets, widths):
             frames = []
             for it, t in enumerate(keep):
-                weights = fractional_bin_weights(q, target, width, drift[it])
+                weights = fractional_bin_weights(q, target, local_width, drift[it])
                 members = np.flatnonzero(weights > 1e-12)
                 if set(members+1) & set(s['invalid_columns_1based']):
                     raise ValueError('Bad detector column in translated bin')
-                weight_error = max(weight_error, abs(weights.sum() - width/d['dq']))
+                weight_error = max(weight_error, abs(weights.sum() - local_width/d['dq']))
                 y = weights[members] @ raw[t][np.ix_(members, support[ix]+offsets[t])].astype(float)
                 frames.append(y.reshape(-1, n).sum(1))
             blocks.append(frames)
@@ -74,7 +98,7 @@ def prepare(previous: Path, output: Path, protocol: Path | None = None,
             resolution_fwhm=s['zlp_fwhm_after_meV'])
         manifest['sessions'].append(dict(session=sid, source=s['source'], source_sha256=source_hash,
             prepared_sha256=sha256_file(output/f'{sid}.npz'), n_frames=len(keep), n_q=len(targets),
-            n_energy=len(eb), width_Ainv=width, max_weight_sum_error=weight_error,
+            n_energy=len(eb), width_Ainv=np.asarray(width).tolist(), max_weight_sum_error=weight_error,
             initial_source_sha256=s['sha256'],previous_artifact_sha256={
                 name:sha256_file(previous/sid/name) for name in ['prepared.mat','qdrift.mat']}))
         print(f'PREPARED {sid}: {frames.shape}, source hash verified', flush=True)

@@ -1,0 +1,14 @@
+seed = 20261024
+bin_channels = [3, 5]
+native_q_max_Ainv = 0.006
+q_max_Ainv = 0.020
+prepared_energy_range_meV = [200, 2200]
+energy_sum_channels = 4
+train_frames = 250
+peak_window_meV = [300, 1800]
+smooth_fwhm_meV = 100
+smooth_checks_meV = [64, 144]
+prominence_fraction = 0.02
+bootstrap_repeats = 300
+bootstrap_block_frames = 10
+description = "Native-q spectra up to |q|=0.006; nonoverlapping groups of 3 or 5 beyond. Direct observed-count maxima, no monotonicity or oscillator identity constraint. Positive and negative q retained. No kinematic division or two-oscillator prior."
