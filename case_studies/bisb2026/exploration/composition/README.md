@@ -101,3 +101,13 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 .venv/bin/python3 \
 `ridge_verify.py` 检查非空数据交集及峰位复算；`ridge_figures.py` 绘制热图、
 峰位与真实单谱。两组 10w 的实测峰顶上升约 1 eV，高 q 转为宽平台。
 该峰位定义与低能振子的 E₀ 分开保存，无单调上升或双振子约束。
+
+## 双成分中的低能支
+
+[LOW_BRANCH_REPORT.md](LOW_BRANCH_REPORT.md) 在相同 q 分箱上逐谱比较单／双
+B1 响应，专门提取低能成分。`low_branch_protocol.toml` 配置范围与复核阈值；
+`low_branch_run.py` 完成主拟合、帧重采样和对照；`low_branch_summary.py` 分开
+展示计数峰顶与有效 E₀；`low_branch_verify.py` 复算参数、核验数据与精细积分；
+`low_branch_control.py` 固定真实拟合的 E₀、Γ，检查仅改变测量权重产生的峰位移动。
+小 q 的低能计数峰顶上升约 0.25 eV，高 q 延伸仍有分解歧义；本征色散需要
+后续在 Q 积分内比较平坦／有色散低能模式。

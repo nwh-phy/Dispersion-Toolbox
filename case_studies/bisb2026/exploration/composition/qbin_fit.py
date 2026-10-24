@@ -24,7 +24,8 @@ def local_columns(op, p, model):
     return col/np.maximum(col.max(axis=1, keepdims=True), 1e-100), names
 
 
-def fit_local(op, y, sigma, model, mask, starts=12, seed=20261024, single=None):
+def fit_local(op, y, sigma, model, mask, starts=12, seed=20261024, single=None,
+              warms=(), max_nfev=350):
     if model not in ('S', 'A') or op.nq != 1:
         raise ValueError('One q bin and S/A model required')
     active = np.array([0, 4, 8, 9, 10, 11] if model == 'S'
@@ -41,7 +42,7 @@ def fit_local(op, y, sigma, model, mask, starts=12, seed=20261024, single=None):
         if full:
             return col, names, coeff, pred
         return ((pred-y)/sigma)[:, mask].ravel()
-    init = [base]
+    init = [np.asarray(p).copy() for p in warms]+[base]
     if single is not None:
         sp = np.asarray(single['parameters']); e0 = endpoints(sp, 'S')[0][0]
         # A contains the single oscillator as either the low or high component.
@@ -59,7 +60,7 @@ def fit_local(op, y, sigma, model, mask, starts=12, seed=20261024, single=None):
     for p in init[:starts]:
         x = np.clip(p[active], LOWER[active]+1e-9, UPPER[active]-1e-9)
         r = least_squares(evaluate, x, bounds=(LOWER[active], UPPER[active]),
-            x_scale='jac', max_nfev=350, ftol=2e-7, xtol=2e-7, gtol=2e-7)
+            x_scale='jac', max_nfev=max_nfev, ftol=2e-7, xtol=2e-7, gtol=2e-7)
         cost = float(r.fun@r.fun)
         candidates.append(dict(cost=cost, success=bool(r.success), parameters=unpack(r.x)))
         if best is None or cost < best[0]:
