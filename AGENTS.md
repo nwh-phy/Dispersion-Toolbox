@@ -27,6 +27,20 @@ The root `thesis.pdf` predates the submitted PDF. A read-only comparison found t
 
 ## Code organization
 
+Language requirement, explicitly confirmed by the user on 2026-10-24:
+new data processing, fitting, simulations, figures and validation use the
+existing MATLAB toolbox. Do not add or run Python analysis code. Reuse the
+existing MATLAB functions before introducing a new implementation. The
+Python exploration is a frozen historical record; its test results do not
+validate the MATLAB pipeline or GUI. Preserve its recorded outputs unless
+the user separately authorizes cleanup.
+
+Run a batch in one MATLAB process with a cell-array task loop and per-task
+`try/catch`; do not launch MATLAB for each parameter combination. If parallel
+processes are needed, keep at most 2–3 running at once. Repeated macOS launches
+can leave large `com.mathworks.matlab.code_sign_clone` caches. The user has
+authorized cleaning that specific cache only after all MATLAB processes exit.
+
 Agreed with the user on 2026-10-21, after the clean-up of the BiSb scripts (commits `db55a4d`, `a1fcebd`, `1628013`). The script index is `case_studies/bisb2026/scripts/README.md`.
 
 1. A new round of analysis adds a config function and calls the existing code. Do not copy the previous round's script and edit the copy; put what changes into the config or into a new function.

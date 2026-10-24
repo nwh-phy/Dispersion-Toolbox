@@ -1,5 +1,9 @@
 # B1 宽谱带构成探索
 
+2026-10-24 用户明确要求：后续分析统一使用已有 MATLAB 工具箱。下列 Python
+实现及其结果作为历史探索冻结；不再作为当前执行入口，也不代表 MATLAB/GUI
+验收。当前 MATLAB 入口见 `../../scripts/README.md`。
+
 先读 [REPORT.md](REPORT.md) 的判断，再看 [METHODS.md](METHODS.md) 的假说、单位和限制。[LITERATURE.md](LITERATURE.md) 记录原始论文与 DOI。此模块属于 BiSb 个案研究，尚未作为通用 GUI 默认算法。
 
 本轮复用上一轮已验证的能量/q 漂移轨迹，从原始 NPY 重新读取更宽能区。源数据只读，所有计数、预测、模拟和图像均放在 gitignored 的 `paper_results/`。Python 依赖沿用上级目录的 `requirements-lock.txt`。

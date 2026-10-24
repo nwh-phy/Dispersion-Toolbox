@@ -1,5 +1,11 @@
 # q-EELS processing exploration, 2026-10-23
 
+**2026-10-24 language decision:** the user requires new analysis and validation
+to use the existing MATLAB toolbox. The Python code and findings documented
+below are frozen historical exploration, not the current execution path or
+MATLAB/GUI acceptance evidence. The MATLAB entry is documented in
+`../scripts/README.md`.
+
 Completed findings: [RESULTS.md](RESULTS.md). The strongest processing result
 is relative q-drift correction validated against temporal holdout spectra.
 The model/uncertainty limitations and proposed GUI adoption are explicit.

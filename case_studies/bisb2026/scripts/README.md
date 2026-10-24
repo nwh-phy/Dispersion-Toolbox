@@ -1,5 +1,19 @@
 # BiSb case-study 脚本索引
 
+2026-10-24 用户明确要求：新分析、拟合、绘图和验证统一使用已有 MATLAB，
+不再新增或执行 Python 分析。历史探索代码与输出保留作溯源。
+
+当前低能支入口为 `b1_low_branch_matlab_config(data_root)` 和
+`b1_low_branch_matlab(stage,cfg,out_root,session_id,part,nparts)`。
+它直接读取原始 NPY 文件，复用 `read_npy`、`qe_zlp_integer_align`、
+`qe_prepare_count_bins`、`b1_p1b_noise`、`qe_kinematic_prefactor` 和
+`qe_zlp_joint_fit`，无需其他语言运行时。
+`stage` 为 `prepare`、`pilot`、`fit`、`bootstrap`、`report` 或 `verify`。
+小 q 保留单通道，高 q 只比较 3／5 通道；先用 MATLAB 原有 ZLP 联合模型
+建立数值基线，再判断低能成分的稳定性。当前批处理入口不等同于 GUI 新增功能。
+方法、验证数量、结果和单进程运行示例见
+[`b1_low_branch_matlab_20261024.md`](../reports/b1_low_branch_matlab_20261024.md)。
+
 在项目根目录的 MATLAB 里运行：`startup; addpath(genpath(fullfile(pwd,'case_studies','bisb2026')))`，再按函数名调用。脚本用 `bisb_find_project_root`（留在本目录顶层，三批共用）找根目录、自己加 `src/` 路径，结果写到 `paper_results/<名字>/<时间戳>/`（各结果文件夹的说明见本地的 `paper_results/00_INDEX.md`）。
 
 目录（2026-10-21 整理）：
