@@ -85,3 +85,10 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 .venv/bin/python3 \
 `kinematic_audit.py` 复现旧图、检查实际狭缝下的除法诊断，并在冻结原始计数上
 比较 K=1 和只冻结 K 能量依赖的拟合；`kinematic_audit_verify.py` 检查独立精细
 积分与多种峰位定义。旧代码、旧结果保持冻结。
+
+## 高 q 的 3/5 通道合并
+
+[QBIN_REPORT.md](QBIN_REPORT.md) 比较三个数据集在 ±.010、±.015 Å⁻¹ 的
+3/5 原始 q 通道合并，能量 bin 保持 16 meV。`qbin_protocol.toml` 指定范围，
+`qbin_run.py` 复用准备流程并做独立单谱的单/双成分比较，`qbin_summary.py`
+检查复现与积分并绘图。5 通道提高计数信噪比约 25%–28%，部分分峰仍对窗口敏感。

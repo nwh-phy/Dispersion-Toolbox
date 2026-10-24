@@ -14,14 +14,21 @@ from qeels_frames import momentum_axis, noise_from_frames, sha256_file
 from qeels_rebin import fractional_bin_weights
 
 
-def prepare(previous: Path, output: Path):
+def prepare(previous: Path, output: Path, protocol: Path | None = None,
+            bin_channels: int | None = None):
     if previous.resolve() == output.resolve():
         raise ValueError('Use a separate output directory')
     output.mkdir(parents=True, exist_ok=True)
-    cfg = tomllib.loads(Path(__file__).with_name('protocol.toml').read_text())
+    if bin_channels is not None and bin_channels not in (3, 5):
+        raise ValueError('This audit supports only the requested 3/5-channel bins')
+    protocol = protocol or Path(__file__).with_name('protocol.toml')
+    cfg = tomllib.loads(protocol.read_text())
     old = json.loads((previous / 'manifest.json').read_text())
     manifest = {'protocol': cfg, 'previous_manifest_sha256': sha256_file(previous/'manifest.json'),
-                'protocol_sha256': sha256_file(Path(__file__).with_name('protocol.toml')), 'sessions': []}
+                'protocol_sha256': sha256_file(protocol), 'sessions': []}
+    if bin_channels is not None:
+        manifest['bin_channels'] = bin_channels
+        manifest['preparation_sha256'] = sha256_file(Path(__file__))
     for s in old['sessions']:
         sid = s['session']
         d = loadmat(previous/sid/'prepared.mat', simplify_cells=True)
@@ -39,7 +46,9 @@ def prepare(previous: Path, output: Path):
         ix = np.flatnonzero((energy >= lo-1e-8) & (energy <= hi+1e-8))
         n = cfg['energy_sum_channels']; ix = ix[:len(ix)//n*n]
         eb = energy[ix].reshape(-1, n).mean(1)
-        width = s['physical_bin_width_Ainv']; targets = np.array(cfg['q_targets_Ainv'])
+        width = (s['physical_bin_width_Ainv'] if bin_channels is None
+                 else bin_channels*float(d['dq']))
+        targets = np.array(cfg['q_targets_Ainv'])
         blocks = []; weight_error = 0
         for target in targets:
             frames = []

@@ -1,0 +1,10 @@
+seed = 20261024
+bin_channels = [3, 5]
+q_targets_Ainv = [-0.015, -0.010, 0.010, 0.015]
+prepared_energy_range_meV = [200, 3400]
+energy_sum_channels = 4
+train_frames = 250
+fit_window_meV = [500, 3400]
+score_window_meV = [500, 1800]
+starts = 12
+description = "Independent high-q spectra, only 3 and 5 native momentum channels. Keep 16 meV energy bins, signed q separate, measured aperture/probe/resolution and frozen alignment. Local oscillator parameters are effective within-bin parameters, not deconvolved intrinsic linewidths."
