@@ -29,6 +29,14 @@ The root `thesis.pdf` predates the submitted PDF. A read-only comparison found t
 4. If the thesis and upstream evidence disagree, identify the discrepancy and verify it explicitly. Do not assume that either a document's completion status or the model that generated an analysis determines scientific correctness.
 5. This alignment instruction does not authorize raw-data processing, replacement figures, thesis edits, or publication. Keep those actions within the user's requested scope and follow the thesis project's own instructions when working there.
 
+## Language: MATLAB only
+
+The user explicitly required on 2026-10-24 that new data processing, fitting, simulations, figures and validation use the existing MATLAB toolbox. Do not add or run Python analysis code, and reuse the existing MATLAB functions before writing a new implementation.
+
+- The Codex Python exploration of 2026-10-23/24 was removed on 2026-10-27 at the user's request. It survives only in the local tag `archive/codex-exploration-20261024` (`git worktree add <dir> archive/codex-exploration-20261024` to look at it) and is not evidence for the MATLAB pipeline. Its MATLAB low-branch analysis was kept: `b1_low_branch_matlab*` in `case_studies/bisb2026/scripts/`.
+- The figure on page 4 of the 2026-10-25 weekly report, `01_low_component_count_dispersion.png`, came from that Python run. Its outputs are kept locally in `paper_results/b1_low_branch_python_20261024/`.
+- Run a batch in one MATLAB process with a cell-array task loop and a per-task `try/catch`, not one MATLAB launch per parameter combination. Keep at most 2–3 MATLAB processes at once; repeated macOS launches leave large `com.mathworks.matlab.code_sign_clone` caches.
+
 ## Code organization
 
 Agreed with the user on 2026-10-21, after the clean-up of the BiSb scripts (commits `db55a4d`, `a1fcebd`, `1628013`). The script index is `case_studies/bisb2026/scripts/README.md`.
