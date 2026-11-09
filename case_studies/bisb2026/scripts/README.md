@@ -12,6 +12,26 @@
 
 冻结的两批不再修改。v2、v4、v5 的入口脚本把自己和依赖文件的旧路径（`case_studies/bisb2026/scripts/<名字>.m`、`src/b1_*.m`）写进了溯源清单，移动后不能原样重跑；要重跑先改清单里的路径。
 
+## 数据集与新数据（2026-11-09 起，先看这里）
+
+| 函数 | 作用 |
+|---|---|
+| `bisb_datasets.m` | 唯一的数据集登记表：每次采集的文件夹、`.npy`、dq、q = 0 列、狭缝接收 h、SHA-256、样品和层数。分析代码按 id 取，脚本里不再写路径、dq 或 q = 0。现有 id：`590_PL2_10w`（`590`）、`n0_PL2_10w_repeat`（`n0`）、`no_PL2_20w_2film`（`20w`）、`Bi1107_10w`、`Bi1107_20w` |
+| `bisb_frame_map.m` | 某个数据集逐帧对齐、按束斑漂移分箱后的 q–E 计数图（另有按时间分块的求和），缓存在 `paper_results/frame_maps/` |
+| `bisb_quicklook.m` | 新数据的标准首批图：两张列归一化热图（\|q\| ≤ 0.015、≤ 0.005）、堆积图、q = 0 单谱（含扣 ZLP 尾巴后的峰位）和 `summary.txt`，输出到 `paper_results/quicklook/` |
+
+新数据的流程：原始数据放进项目根目录的数据文件夹（加进 `.gitignore`），在 `bisb_datasets.m` 里加一条，再运行 `bisb_quicklook('<id>')`。需要别的图时，先用下面这些通用函数，不要另写对齐、取谱或画热图的代码：
+
+| `src/` 里的函数 | 作用 |
+|---|---|
+| `qe_align_sequence_frames` | 读原始序列，逐帧整数对齐 ZLP，测束斑 q 漂移（`b1_low_branch_matlab` 的 prepare 就调用它） |
+| `qe_transport_frames` | 把对齐后的帧按 q 分箱，跟随每帧的漂移 |
+| `qe_pm_spectra` | 某些 \|q\| 处 +q、−q 两侧的平均谱 |
+| `qe_zlp_center` | ZLP 中心和半高宽（P1b/P2a 的三点对数抛物线规则） |
+| `qe_powerlaw_tail` | 在一个能量窗里拟合 ZLP 幂律尾巴；窗口要避开约 130 meV 的积碳声子 |
+| `qe_peak_apex` | 不靠模型的峰顶位置（平滑后找最显著的局部极大，再在原始数据上用抛物线细化） |
+| `qe_plot_heatmap` | 列面积归一化的 q–E 热图，按分位数定色标，导出 PNG 和 PDF（线性或 log） |
+
 ## 当前：B1 低 q（2026-10-09 起）
 
 | 批次 | 脚本 | 作用 |
