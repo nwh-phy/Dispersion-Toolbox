@@ -13,7 +13,7 @@ function dataset = load_qe_dataset(path, dqOverride, options)
 %   For .npy files, the full preprocessing pipeline runs:
 %   read → frame sum → q crop → ZLP alignment → energy calibration
 %
-%   See also: load_npy_session, make_qe_struct, read_npy
+%   See also: load_raw_session, make_qe_struct, read_npy
 arguments
     path {mustBeTextScalar}
     dqOverride (1,1) double = NaN
