@@ -5,11 +5,11 @@ function file = b1_fullq_build(session, run_root)
 % measured noise model. Writes <run_root>/stage1/frames_<session>.mat.
 root=bisb_find_project_root(fileparts(mfilename('fullpath'))); addpath(genpath(fullfile(root,'src')));
 p2=fullfile(root,'paper_results','b1_components_v2','20260912T021813081Z_31fcc543_18af79b6');
-switch session
- case '590_PL2_10w', raw_path=fullfile(root,'20260120 BiSb','590 PL2 10w 0.004 10sx300','Sequence EELS Image 274.npy');
- case 'n0_PL2_10w_repeat', raw_path=fullfile(root,'20260120 BiSb','n0 pl2 10w 0.004 10s x300','Sequence EELS Image 272.npy');
- otherwise, error('b1_fullq_build:Session','Unknown session %s',session);
+% Only the 10w sessions with a C20 v2 L1_minimal calibration (p2) can be built here.
+if ~any(strcmp(session,{'590_PL2_10w','n0_PL2_10w_repeat'}))
+ error('b1_fullq_build:Session','Unknown session %s',session);
 end
+raw_path=bisb_datasets(session).path;
 cfg=b1_fullq_config(); out=fullfile(run_root,'stage1'); if ~isfolder(out), mkdir(out); end
 l=load(fullfile(p2,session,'L1_minimal.mat')); qe=l.d.qe; E=qe.energy_meV(:);
 grid=cfg.q_grid; targets=[-fliplr(grid) grid];

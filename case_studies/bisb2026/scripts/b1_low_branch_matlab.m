@@ -55,7 +55,7 @@ end
 end
 
 function prepare(s,cfg,file)
-source=fullfile(cfg.data_root,'20260120 BiSb',s.folder,s.file);
+source=fullfile(cfg.data_root,bisb_datasets(s.id).set,s.folder,s.file);
 signature=struct('source',source,'source_sha256',s.sha256,'session',s,'preparation',cfg.preparation, ...
  'alignment_code',b1_sha256({'file',which('qe_zlp_integer_align')}), ...
  'binning_code',b1_sha256({'file',which('qe_prepare_count_bins')}));
@@ -63,33 +63,15 @@ if isfile(file)
  L=load(file,'D');assert(isequaln(L.D.signature,signature),'b1_low_branch_matlab:Stale','Preparation changed');return
 end
 assert(strcmp(b1_sha256({'file',source}),s.sha256),'b1_low_branch_matlab:Source','Raw source hash changed');
-raw=read_npy(source);assert(ndims(raw)==3&&size(raw,2)==512&&size(raw,3)==1028,'Unexpected raw axes');
-meta=jsondecode(fileread(strrep(source,'.npy','.json')));ax=meta.spatial_calibrations;
-eidx=find(contains(string({ax.units}),'eV'),1,'last');
-Eraw=(ax(eidx).offset+(0:size(raw,3)-1)*ax(eidx).scale)'*1000;
-q=((1:size(raw,2))-s.zero)*s.dq;refq=abs(q)<=cfg.preparation.reference_q+1e-12;
-ref=squeeze(sum(double(raw(:,refq,:)),2)).';
-search=find(Eraw>=cfg.preparation.raw_zlp_search(1)&Eraw<=cfg.preparation.raw_zlp_search(2));
-[~,p]=max(sum(ref(search,:),2));origin=Eraw(search(p));
-selected=find(abs(q)<=cfg.preparation.q_max+.002+1e-12);
-X=permute(raw(:,selected,:),[3 1 2]);clear raw
-assert(all(isfinite(X(:)))&&all(X(:)<double(intmax('uint32'))),'Invalid detector samples');
-al=qe_zlp_integer_align(Eraw-origin,ref,X,cfg.preparation.alignment_window);clear X
-assert(all(al.valid),'b1_low_branch_matlab:Frames','Invalid ZLP frames require review');
-E=Eraw(al.support)-Eraw(al.reference_pixel);T=numel(al.valid);Q=q(selected);
-F=al.aligned;al=rmfield(al,'aligned');
-beam=zeros(1,T);
-for t=1:T,beam(t)=sum(ref(al.support(abs(E)<=100)+al.measured_offset_pixels(t),t));end
-assert(all(beam>0),'Nonpositive beam reference');
-elastic=squeeze(sum(F(abs(E)<=cfg.preparation.q_centroid_energy,:,:),1));
-central=abs(Q)<=cfg.preparation.q_centroid_range+1e-12;
-mu=sum(elastic(:,central).*Q(central),2)./sum(elastic(:,central),2);
-drift=movmedian(mu-median(mu),cfg.preparation.q_median_frames).';
-if ~cfg.preparation.do_q_drift,drift(:)=0;end
-profile=sum(elastic,1);[~,p]=max(profile);jj=p+(-2:2);
-w=profile(jj)/sum(profile(jj));x=Q(jj);probe=sqrt(max(sum(w.*(x-sum(w.*x)).^2)-s.dq^2/12,0));
+p=cfg.preparation;
+A=qe_align_sequence_frames(source,s.zero,s.dq,q_select=p.q_max+.002,reference_q=p.reference_q, ...
+ raw_zlp_search=p.raw_zlp_search,alignment_window=p.alignment_window, ...
+ q_centroid_range=p.q_centroid_range,q_centroid_energy=p.q_centroid_energy, ...
+ q_median_frames=p.q_median_frames,do_q_drift=p.do_q_drift);
+assert(A.raw_size(2)==512&&A.raw_size(3)==1028,'Unexpected raw axes');
+E=A.E;Q=A.Q;F=A.F;al=A.alignment;T=numel(al.valid);beam=A.beam;drift=A.drift_Ainv;probe=A.sigma_probe;
 qe=struct('q_Ainv',Q,'dq_Ainv',s.dq,'intensity',ones(1,numel(Q)), ...
- 'source_channel',selected,'energy_meV',0);
+ 'source_channel',A.selected,'energy_meV',0);
 low=qe_prepare_count_bins(qe,1,q_range_Ainv=[-cfg.preparation.native_max cfg.preparation.native_max], ...
  q_skip_Ainv=cfg.preparation.q_min);
 units=low.units;
@@ -101,21 +83,13 @@ for N=cfg.preparation.high_channels
  units=[units high.units]; %#ok<AGROW>
 end
 keep=E>=cfg.preparation.energy_range(1)&E<=cfg.preparation.energy_range(2);E=E(keep);F=F(keep,:,:);
-frames=zeros(numel(E),T,numel(units),'single');max_weight_error=0;
-for b=1:numel(units)
- width=units(b).q_width;center=units(b).q_Ainv;
- for t=1:T
-  left=center+drift(t)-width/2;right=center+drift(t)+width/2;
-  w=max(0,min(Q+s.dq/2,right)-max(Q-s.dq/2,left))/s.dq;
-  max_weight_error=max(max_weight_error,abs(sum(w)-units(b).source_q_count));
-  used=find(w>1e-12);frames(:,t,b)=single(reshape(F(:,t,used),numel(E),[])*w(used).');
- end
- units(b).N=units(b).source_q_count;
-end
+[frames,max_weight_error]=qe_transport_frames(F,Q,s.dq,[units.q_Ainv],[units.q_width],drift, ...
+ [units.source_q_count]);
+for b=1:numel(units),units(b).N=units(b).source_q_count;end
 assert(max_weight_error<1e-8,'q bin transport lost counts');
 D=struct('signature',signature,'session',s.id,'E',E,'q_native',Q,'units',units,'frames',frames, ...
  'beam',beam,'dq',s.dq,'h',s.h,'sigma_probe',probe,'drift_Ainv',drift, ...
- 'alignment',al,'energy_origin_meV',Eraw(al.reference_pixel),'train_frames',cfg.preparation.train_frames, ...
+ 'alignment',al,'energy_origin_meV',A.energy_origin_meV,'train_frames',cfg.preparation.train_frames, ...
  'max_weight_error',max_weight_error,'train_sigma',zeros(numel(E),numel(units)), ...
  'test_sigma',zeros(numel(E),numel(units)));
 for b=1:numel(units)
@@ -298,7 +272,7 @@ end
 end
 
 function verify_data(D,s,cfg,folder)
-source=fullfile(cfg.data_root,'20260120 BiSb',s.folder,s.file);
+source=fullfile(cfg.data_root,bisb_datasets(s.id).set,s.folder,s.file);
 assert(strcmp(b1_sha256({'file',source}),s.sha256),'Raw data changed');
 assert(all(isfinite(D.frames(:)))&&all(D.train_sigma(:)>0)&&all(D.test_sigma(:)>0),'Invalid prepared data');
 assert(D.max_weight_error<1e-8,'Bin weight mismatch');
