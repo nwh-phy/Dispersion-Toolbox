@@ -65,9 +65,9 @@ prof_al12=squeeze(sum(sum(A(abs(E)<=cfg.old_window,:,:),1),3));
 
 % ---- (2) energy centres: summed map c(q), per frame c_t(q), frame shifts
 Isum=sum(A,3); cq=zeros(1,nk); fwq=cq;
-for k=1:nk, [cq(k),fwq(k)]=local_centre(Isum(:,k),E); end
+for k=1:nk, [cq(k),fwq(k)]=qe_zlp_center(Isum(:,k),E); end
 ct=zeros(T,nk); fwt=ct;
-for t=1:T, for k=1:nk, [ct(t,k),fwt(t,k)]=local_centre(A(:,k,t),E); end, end
+for t=1:T, for k=1:nk, [ct(t,k),fwt(t,k)]=qe_zlp_center(A(:,k,t),E); end, end
 kc=find(abs(qs)<=cfg.centre_q_max+1e-9); wc=sum(Isum(abs(E)<=16,kc),1); wc=wc(:)/sum(wc);
 dE_core=(ct(:,kc)-cq(kc))*wc;
 kwg=find(abs(qs)>=cfg.wing_centre_q(1)-1e-9 & abs(qs)<=cfg.wing_centre_q(2)+1e-9);
@@ -77,8 +77,8 @@ for t=1:T
  y=A(:,k0,t); wv=local_window(E,dE,ct(t,k0),16); rmsE(t)=sqrt(sum((E-ct(t,k0)).^2.*y.*wv)/sum(y.*wv));
 end
 call=zeros(T,1); fwall=call;
-for t=1:T, [call(t),fwall(t)]=local_centre(sum(A(:,:,t),2),E); end
-[c_all,fw_all]=local_centre(sum(Isum,2),E); dE_all=call-c_all;
+for t=1:T, [call(t),fwall(t)]=qe_zlp_center(sum(A(:,:,t),2),E); end
+[c_all,fw_all]=qe_zlp_center(sum(Isum,2),E); dE_all=call-c_all;
 P1=readtable(fullfile(run_root,'p1b',['diag_' session],'frame_descriptors.csv'));
 fprintf('check vs P1b frame descriptors: max |centre diff| %.2e meV, max |FWHM diff| %.2e meV\n', ...
  max(abs(ct(:,k0)-P1.zlp_centre_meV)),max(abs(fwt(:,k0)-P1.zlp_fwhm_meV)));
@@ -212,7 +212,7 @@ TT=array2table(tie,'VariableNames',{'q','c_q_meV','dc_dq_meV_per_channel','beam_
  'measured_slope_on_dq_meV_per_channel','slope_on_wing_shift','R2','r_c_t_vs_dq'});
 writetable(TT,fullfile(out,'bending_vs_beam_position.csv'));
 cb=zeros(nb,nk); fwb=cb;
-for b=1:nb, Ib=sum(A(:,:,blk==b),3); for k=1:nk, [cb(b,k),fwb(b,k)]=local_centre(Ib(:,k),E); end, end
+for b=1:nb, Ib=sum(A(:,:,blk==b),3); for k=1:nk, [cb(b,k),fwb(b,k)]=qe_zlp_center(Ib(:,k),E); end, end
 writetable(array2table([qs(:) cq(:) fwq(:) cb.' fwb.'],'VariableNames',[{'q','c_all_meV','fwhm_all_meV'}, ...
  arrayfun(@(b) sprintf('c_block%d',b),1:nb,'UniformOutput',false),arrayfun(@(b) sprintf('fwhm_block%d',b),1:nb,'UniformOutput',false)]), ...
  fullfile(out,'block_channel_centres.csv'));
@@ -429,7 +429,7 @@ exportgraphics(f,fullfile(out,'fig7_block_shapes_vs_shift.png'),'Resolution',110
 cube=struct('E',E,'q',qs,'dq',dq,'note','J(E,channel,block): A1-aligned counts summed over the block frames; d: common-beam reference summed over the block');
 for nbk=[nb cfg.n_blocks_check]
  bk=ceil((1:T).'/(T/nbk)); J=zeros(numel(E),nk,nbk); d=zeros(1,nbk); cE=d; fE=d;
- for b=1:nbk, J(:,:,b)=sum(A(:,:,bk==b),3); d(b)=sum(ref(bk==b)); [cE(b),fE(b)]=local_centre(sum(J(:,:,b),2),E); end
+ for b=1:nbk, J(:,:,b)=sum(A(:,:,bk==b),3); d(b)=sum(ref(bk==b)); [cE(b),fE(b)]=qe_zlp_center(sum(J(:,:,b),2),E); end
  Pk=zeros(nbk,nk); pos=zeros(1,nbk); d0=jb(1).shape;
  for b=1:nbk
   Pk(b,:)=sum(P(bk==b,:,jw(1)),1);
@@ -453,17 +453,6 @@ fid=fopen(fullfile(out,'config.json'),'w'); fprintf(fid,'%s',jsonencode(meta,'Pr
 fprintf('P2a step 1 written to %s (%.0f s)\n',out,toc(t_start));
 end
 
-
-function [c, fw] = local_centre(y, E)
-% ZLP centre (log-parabola through the maximum within |E| < 40 meV) and FWHM
-% (linear interpolation), as b1_p1b_diag.
-y = y(:); dE = E(2) - E(1); [~, i0] = max(y .* (abs(E) < 40));
-ly = log(max(y(i0-1:i0+1), 1)); d = (ly(3) - ly(1)) / (2 * (2 * ly(2) - ly(1) - ly(3))); c = E(i0) + d * dE;
-h = y(i0) / 2; l1 = find(y(1:i0) < h, 1, 'last'); r1 = i0 - 1 + find(y(i0:end) < h, 1, 'first'); fw = NaN;
-if ~isempty(l1) && ~isempty(r1)
-    fw = interp1(y([r1-1 r1]), E([r1-1 r1]), h) - interp1(y([l1 l1+1]), E([l1 l1+1]), h);
-end
-end
 
 function wv = local_window(E, dE, c, w)
 % Fraction of each energy channel [E - dE/2, E + dE/2] inside [c - w, c + w];
