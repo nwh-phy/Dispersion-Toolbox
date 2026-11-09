@@ -10,7 +10,7 @@ function data = read_npy(filename)
 %   Based on npy-matlab (https://github.com/kwikteam/npy-matlab).
 %   Bundled here for self-contained use without external dependencies.
 %
-%   See also: load_npy_session, load_qe_dataset
+%   See also: load_qe_dataset, load_raw_session
 
 arguments
     filename {mustBeFile}
