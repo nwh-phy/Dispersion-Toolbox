@@ -13,8 +13,6 @@ cd('path/to/Dispersion-Toolbox')
 startup   % 自动加载 src/ 和 lib/ 路径
 ```
 
-如需外部 Nion 工具箱，复制 `toolbox_config.m.template` → `toolbox_config.m` 并设置路径。
-
 **环境要求**：MATLAB R2024b+，需要 Optimization Toolbox、Curve Fitting Toolbox、Signal Processing Toolbox、Image Processing Toolbox。
 
 ---
