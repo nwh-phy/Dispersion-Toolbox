@@ -1,8 +1,10 @@
 classdef QeSelectLowEnergyBranchTest < matlab.unittest.TestCase
     methods (TestClassSetup)
         function addProjectPath(testCase)
-            projectRoot = fileparts(fileparts(mfilename('fullpath')));
-            run(fullfile(projectRoot, 'startup.m'));
+            scriptsDir = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'scripts');
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(scriptsDir));
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(scriptsDir, 'legacy_202605')));
+            run(fullfile(bisb_find_project_root(scriptsDir), 'startup.m'));
         end
     end
 

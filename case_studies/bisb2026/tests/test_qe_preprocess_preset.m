@@ -3,9 +3,11 @@ tests = functiontests(localfunctions);
 end
 
 
-function setupOnce(testCase)
-project_root = fileparts(fileparts(mfilename('fullpath')));
-run(fullfile(project_root, 'startup.m'));
+function setupOnce(~)
+scripts_dir = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'scripts');
+addpath(scripts_dir);
+addpath(fullfile(scripts_dir, 'legacy_202605'));
+run(fullfile(bisb_find_project_root(scripts_dir), 'startup.m'));
 end
 
 

@@ -41,3 +41,13 @@ verifyNotEmpty(testCase, strfind(txt, 'no_PL2_20w_2film_gui_history_area_260506_
 verifyNotEmpty(testCase, strfind(txt, 'branch1_points.csv'));
 verifyEmpty(testCase, strfind(txt, 'branch3_points.csv'));      % B1 only since 18af79b
 end
+
+
+function testEpsilonSensitivityScriptKeepsOnlyB1(testCase)
+case_root = fileparts(fileparts(mfilename('fullpath')));
+src = fileread(fullfile(case_root, 'scripts', 'legacy_202605', 'run_epsilon_bg_sensitivity.m'));
+
+verifyTrue(testCase, contains(src, 'Refit B1 with different dielectric backgrounds'));
+verifyTrue(testCase, contains(src, 'branches = 1;'));
+verifyFalse(testCase, contains(src, 'branches = [1, 3];'));
+end

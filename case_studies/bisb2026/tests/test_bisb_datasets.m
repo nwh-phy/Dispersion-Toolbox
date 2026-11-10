@@ -53,6 +53,20 @@ verifyError(testCase, @() b1_low_branch_matlab_config(testCase.TestData.root, {'
 end
 
 
+function testFrozenC20SessionListAgreesWithTheRegistry(testCase)
+% legacy_c20/thesis_sessions.m is the session list the frozen C20 scripts read.
+case_root = fileparts(fileparts(mfilename('fullpath')));
+addpath(fullfile(case_root, 'scripts', 'legacy_c20'), fullfile(case_root, 'scripts', 'legacy_202605'));
+S = thesis_sessions();
+verifyEqual(testCase, sort({S.name}), sort({'590_PL2_10w', 'n0_PL2_10w_repeat', 'no_PL2_20w_2film'}));
+for s = S
+    d = bisb_datasets(s.name);
+    verifyEqual(testCase, s.path, fullfile(testCase.TestData.root, d.set, d.folder), s.name);
+    verifyEqual(testCase, s.dq_Ainv, d.dq, s.name);
+end
+end
+
+
 function testRawFilesMatchTheirHeaderWhenPresent(testCase)
 D = bisb_datasets();
 D = D(arrayfun(@(d) isfile(d.path), D));

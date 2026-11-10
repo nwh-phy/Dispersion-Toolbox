@@ -7,8 +7,8 @@
 | 位置 | 内容 | 状态 |
 |---|---|---|
 | 本目录顶层 | 2026-10 起的 B1 分析：全 q、adaptive-q、低 q 的 P1/P1b/P2a/P2b、简化流程检验 | 在用 |
-| `legacy_c20/` | C20 v2–v6（2026-09）和 v7 镜像检验 | 冻结 |
-| `legacy_202605/` | 论文期脚本（2026-03 至 05），以及只给它们用的 9 个函数（2026-10-21 从 `src/` 移来，见下） | 冻结 |
+| `legacy_c20/` | C20 v2–v6（2026-09）和 v7 镜像检验，以及只给它们用的 7 个函数（2026-11-10 从 `src/` 移来，见下） | 冻结 |
+| `legacy_202605/` | 论文期脚本（2026-03 至 05），以及只给它们用的 12 个函数（2026-10-21 和 2026-11-10 从 `src/` 移来，见下） | 冻结 |
 
 冻结的两批不再修改。v2、v4、v5 的入口脚本把自己和依赖文件的旧路径（`case_studies/bisb2026/scripts/<名字>.m`、`src/b1_*.m`）写进了溯源清单，移动后不能原样重跑；要重跑先改清单里的路径。
 
@@ -84,6 +84,8 @@ v5、v6 按固定路径读取上一版的运行目录并校验 ZIP 哈希，不�
 | v6 | `run_b1_physics_preview_v6.m` | `c20_v6_physics_figures.m`、`c20_v6_finish.m`、`c20_v6_literature.ps1` |
 | 共用 | `c20_packet_readback.m` | 在临时目录解压 ZIP、核对清单和哈希，验证后清理 |
 
+2026-11-10 从 `src/` 移来的函数（使用者只有 C20 脚本和它们的测试）：`qe_area_scopes.m`、`qe_component_mapping.m`、`qe_component_prediction.m`、`qe_fit_member_models.m`、`qe_member_prediction.m`、`qe_spectral_centroids.m`，以及 C20 读的三组数据清单 `thesis_sessions.m`（原 `src/thesis/`；路径和 dq 与 `bisb_datasets.m` 一致，由 `test_bisb_datasets.m` 核对）。v2、v4 的溯源清单里仍写着这些文件在 `src/` 下的旧路径。
+
 测试：`tests/C20*.m`、`tests/test_b1_component_pilot_v2.m`。
 
 ## 论文期（2026-03 至 05；`legacy_202605/`，冻结）
@@ -91,6 +93,8 @@ v5、v6 按固定路径读取上一版的运行目录并校验 ZIP 哈希，不�
 对应的测试在 `case_studies/bisb2026/tests/`。7 个 Lorentz 追踪脚本和 `run_b1_double_peak_binning_analysis.m` 靠 `addpath(script_dir)` 调用同目录的函数，所以这批整体放在一个文件夹里。
 
 2026-10-21 从 `src/` 移来的函数（使用者只有本批脚本、C20 v2 和测试）：`b1_double_peak_binning_extract.m` 及其子函数 `b1_double_peak_candidate_path_select.m`、`b1_double_peak_ridge_reference.m`，`b1_double_peak_repair_tracking_points.m`、`b1_double_peak_upper_stability_metrics.m`、`b1_peak_evidence_audit_classify.m`、`qe_recommend_lowq_background_configs.m`、`qe_summarize_lowq_background_eval.m`，以及早期的 10w/20w 对比脚本 `analyze_dispersion.m`。
+
+2026-11-10 从 `src/` 移来的函数（使用者只有 `run_bosman_pipeline.m`、C20 和测试）：`qe_select_low_energy_branch.m`、`qe_preprocess_preset.m`、`thesis_config.m`（原 `src/thesis/`，项目根目录改由 `bisb_find_project_root` 找）。`src/thesis/` 里其余的论文流水线（`run_thesis_pipeline` 等 8 个文件和 `scripts/run_thesis_pipeline.m`）同日删除：没有保留下来的输出，论文数值来自下表的 GUI 操作历史重现。
 
 | 用途 | 脚本 |
 |---|---|

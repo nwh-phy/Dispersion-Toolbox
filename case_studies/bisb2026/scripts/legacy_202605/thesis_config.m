@@ -4,7 +4,7 @@ function cfg = thesis_config()
 %   and legacy scripts.  All Chapter 3 numerical results should be generated
 %   from this configuration or from explicitly named sensitivity variants.
 
-root_dir = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+root_dir = bisb_find_project_root(fileparts(mfilename('fullpath')));
 
 cfg = struct();
 cfg.pipeline = struct( ...

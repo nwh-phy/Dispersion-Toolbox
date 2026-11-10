@@ -33,6 +33,21 @@ verifyHasText(testCase, src, ...
     'function [branches, refinement_log] = local_apply_session_refinement');
 end
 
+function testDispersionPlotsFitLineOnlyForB1(testCase)
+src = testCase.TestData.script_src;
+
+verifyHasText(testCase, src, 'if b == 1');
+verifyHasText(testCase, src, 'local_plot_supported_fit_curve(ax, best.fit, col, b);');
+end
+
+function testSupportsLegacyB2PointOverride(testCase)
+src = testCase.TestData.script_src;
+
+verifyHasText(testCase, src, 'local_apply_branch_point_overrides');
+verifyHasText(testCase, src, 'legacy_branch_points_260521');
+verifyHasText(testCase, src, 'branch_point_override_log.csv');
+end
+
 function verifyHasText(testCase, text, pattern)
 verifyTrue(testCase, contains(string(text), string(pattern)), ...
     sprintf('Expected source to contain: %s', pattern));
