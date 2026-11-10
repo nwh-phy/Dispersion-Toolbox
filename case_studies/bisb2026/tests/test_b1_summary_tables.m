@@ -7,6 +7,7 @@ end
 function setupOnce(testCase)
 case_root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(case_root, 'scripts'));
+b1_simple_root();
 testCase.TestData.run_root = tempname;
 mkdir(fullfile(testCase.TestData.run_root, 'stage5'));
 end

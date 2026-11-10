@@ -4,7 +4,7 @@ end
 
 function setupOnce(tc)
 case_root=fileparts(fileparts(mfilename('fullpath')));addpath(fullfile(case_root,'scripts'));
-root=bisb_find_project_root(case_root);run(fullfile(root,'startup.m'));
+root=b1_simple_root();run(fullfile(root,'startup.m'));
 tc.TestData.root=root;
 end
 

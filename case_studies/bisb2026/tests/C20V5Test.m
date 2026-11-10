@@ -1,7 +1,7 @@
 classdef C20V5Test < matlab.unittest.TestCase
  methods(TestClassSetup)
   function paths(t)
-   root=fileparts(fileparts(mfilename('fullpath')));
+   root=fileparts(fileparts(fileparts(fileparts(mfilename('fullpath')))));
    t.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(root,'src'),IncludingSubfolders=true));
    t.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(root,'case_studies','bisb2026','scripts')));
    t.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(root,'case_studies','bisb2026','scripts','legacy_c20')));

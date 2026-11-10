@@ -6,7 +6,7 @@ end
 function setupOnce(testCase)
 case_root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(case_root, 'scripts'));
-root = bisb_find_project_root(case_root);
+root = b1_simple_root();
 run(fullfile(root, 'startup.m'));
 testCase.TestData.root = root;
 end

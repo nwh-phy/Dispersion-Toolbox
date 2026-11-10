@@ -33,33 +33,34 @@ The root `thesis.pdf` predates the submitted PDF. A read-only comparison found t
 
 The user explicitly required on 2026-10-24 that new data processing, fitting, simulations, figures and validation use the existing MATLAB toolbox. Do not add or run Python analysis code, and reuse the existing MATLAB functions before writing a new implementation.
 
-- The Codex Python exploration of 2026-10-23/24 was removed on 2026-10-27 at the user's request. It survives only in the local tag `archive/codex-exploration-20261024` (`git worktree add <dir> archive/codex-exploration-20261024` to look at it) and is not evidence for the MATLAB pipeline. Its MATLAB low-branch analysis was kept: `b1_low_branch_matlab*` in `case_studies/bisb2026/scripts/`.
+- The Codex Python exploration of 2026-10-23/24 was removed on 2026-10-27 at the user's request. It survives only in the local tag `archive/codex-exploration-20261024` (`git worktree add <dir> archive/codex-exploration-20261024` to look at it) and is not evidence for the MATLAB pipeline. Its MATLAB low-branch analysis was kept: `b1_low_branch_matlab*` in `case_studies/bisb2026/scripts/b1_lowq/`.
 - The figure on page 4 of the 2026-10-25 weekly report, `01_low_component_count_dispersion.png`, came from that Python run. Its outputs are kept locally in `paper_results/b1_low_branch_python_20261024/`.
 - Run a batch in one MATLAB process with a cell-array task loop and a per-task `try/catch`, not one MATLAB launch per parameter combination. Keep at most 2–3 MATLAB processes at once; repeated macOS launches leave large `com.mathworks.matlab.code_sign_clone` caches.
 
 ## Code organization
 
-Agreed with the user on 2026-10-21, after the clean-up of the BiSb scripts (commits `db55a4d`, `a1fcebd`, `1628013`). The script index is `case_studies/bisb2026/scripts/README.md`.
+Agreed with the user on 2026-10-21, after the clean-up of the BiSb scripts (commits `db55a4d`, `a1fcebd`, `1628013`); layout and naming updated on 2026-11-10. The script index is `case_studies/bisb2026/scripts/README.md`: in-use analysis in `scripts/b1_lowq/`, the finished binned fits it still calls in `scripts/b1_binned/`, shared entry points (`bisb_*`) at the top level, frozen code in `legacy_*` with its own README.
 
 1. A new round of analysis adds a config function and calls the existing code. Do not copy the previous round's script and edit the copy; put what changes into the config or into a new function.
-2. When a helper would be copied into a second file, move it into its own function file instead: `src/` if it is generic q-EELS processing, otherwise the top level of `case_studies/bisb2026/scripts/`.
+2. When a helper would be copied into a second file, move it into its own function file instead: `src/` if it is generic q-EELS processing, otherwise `case_studies/bisb2026/scripts/` (the top level if several lines use it, else the line's folder).
 3. Pass the variants of a run as arguments, as a modified copy of the config struct (see `b1_p2b_slot_config` and `b1_p2b_fit(run_root, cfg, ocfg)`). Do not override a function with a same-name file placed earlier on the path, and do not pass settings through environment variables.
 4. Commit at the end of every analysis stage; do not leave scripts untracked across sessions. Find the project root with `bisb_find_project_root`, never an absolute `/Users/...` path. The data and `paper_results/` exist only in the main checkout, so analysis scripts run there; a worktree must not read uncommitted files of another checkout.
-5. When a line of analysis is finished, move its scripts into a `legacy_*` folder (`legacy_202605/`, `legacy_c20/`) and stop editing them.
-6. `src/` holds the GUI toolbox and generic functions only; BiSb-specific code lives in `case_studies/bisb2026/`.
+5. When a line of analysis is finished and the in-use scripts no longer call it, move its scripts into a `legacy_*` folder (`legacy_202605/`, `legacy_c20/`) with a README and stop editing them. Functions in `src/` that only frozen scripts use move with them.
+6. `src/` holds the GUI toolbox and generic functions only; BiSb-specific code lives in `case_studies/bisb2026/`. Likewise `tests/` covers `src/` only and tests of case-study code live in `case_studies/bisb2026/tests/`.
+   New scripts are named `b1_<line>_<action>.m` (or `bisb_*.m` when shared) and new tests `test_<function>.m`; a version goes into the config (`cfg.version`), not the file name. Existing files keep their names: old reports and the provenance records in `paper_results/` refer to them.
 7. Before committing a change to shared code, run the test files that cover it (new tests and the tests that call the changed functions) and prove a refactor with an old-versus-new equality check. Do not run the two full suites (`tests/`, `case_studies/bisb2026/tests`) unless the user asks: they take about 18 minutes and the GUI tests open many windows that stop the user's work (user, 2026-11-09). The latest full run is 2026-11-09, after the dataset-registry refactor: 214 core and 85 BiSb tests passed, with no failures or skips, on macOS MATLAB R2026a in the main checkout. The last GUI integration baseline (2026-10-23: 205 core, 78 BiSb) is in `reports/gui_integration_20261023.md`. Do not apply these counts to older commits or data-free worktrees.
 8. The momentum calibration was corrected by a factor of 10 on 2026-05-14 (dq 0.0005 1/A per pixel at 10w, 0.00025 at 20w). A q threshold in 1/A written before that date selects 10x more channels than intended; divide it by 10 when reviving older code.
 9. Every acquisition is registered once in `case_studies/bisb2026/scripts/bisb_datasets.m` (folder, file, dq, q = 0 channel, slot acceptance h, SHA-256, sample, layers). Code takes the dataset id; do not write data folders, dq or q = 0 into scripts. For new data: put the raw files in a git-ignored data folder at the project root, add the registry entry, run `bisb_quicklook('<id>')` for the standard first figures.
 10. Search before writing: check `src/` and the script index for an existing function, and extend it with an option or a config instead of copying its body. Raw sequences go through `qe_align_sequence_frames` + `qe_transport_frames` (cached map: `bisb_frame_map`); spectra and figures through `qe_pm_spectra`, `qe_zlp_center`, `qe_powerlaw_tail`, `qe_peak_apex`, `qe_plot_heatmap`. One-off scripts that only make a figure live next to that figure in `paper_results/`, not in the repository.
 
-## GUI work
+## Branches and GUI work
 
-Updated with user approval on 2026-10-23 after integrating `gui-joint-fit`.
+Decided by the user on 2026-11-10; replaces the two-line arrangement of 2026-10-23 (`main` for the stable toolbox, `feat/zlp-joint-fit` for research).
 
-1. The main checkout stays on `feat/zlp-joint-fit` and is the daily entry point for both GUI and research. The accepted GUI changes are also on `main`; research-only scripts must not be merged into `main` without approval.
-2. Future generic GUI work starts from `main` on a short-lived branch/worktree. After verification and user authorization, merge into `main`, then integrate into the research branch. Retire completed worktrees after checking for uncommitted and ignored files. Do not recreate the retired `.claude/worktrees/gui-joint-fit` as a permanent GUI entry point.
-3. Shared fitting functions must remain consistent across the stable and research lines. Prefer integrating reviewed commits over maintaining manual copies.
-4. After integration, run the tests that cover the integrated change; propose the two full suites and run them only when the user agrees on a time (rule 7). Worktrees without data may skip real-data tests; run those in the main checkout or through a temporary external script, and keep generated results out of git.
+1. `main` is the only line: toolbox, GUI and BiSb analysis. The main checkout stays on `main` and is the daily entry point. `feat/zlp-joint-fit` is retired; do not recreate it or a permanent GUI worktree.
+2. Small changes are committed on `main`. A larger GUI or shared-code change starts on a short-lived branch (or worktree) from `main` and is merged back after its tests pass and the user authorizes the merge; retire the worktree after checking for uncommitted and ignored files.
+3. A tested state is marked with a tag `stable-YYYYMMDD`, and the tag message says which tests back it. Go back to a tag instead of keeping a second branch.
+4. Worktrees without data may skip real-data tests; run those in the main checkout or through a temporary external script, and keep generated results out of git.
 5. A new GUI control must stay optional when older history and session files are restored: a missing field takes the control's default.
 
 ## GUI implementation and result records

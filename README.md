@@ -19,8 +19,7 @@ interactive_qe_browser('path/to/eq3D.mat')
 interactive_qe_browser('path/to/qe_session.mat')
 ```
 
-主目录的 `feat/zlp-joint-fit` 已整合新版 GUI；稳定工具箱代码也在 `main`。
-旧 GUI worktree 已移除。若 MATLAB 此前加载过它，请在新的 MATLAB 会话中从主目录启动。
+代码只有 `main` 一条线，工具箱和 BiSb 分析都在上面；测试过的稳定点用 `stable-YYYYMMDD` 标签标记。
 
 要求 MATLAB R2024b+，以及 Optimization、Curve Fitting、Signal Processing、Image Processing Toolbox。
 近期验证环境为 macOS / MATLAB R2026a。

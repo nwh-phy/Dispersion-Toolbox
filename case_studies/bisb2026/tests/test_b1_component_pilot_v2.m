@@ -2,7 +2,7 @@ function tests=test_b1_component_pilot_v2
 tests=functiontests(localfunctions);
 end
 function setupOnce(~)
-root=fileparts(fileparts(mfilename('fullpath'))); addpath(genpath(fullfile(root,'src')));
+root=fileparts(fileparts(fileparts(fileparts(mfilename('fullpath'))))); addpath(genpath(fullfile(root,'src')));
 addpath(fullfile(root,'case_studies','bisb2026','scripts','legacy_202605'));
 end
 function q=fixture(dq)

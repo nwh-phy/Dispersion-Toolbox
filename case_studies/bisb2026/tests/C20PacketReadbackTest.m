@@ -6,7 +6,7 @@ classdef C20PacketReadbackTest < matlab.unittest.TestCase
     end
     methods (TestMethodSetup)
         function setupPacket(t)
-            project=fileparts(fileparts(mfilename('fullpath')));
+            project=fileparts(fileparts(fileparts(fileparts(mfilename('fullpath')))));
             t.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(project,'case_studies','bisb2026','scripts')));
             t.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile(project,'case_studies','bisb2026','scripts','legacy_c20')));
             fixture=t.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
