@@ -23,8 +23,7 @@ interactive_qe_browser('path/to/qe_session.mat')
 旧 GUI worktree 已移除。若 MATLAB 此前加载过它，请在新的 MATLAB 会话中从主目录启动。
 
 要求 MATLAB R2024b+，以及 Optimization、Curve Fitting、Signal Processing、Image Processing Toolbox。
-近期验证环境为 macOS / MATLAB R2026a。如需外部 Nion 工具箱，复制
-`toolbox_config.m.template` 为本地 `toolbox_config.m` 并填写实际存在的路径。
+近期验证环境为 macOS / MATLAB R2026a。
 
 ## 日常流程
 

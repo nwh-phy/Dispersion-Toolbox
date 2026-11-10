@@ -6,7 +6,7 @@ function ui_handles = qe_browser_ui(cb)
 %   cb  — struct of callback function handles:
 %         .on_load_data, .on_save_session, .on_load_session, .on_build_views, .on_undo, .on_reset_stage,
 %         .on_display_change, .on_normalization_change, .on_dq_override_changed,
-%         .on_qnorm_changed, .on_norm_method_changed, .on_auto_y_changed,
+%         .on_norm_method_changed, .on_auto_y_changed,
 %         .on_fit_param_change, .on_export_param_change, .on_correction_target_change,
 %         .on_pick_peaks, .on_undo_pt, .on_clear_pts, .on_save_pts,
 %         .on_load_pts, .on_split_branches, .on_fit_model, .on_export,
@@ -122,8 +122,8 @@ function ui_handles = qe_browser_ui(cb)
     reset_button.Layout.Column = 4;
 
     reset_stage = uidropdown(control_grid, ...
-        "Items", {'raw'}, ...
-        "Value", 'raw');
+        "Items", {'eq3d'}, ...
+        "Value", 'eq3d');
     reset_stage.Layout.Row = 1;
     reset_stage.Layout.Column = 5;
 
@@ -189,13 +189,6 @@ function ui_handles = qe_browser_ui(cb)
         "ValueChangedFcn", cb.on_display_change);
     q_step.Layout.Row = 2;
     q_step.Layout.Column = 10;
-
-    q_norm = uicheckbox(control_grid, ...
-        "Text", "Exp q equal.", ...
-        "Value", false, ...
-        "ValueChangedFcn", cb.on_qnorm_changed);
-    q_norm.Layout.Row = 2;
-    q_norm.Layout.Column = [11 12];
 
     % ═══════════ ROW 3: Energy & Y Axis ═══════════
     add_label(control_grid, 3, 1, "E min");
@@ -1055,7 +1048,6 @@ function ui_handles = qe_browser_ui(cb)
     ui_handles.SourceLabel = source_label;
     ui_handles.DqDisplay = dq_display;
     ui_handles.DqOverrideField = dq_override;
-    ui_handles.QNormCheckbox = q_norm;
     ui_handles.ZlpMinField = zlp_min;
     ui_handles.ZlpMaxField = zlp_max;
     ui_handles.RefAbsQMinField = ref_abs_q_min;
@@ -1105,7 +1097,6 @@ function ui_handles = qe_browser_ui(cb)
     ui_handles.WaterfallGainField = waterfall_gain;
     ui_handles.WaterfallResidualCheckbox = waterfall_residual;
     ui_handles.DispersionAxes = dispersion_axes;
-    ui_handles.ZLPAxes = dispersion_axes;
     ui_handles.PickPtsButton = pick_pts;
     ui_handles.UndoPtButton = undo_pt;
     ui_handles.ClearPtsButton = clear_pts;
