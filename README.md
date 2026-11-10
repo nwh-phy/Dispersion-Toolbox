@@ -49,7 +49,7 @@ interactive_qe_browser('path/to/qe_session.mat')
 
 通用代码在 `src/`，第三方库在 `lib/`，BiSb 专用代码在 `case_studies/bisb2026/`。
 实验数据 `20260120 BiSb/`、分析结果 `paper_results/` 和多数文献材料仅保存在本地。
-`archive/` 保存历史记录，日常操作从上表进入。
+`archive/` 是本地的历史记录（不随 Git 分发），日常操作从上表进入。
 
 ## 验证
 

@@ -51,10 +51,8 @@ output/
 outputs/
 paper_results/
 
-# Local-only archive (Windows storage-cleanup ledger, old agent scripts and notes)
-archive/storage_cleanup_20261007/
-archive/hermes_20260424/
-archive/old_notes/
+# Local-only archive: cleanup ledgers, old agent scripts and notes, archived outputs
+archive/
 
 # Experimental data directories (CONFIDENTIAL — never commit)
 20260120 BiSb/
@@ -72,5 +70,3 @@ docs/*
 docs/toolbox/*
 !docs/toolbox/*.md
 
-# Local reversible cleanup ledger and archived analysis outputs
-archive/local_cleanup_20261023/
