@@ -67,17 +67,10 @@ end
         state_out.dataset = [];
         state_out.sourceIdentity = [];
         state_out.acceptedFits = {};  % immutable audit records, not current-point membership
-        state_out.raw4d = [];
-        state_out.cropped4d = [];
-        state_out.aligned4d = [];
-        state_out.binned4d = [];
         state_out.eq3dQE = [];
         state_out.physicalQE = [];
         state_out.comparisonQE = [];
-        state_out.cropSpec = [];
         state_out.activeStage = "none";
-        state_out.stageHistory = {};  % stack of previous activeStage strings
-        state_out.paramHistory = {};  % kept for compat, not used
         state_out.opHistory = {};     % cell array of operation history entries
         state_out.selectedQIndex = 1;
         state_out.manualPickArmed = false;
@@ -112,7 +105,6 @@ end
         cb.on_display_change = @local_on_display_change;
         cb.on_normalization_change = @local_on_normalization_change;
         cb.on_dq_override_changed = @local_on_dq_override_changed;
-        cb.on_qnorm_changed = @local_on_qnorm_changed;
         cb.on_norm_method_changed = @local_on_norm_method_changed;
         cb.on_auto_y_changed = @local_on_auto_y_changed;
         cb.on_fit_param_change = @local_on_fit_param_change;
@@ -346,77 +338,6 @@ end
                     state.comparisonQE = [];
                     state.activeStage = "eq3d";
 
-                case "raw"
-                    if isempty(state.raw4d)
-                        error("interactive_qe_browser:MissingRawStage", ...
-                            "Raw stage is not available.");
-                    end
-                    state.cropSpec = [];
-                    state.cropped4d = [];
-                    state.aligned4d = [];
-                    state.binned4d = [];
-                    state.physicalQE = project_4d_to_qe_struct( ...
-                        state.raw4d, ...
-                        local_current_dq(), ...
-                        source_path=string(state.dataset.source_path), ...
-                        source_kind="raw", ...
-                        label=string(state.dataset.label), ...
-                        view_kind="physical", ...
-                        stage_name="raw");
-                    state.comparisonQE = [];
-                    state.activeStage = "raw";
-
-                case "crop"
-                    if isempty(state.cropped4d)
-                        error("interactive_qe_browser:MissingCropStage", ...
-                            "Crop stage is not available.");
-                    end
-                    state.aligned4d = [];
-                    state.binned4d = [];
-                    state.physicalQE = project_4d_to_qe_struct( ...
-                        state.cropped4d, ...
-                        local_current_dq(), ...
-                        source_path=string(state.dataset.source_path), ...
-                        source_kind="raw", ...
-                        label=string(state.dataset.label), ...
-                        view_kind="physical", ...
-                        stage_name="crop");
-                    state.comparisonQE = [];
-                    state.activeStage = "crop";
-
-                case "align"
-                    if isempty(state.aligned4d)
-                        error("interactive_qe_browser:MissingAlignStage", ...
-                            "Align stage is not available.");
-                    end
-                    state.binned4d = [];
-                    state.physicalQE = project_4d_to_qe_struct( ...
-                        state.aligned4d, ...
-                        local_current_dq(), ...
-                        source_path=string(state.dataset.source_path), ...
-                        source_kind="raw", ...
-                        label=string(state.dataset.label), ...
-                        view_kind="physical", ...
-                        stage_name="align");
-                    state.comparisonQE = [];
-                    state.activeStage = "align";
-
-                case "bin"
-                    if isempty(state.binned4d)
-                        error("interactive_qe_browser:MissingBinStage", ...
-                            "Bin stage is not available.");
-                    end
-                    state.physicalQE = project_4d_to_qe_struct( ...
-                        state.binned4d, ...
-                        local_current_dq(), ...
-                        source_path=string(state.dataset.source_path), ...
-                        source_kind="raw", ...
-                        label=string(state.dataset.label), ...
-                        view_kind="physical", ...
-                        stage_name="bin");
-                    state.comparisonQE = [];
-                    state.activeStage = "bin";
-
                 otherwise
                     error("interactive_qe_browser:UnknownResetStage", ...
                         "Unknown reset stage '%s'.", target_stage);
@@ -431,12 +352,6 @@ end
         catch ME
             local_show_error(ME, false);
         end
-    end
-
-
-    function local_push_stage_history()
-        % Push current stage onto history stack before a destructive operation
-        state.stageHistory{end+1} = char(state.activeStage);
     end
 
 
@@ -469,12 +384,6 @@ end
         if isempty(state.opHistory) || ~isequaln(state.opHistory{end}.snapshot, current)
             local_log_operation(label);
         end
-    end
-
-
-    function local_push_param_snapshot()
-        % Backwards-compatible wrapper — logs as "Param change"
-        local_log_operation("Param change");
     end
 
 
@@ -1195,26 +1104,11 @@ end
     end
 
 
-    function local_on_qnorm_changed(~, ~)
-        if ~local_has_raw_source()
-            ui.QNormCheckbox.Value = false;
-            return
-        end
-        try
-            local_log_operation(local_describe_changes());
-            local_rebuild_comparison(true);
-            local_update_all_views();
-        catch ME
-            local_show_error(ME, false);
-        end
-    end
-
-
     function local_on_normalization_change(~, ~)
         try
             local_log_operation(local_describe_changes());
             if ~isempty(state.dataset)
-                local_rebuild_comparison(local_has_raw_source() && ui.QNormCheckbox.Value);
+                local_rebuild_comparison(false);
             end
             local_update_all_views();
         catch ME
@@ -3624,40 +3518,6 @@ end
 
 
 
-    function local_plot_zlp_diagnostic()
-        ax = ui.ZLPAxes;
-        local_clear_axes(ax);
-
-        [diag_q, raw_metric, scale_factor] = local_get_zlp_diagnostic_data();
-        if isempty(diag_q)
-            title(ax, "ZLP vs q");
-            return
-        end
-
-        yyaxis(ax, "left");
-        plot(ax, diag_q, raw_metric, "-", ...
-            "Color", [0.8 0.25 0.1], ...
-            "LineWidth", 1.3);
-        ylabel(ax, "ZLP window metric");
-
-        yyaxis(ax, "right");
-        plot(ax, diag_q, scale_factor, "-", ...
-            "Color", [0.12 0.45 0.25], ...
-            "LineWidth", 1.2);
-        ylabel(ax, "Normalization factor");
-
-        selected_q = diag_q(min(max(state.selectedQIndex, 1), numel(diag_q)));
-        state.zlpSelectionLine = xline(ax, selected_q, "--", ...
-            "Color", [0.25 0.25 0.3], ...
-            "LineWidth", 1.1);
-
-        xlabel(ax, "q (1/A)");
-        grid(ax, "on");
-        title(ax, sprintf("ZLP diagnostic | window [%.1f, %.1f] meV", ...
-            ui.ZlpMinField.Value, ui.ZlpMaxField.Value));
-    end
-
-
     function local_on_map_clicked(ax, ~)
         qe = local_get_reference_qe();
         if isempty(qe) || isempty(state.physicalQE)
@@ -3971,62 +3831,6 @@ end
     end
 
 
-    function local_sync_action_buttons()
-        has_dataset = ~isempty(state.dataset);
-        has_raw = local_has_raw_source();
-
-        ui.CropButton.Enable = local_on_off(has_raw);
-        ui.AlignButton.Enable = local_on_off(has_raw);
-        ui.BinButton.Enable = local_on_off(has_raw);
-        ui.BuildViewsButton.Enable = local_on_off(has_dataset);
-        ui.ResetButton.Enable = local_on_off(has_dataset);
-        ui.UndoButton.Enable = local_on_off(numel(state.opHistory) >= 2);
-        local_sync_correction_controls();
-        ui.QNormCheckbox.Enable = local_on_off(has_raw);
-
-        if ~has_raw
-            ui.QNormCheckbox.Value = false;
-        end
-
-        if ~has_dataset
-            ui.SourceLabel.Text = "No data loaded";
-            ui.DqDisplay.Value = "";
-            ui.ResetStageDropdown.Items = {'raw'};
-            ui.ResetStageDropdown.Value = 'raw';
-            return
-        end
-
-        ui.SourceLabel.Text = state.dataset.label;
-        ui.DqDisplay.Value = sprintf("%.6f", local_current_dq());
-        local_sync_reset_stage_items();
-    end
-
-
-    function local_sync_reset_stage_items()
-        items = strings(0, 1);
-        if ~isempty(state.eq3dQE)
-            items(end + 1, 1) = "eq3d"; %#ok<AGROW>
-        else
-            items(end + 1, 1) = "raw"; %#ok<AGROW>
-            if ~isempty(state.cropped4d)
-                items(end + 1, 1) = "crop"; %#ok<AGROW>
-            end
-            if ~isempty(state.aligned4d)
-                items(end + 1, 1) = "align"; %#ok<AGROW>
-            end
-            if ~isempty(state.binned4d)
-                items(end + 1, 1) = "bin"; %#ok<AGROW>
-            end
-        end
-
-        item_cells = cellstr(items);
-        ui.ResetStageDropdown.Items = item_cells;
-        if ~any(strcmp(ui.ResetStageDropdown.Value, item_cells))
-            ui.ResetStageDropdown.Value = item_cells{end};
-        end
-    end
-
-
     function local_sync_controls_from_qe(qe)
         if isempty(qe)
             return
@@ -4072,12 +3876,10 @@ end
         if isempty(state.dataset)
             ui.StageLabel.Text = "Stage: none";
             ui.SourceLabel.Text = 'No data loaded';
-            local_sync_reset_stage_items();
             return
         end
         ui.StageLabel.Text = sprintf("Stage: %s", char(state.activeStage));
         ui.SourceLabel.Text = state.dataset.label;
-        local_sync_reset_stage_items();
     end
 
 
@@ -4093,13 +3895,8 @@ end
                 return
             end
 
-            if local_has_raw_source() && ui.QNormCheckbox.Value
-                ui.InfoLabel.Text = sprintf("Off-axis component uses manual symmetric reference bands [%.4f, %.4f] 1/A, reconstructs |q| < %.4f 1/A, and optionally uses experimental q equalization as the base.", ...
-                    ui.RefAbsQMinField.Value, ui.RefAbsQMaxField.Value, ui.RefAbsQMinField.Value);
-            else
-                ui.InfoLabel.Text = sprintf("Off-axis component uses manual symmetric reference bands [%.4f, %.4f] 1/A and reconstructs |q| < %.4f 1/A before q-wise normalization.", ...
-                    ui.RefAbsQMinField.Value, ui.RefAbsQMaxField.Value, ui.RefAbsQMinField.Value);
-            end
+            ui.InfoLabel.Text = sprintf("Off-axis component uses manual symmetric reference bands [%.4f, %.4f] 1/A and reconstructs |q| < %.4f 1/A before q-wise normalization.", ...
+                ui.RefAbsQMinField.Value, ui.RefAbsQMaxField.Value, ui.RefAbsQMinField.Value);
             return
         end
 
@@ -4109,17 +3906,6 @@ end
             ui.InfoLabel.Text = "Physical view keeps q=0 on-axis signal stronger when present. That ZLP enhancement is expected and intentionally preserved.";
         end
     end
-
-
-    function tf = local_has_raw_source()
-        tf = ~isempty(state.dataset) ...
-            && isfield(state.dataset, "source_kind") ...
-            && strcmpi(char(state.dataset.source_kind), "raw") ...
-            && ~isempty(state.raw4d);
-    end
-
-
-
 
 
     function dq_Ainv = local_current_dq()
@@ -4199,19 +3985,6 @@ end
     end
 
 
-    function working4d = local_get_working_4d()
-        if ~isempty(state.binned4d)
-            working4d = state.binned4d;
-        elseif ~isempty(state.aligned4d)
-            working4d = state.aligned4d;
-        elseif ~isempty(state.cropped4d)
-            working4d = state.cropped4d;
-        else
-            working4d = state.raw4d;
-        end
-    end
-
-
     function local_rebuild_comparison(show_progress)
         if nargin < 1
             show_progress = false;
@@ -4239,35 +4012,6 @@ end
                     base_qe = state.eq3dQE;
                     state.activeStage = "eq3d";
                     local_report_progress(progress_callback, 0.35, "Preparing eq3D comparison");
-
-                case "raw"
-                    working4d = local_get_working_4d();
-                    local_report_progress(progress_callback, 0.2, "Projecting physical q-E");
-                    state.physicalQE = project_4d_to_qe_struct( ...
-                        working4d, ...
-                        dq_Ainv, ...
-                        source_path=string(state.dataset.source_path), ...
-                        source_kind="raw", ...
-                        label=string(state.dataset.label), ...
-                        view_kind="physical", ...
-                        stage_name=string(state.activeStage));
-
-                    base_qe = state.physicalQE;
-                    if ui.QNormCheckbox.Value
-                        local_report_progress(progress_callback, 0.45, "Applying experimental q equalization");
-                        figures_before = findall(groot, "Type", "figure");
-                        normalized4d = Normalize_qdim_4D(working4d);
-                        local_close_new_figures(figures_before);
-                        base_qe = project_4d_to_qe_struct( ...
-                            normalized4d, ...
-                            dq_Ainv, ...
-                            source_path=string(state.dataset.source_path), ...
-                            source_kind="raw", ...
-                            label=string(state.dataset.label) + " | q-equalized base", ...
-                            view_kind="comparison", ...
-                            stage_name=string(state.activeStage), ...
-                            note="comparison q-equalized base");
-                    end
 
                 otherwise
                     error("interactive_qe_browser:UnsupportedBuildKind", ...
@@ -4319,23 +4063,6 @@ end
     function local_close_dialog(dialog)
         if ~isempty(dialog) && isvalid(dialog)
             close(dialog);
-        end
-    end
-
-
-    function local_close_new_figures(figures_before)
-        figures_after = findall(groot, "Type", "figure");
-        for idx = 1:numel(figures_after)
-            fig_handle = figures_after(idx);
-            if fig_handle == ui.Figure
-                continue
-            end
-            if any(fig_handle == figures_before)
-                continue
-            end
-            if isvalid(fig_handle)
-                close(fig_handle);
-            end
         end
     end
 
@@ -4576,22 +4303,6 @@ end
     end
 
 
-    function dE = local_energy_step(energy_axis)
-        energy_axis = double(energy_axis(:));
-        if numel(energy_axis) < 2
-            dE = 1;
-            return
-        end
-        dE = median(abs(diff(energy_axis)), "omitnan");
-        if ~isfinite(dE) || dE <= 0
-            dE = 1;
-        end
-    end
-
-
-
-
-
     function local_include_in_y_limits(ax, values)
         % Widen the current y limits, if needed, to contain values.
         values = values(isfinite(values));
@@ -4638,67 +4349,6 @@ end
         end
 
         ylim(ax, [lower_limit, upper_limit]);
-    end
-
-
-    function q_indices = local_waterfall_indices(qe)
-        q_axis = double(qe.q_Ainv(:)).';
-        q_min = min(ui.QStartField.Value, ui.QEndField.Value);
-        q_max = max(ui.QStartField.Value, ui.QEndField.Value);
-        q_step = max(ui.QStepField.Value, eps);
-
-        targets = q_min:q_step:q_max;
-        if isempty(targets)
-            targets = q_min;
-        end
-
-        q_indices = zeros(1, numel(targets));
-        for idx = 1:numel(targets)
-            [~, q_indices(idx)] = min(abs(q_axis - targets(idx)));
-        end
-        q_indices = unique(q_indices, "stable");
-
-        if isempty(q_indices)
-            [~, q_indices] = min(abs(q_axis - mean([q_min, q_max])));
-        end
-    end
-
-
-    function [diag_q, raw_metric, scale_factor] = local_get_zlp_diagnostic_data()
-        if ~isempty(state.comparisonQE) ...
-                && isfield(state.comparisonQE, "raw_window_metric") ...
-                && isfield(state.comparisonQE, "normalization_factor")
-            diag_q = state.comparisonQE.q_Ainv;
-            raw_metric = double(state.comparisonQE.raw_window_metric(:)).';
-            scale_factor = double(state.comparisonQE.normalization_factor(:)).';
-            return
-        end
-
-        qe = local_get_reference_qe();
-        if isempty(qe)
-            diag_q = [];
-            raw_metric = [];
-            scale_factor = [];
-            return
-        end
-
-        diag_q = qe.q_Ainv;
-        raw_metric = local_compute_window_metric(qe);
-        scale_factor = ones(size(raw_metric));
-    end
-
-
-    function metric = local_compute_window_metric(qe)
-        [mask, energy_axis] = local_energy_mask_for_window(qe, [ui.ZlpMinField.Value, ui.ZlpMaxField.Value]);
-        metric = zeros(1, size(qe.intensity, 2));
-        for q_index = 1:size(qe.intensity, 2)
-            spectrum = max(double(qe.intensity(mask, q_index)), 0);
-            if numel(energy_axis) > 1
-                metric(q_index) = trapz(energy_axis, spectrum);
-            else
-                metric(q_index) = sum(spectrum);
-            end
-        end
     end
 
 
