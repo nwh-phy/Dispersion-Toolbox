@@ -57,7 +57,7 @@ addpath(genpath(fullfile(pwd, 'case_studies', 'bisb2026')))
 | P2b 出图 | `b1_p2b_lossmap_fig`（调用 `b1_p2b_intrinsic_L`） | — | 实测计数、正向模型、本征 L(Q,E)、谱形残差四联 q–E 图，一条单谱扣除运动学因子前后的对比 |
 | P2b 的狭缝接收 h | `b1_p2b_h66_run`、`b1_p2b_h66_conv`、`b1_p2b_hscan_run`、`b1_p2b_hscan_summary` | `b1_p2b_slot_config('h66')` 或 `('hscan', h)`，在 `b1_p2b_config`、`b1_p2a_operator_config` 的基础上改出两份配置 | `p2b/`；`reports/p2b_hscan_20261017.md` |
 | 简化流程：SI 式简单模型在多小的 q 还可靠 | `b1_simple_s0` | `b1_simple_config` | `simple/`；`reports/simple_pipeline_S0_20261017.md` |
-| 低能支：直接读原始 NPY，比较一个和两个 B1 响应 | `b1_low_branch_matlab(stage, …)`，`stage` 为 `prepare`、`pilot`、`fit`、`bootstrap`、`report`、`verify` | `b1_low_branch_matlab_config` | `paper_results/b1_low_branch_matlab_20261024/`；`reports/b1_low_branch_matlab_20261024.md` |
+| 低能支：直接读原始 NPY，比较一个和两个 B1 响应 | `b1_low_branch_matlab(stage, …)`，`stage` 为 `prepare`、`pilot`、`fit`、`bootstrap`、`report`、`verify` | `b1_low_branch_matlab_config`；Bi1117_20w 用 `b1_low_branch_bi1117_config` | `paper_results/b1_low_branch_matlab_20261024/`；`reports/b1_low_branch_matlab_20261024.md`；Bi1117_20w：`paper_results/b1_low_branch_bi1117_20261117/`、`reports/bi1117_20w_20261117.md` |
 | 一层 / 两层对比 | `b1_layer_fig`（逐点图）、`b1_layer_compare`（分 q 段的平均表） | — | `stage5/figures/`；`reports/layer_1L_2L_20261017.md` |
 | 单项检验 | `b1_kinematic_ridge`（列归一化 q–E 图的峰脊）、`b1_whole_band_check`（不分两支的整个 B1 带）、`b1_single_divide_fig`（单个通道直接除以运动学因子，不拟合） | — | — |
 
