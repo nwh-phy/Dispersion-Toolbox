@@ -67,3 +67,10 @@ verifyEqual(testCase, trapz(info.E, info.map, 1), ones(1, 13), 'RelTol', 1e-12);
 verifyLessThan(testCase, info.clim(1), info.clim(2));
 rmdir(fileparts(base), 's');
 end
+
+function testPeakApexRejectsOverSubtractedTail(testCase)
+E=(0:4:1800)';
+[p,info]=qe_peak_apex(E,-ones(size(E)),[380 1200]);
+verifyTrue(testCase,isnan(p));
+verifyEqual(testCase,info.reason,'no positive signal in the peak window');
+end

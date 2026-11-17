@@ -23,6 +23,7 @@ arguments
     opts.log (1,1) logical = false
     opts.title (1,:) char = ''
     opts.visible (1,1) logical = false
+    opts.q_label (1,:) char = 'q (Å^{-1})'
 end
 assert(isequal(size(M), [numel(E) numel(q)]), 'qe_plot_heatmap:Size', 'M must be numel(E) x numel(q)');
 nw = opts.norm_window; if any(isnan(nw)), nw = opts.e_window; end
@@ -49,7 +50,7 @@ if opts.log
 else
     cb.Label.String = sprintf('Intensity / area in %g–%g meV (meV^{-1})', nw);
 end
-xlabel(ax, 'q (Å^{-1})'); ylabel(ax, 'Energy loss (meV)');
+xlabel(ax, opts.q_label); ylabel(ax, 'Energy loss (meV)');
 xlim(ax, [min(qs) max(qs)] + [-0.5 0.5]*dq); ylim(ax, [min(es) max(es)]);
 if ~isempty(opts.title), title(ax, opts.title, 'FontWeight', 'normal', 'Interpreter', 'none'); end
 folder = fileparts(out_base); if ~isempty(folder) && ~isfolder(folder), mkdir(folder); end

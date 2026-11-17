@@ -20,6 +20,9 @@ arguments
 end
 e = NaN; info = struct('reason', '', 'prominence', NaN, 'coarse', NaN);
 ys = movmean(y, opts.smooth); w = find(E >= window(1) & E <= window(2));
+if isempty(w) || ~any(isfinite(ys(w)) & ys(w) > 0)
+    info.reason = 'no positive signal in the peak window'; return
+end
 [tf, pr] = islocalmax(ys(w), 'MinProminence', opts.min_prominence * max(ys(w)));
 tf([1 end]) = false;
 if ~any(tf), info.reason = 'no interior maximum'; return; end

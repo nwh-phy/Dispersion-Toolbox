@@ -29,12 +29,17 @@ function testEntriesAreComplete(testCase)
 D = bisb_datasets();
 for k = 1:numel(D)
     d = D(k);
-    verifyGreaterThan(testCase, d.dq, 0, d.id);
-    verifyEqual(testCase, d.zero, round(d.zero), d.id);
-    verifyTrue(testCase, d.zero >= 1 && d.zero <= 512, d.id);
+    if endsWith(d.file,'.dm4')
+        verifyTrue(testCase, isnan(d.dq) && isnan(d.zero), d.id);
+        verifyTrue(testCase, contains(d.dq_status,'uncalibrated'), d.id);
+    else
+        verifyGreaterThan(testCase, d.dq, 0, d.id);
+        verifyEqual(testCase, d.zero, round(d.zero), d.id);
+        verifyTrue(testCase, d.zero >= 1 && d.zero <= 512, d.id);
+    end
     verifyMatches(testCase, d.sha256, '^[0-9a-f]{64}$');
     verifyEqual(testCase, d.path, fullfile(testCase.TestData.root, d.set, d.folder, d.file));
-    verifyTrue(testCase, endsWith(d.file, '.npy'), d.id);
+    verifyTrue(testCase, endsWith(d.file, {'.npy','.dm4'}), d.id);
     verifyTrue(testCase, isnan(d.h) || d.h > 0, d.id);
 end
 end
@@ -72,6 +77,11 @@ D = bisb_datasets();
 D = D(arrayfun(@(d) isfile(d.path), D));
 assumeNotEmpty(testCase, D, 'No raw data on this machine');
 for d = D
+    if endsWith(d.file,'.dm4')
+        fid=fopen(d.path,'r','ieee-be'); version=fread(fid,1,'uint32'); fclose(fid);
+        verifyEqual(testCase,version,4,d.id);
+        continue
+    end
     fid = fopen(d.path, 'r'); header = fread(fid, 160, '*char')'; fclose(fid);
     shape = regexp(header, '''shape'': \((\d+), (\d+), (\d+)\)', 'tokens', 'once');
     verifyEqual(testCase, str2double(shape), [d.n_frames 512 1028], d.id);

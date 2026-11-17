@@ -84,3 +84,15 @@ addpath(genpath(fullfile(pwd, 'case_studies', 'bisb2026')))
 - 新测试叫 `test_<被测函数>.m`，放 `case_studies/bisb2026/tests/`。项目根目录的 `tests/` 只测 `src/`。
 - 旧文件不改名：旧报告和 `paper_results/` 里的溯源记录按名字引用它们。
 - 一条分析线做完后整体移进 `legacy_*`，并在那里写一份 README；前提是在用的脚本不再调用它。
+
+## 宽动量 slot 扫描（2026-11-17）
+
+`bisb_slot_analyze(bisb_slot_config())` 读取登记项 `Bi1117_slot` 的四维 DM4，
+复用 `qe_zlp_integer_align`、`qe_zlp_center`、`qe_powerlaw_tail`、`qe_peak_apex`
+和 `qe_plot_heatmap`。逐扫描位置、逐探测器通道校正弹性线；8 通道分箱后
+检查背景窗口敏感性，并按 19 个空间扫描行重采样。结果独立写入
+`paper_results/bi_slot_20261117/<时间戳>/`，不覆盖旧输出。
+
+本次纯 Bi、四方相是用户给定的信息；层数和衍射指标未知。DM4 没有动量
+标定，横轴保留探测器通道，`dq/zero/h` 登记为 NaN；不能直接调用旧的
+低 q NPY 流程。原始数据是 19×19 空间扫描，不是 361 次同位置重复采集。
