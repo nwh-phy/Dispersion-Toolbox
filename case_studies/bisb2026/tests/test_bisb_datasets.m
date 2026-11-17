@@ -53,7 +53,7 @@ for s = cfg.session
     verifyEqual(testCase, [s.dq s.zero s.h], [d.dq d.zero d.h]);
     verifyEqual(testCase, {s.folder, s.file, s.sha256}, {d.folder, d.file, d.sha256});
 end
-verifyError(testCase, @() b1_low_branch_matlab_config(testCase.TestData.root, {'Bi1107_10w'}), ...
+verifyError(testCase, @() b1_low_branch_matlab_config(testCase.TestData.root, {'Bi1117_slot'}), ...
     'b1_low_branch_matlab_config:NoSlot');
 end
 

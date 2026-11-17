@@ -21,6 +21,7 @@ arguments
     opts.out_dir (1,:) char = ''
 end
 S = bisb_frame_map(id); d = S.dataset; E = S.E(:); q = S.q;
+ns = round(44 / median(diff(E))); ns = ns + 1 - mod(ns, 2);   % 44 meV moving mean: 11 channels at 4 meV, 21 at 2 meV
 root = bisb_find_project_root(fileparts(mfilename('fullpath')));
 out_dir = opts.out_dir;
 if isempty(out_dir)
@@ -37,7 +38,7 @@ h2 = qe_plot_heatmap(E, q, S.M, fullfile(out_dir, 'heatmap_q005'), q_window=[-0.
 % stacked spectra
 qa = 0:0.001:0.015; [P, ok] = qe_pm_spectra(S.M, q, qa); qa = qa(ok); P = P(:, ok);
 for i = 1:numel(qa)
-    y = movmean(P(:, i), 11); P(:, i) = y / mean(y(E >= 400 & E <= 1700));
+    y = movmean(P(:, i), ns); P(:, i) = y / mean(y(E >= 400 & E <= 1700));
 end
 st = qe_prepare_stacked_spectra(E, P, qa, struct('q_start', 0, 'q_end', 0.015, 'q_step', 0.001, 'offset', 1.0));
 fig = local_figure([50 50 800 1000]); ax = axes(fig); hold(ax, 'on');
@@ -54,12 +55,12 @@ local_export(fig, fullfile(out_dir, 'stack'));
 
 % q = 0 spectrum, tail subtraction and peak - ZLP
 y = qe_pm_spectra(S.M, q, 0); [zc, zfw] = qe_zlp_center(y, E);
-raw_apex = qe_peak_apex(E, y, [250 1000]) - zc;
+raw_apex = qe_peak_apex(E, y, [250 1000], smooth=ns) - zc;
 nb = size(opts.bg_windows, 1); bg_apex = nan(1, nb); bg_r = nan(1, nb); bg_neg = nan(1, nb); sub = zeros(numel(E), nb);
 for k = 1:nb
     [bg, bg_r(k)] = qe_powerlaw_tail(E, y, opts.bg_windows(k, :)); sub(:, k) = y - bg;
-    bg_apex(k) = qe_peak_apex(E, sub(:, k), [250 1000]) - zc;
-    m = E > opts.bg_windows(k, 2) & E <= 1000; bg_neg(k) = min(movmean(sub(m, k), 11)) / max(movmean(sub(m, k), 11));
+    bg_apex(k) = qe_peak_apex(E, sub(:, k), [250 1000], smooth=ns) - zc;
+    m = E > opts.bg_windows(k, 2) & E <= 1000; bg_neg(k) = min(movmean(sub(m, k), ns)) / max(movmean(sub(m, k), ns));
 end
 fig = local_figure([50 50 1400 560]);
 tl = tiledlayout(fig, 1, 2, 'TileSpacing', 'compact', 'Padding', 'compact');
@@ -69,7 +70,7 @@ xlim(ax, [-200 1800]); xlabel(ax, 'Energy loss (meV)'); ylabel(ax, 'counts');
 title(ax, [ttl ', q = 0'], 'FontWeight', 'normal', 'FontSize', 11, 'Interpreter', 'none');
 ax = nexttile(tl); hold(ax, 'on'); m = E >= 150 & E <= 1800; cc = lines(nb);
 for k = 1:nb
-    plot(ax, E(m) - zc, movmean(sub(m, k), 11), 'Color', cc(k, :), 'LineWidth', 1.5, 'DisplayName', ...
+    plot(ax, E(m) - zc, movmean(sub(m, k), ns), 'Color', cc(k, :), 'LineWidth', 1.5, 'DisplayName', ...
         sprintf('tail fitted %g–%g meV (r = %.2f), peak %.0f meV', opts.bg_windows(k, :), bg_r(k), bg_apex(k)));
     if isfinite(bg_apex(k)), xline(ax, bg_apex(k), ':', 'Color', cc(k, :), 'LineWidth', 1.2, 'HandleVisibility', 'off'); end
 end
