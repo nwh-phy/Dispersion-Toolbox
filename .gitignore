@@ -56,8 +56,9 @@ archive/
 
 # Experimental data directories (CONFIDENTIAL — never commit)
 20260120 BiSb/
-20261107 Bi/
+20261107 Bi
 20261117 Bi slot
+20261117 Bi qEELS
 graphene/
 docs/
 figures/

@@ -25,7 +25,7 @@ addpath(genpath(fullfile(pwd, 'case_studies', 'bisb2026')))
 
 | 本目录的函数 | 作用 |
 |---|---|
-| `bisb_datasets.m` | 唯一的数据集登记表：每次采集的文件夹、`.npy`、dq、q = 0 列、狭缝接收 h、SHA-256、样品和层数。分析代码按 id 取，脚本里不写路径、dq 或 q = 0。现有 id：`590_PL2_10w`（`590`）、`n0_PL2_10w_repeat`（`n0`）、`no_PL2_20w_2film`（`20w`）、`Bi1107_10w`、`Bi1107_20w` |
+| `bisb_datasets.m` | 唯一的数据集登记表：每次采集的文件夹、`.npy`、dq、q = 0 列、狭缝接收 h、SHA-256、样品和层数。分析代码按 id 取，脚本里不写路径、dq 或 q = 0。现有 id：`590_PL2_10w`（`590`）、`n0_PL2_10w_repeat`（`n0`）、`no_PL2_20w_2film`（`20w`）、`Bi1107_10w`、`Bi1107_20w`、`Bi1117_20w`、`Bi1117_slot` |
 | `bisb_frame_map.m` | 某个数据集逐帧对齐、按束斑漂移分箱后的 q–E 计数图（另有按时间分块的求和），缓存在 `paper_results/frame_maps/` |
 | `bisb_quicklook.m` | 新数据的标准首批图：两张列归一化热图（\|q\| ≤ 0.015、≤ 0.005）、堆积图、q = 0 单谱（含扣 ZLP 尾巴后的峰位）和 `summary.txt`，输出到 `paper_results/quicklook/` |
 | `bisb_find_project_root.m` | 找项目根目录（含 `startup.m` 和 `src/` 的最近一层） |
