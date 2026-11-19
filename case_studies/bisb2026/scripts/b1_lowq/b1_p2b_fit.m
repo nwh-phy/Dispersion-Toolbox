@@ -19,6 +19,9 @@ function out = b1_p2b_fit(run_root, cfg, ocfg, replay)
 % modified copies (b1_p2b_slot_config). Only cfg names the output folder. Give each
 % operator configuration its own cfg.version before fitting.
 % Pass a saved main-variant fit as replay to evaluate it without writing files.
+% cfg.predict_block opts into training without cfg.lobo_block, using its known
+% exposure and operator for prediction. cfg.n_branch optionally selects one DL.
+% replay.material evaluates a supplied intrinsic model and residues without fitting.
 % Output: <run_root>/p2b/fit_<session>_<config hash>/.
 root=bisb_find_project_root(fileparts(mfilename('fullpath'))); addpath(genpath(fullfile(root,'src')));
 if nargin<1, run_root=[]; end
@@ -38,6 +41,8 @@ L=load(fullfile(ind,'p2a_cube.mat'),'cube'); cube=L.cube; q=cube.q(:).'; dq=cube
 RR=load(fullfile(rd,'response.mat'),'R','J6'); R=RR.R; J6=RR.J6;
 ie=arrayfun(@(v) find(abs(q-v)<1e-9),cfg.exit_q); ni=numel(ie);
 intr0=qe_lowq_joint_forward('intrinsic','Qn_E0',cfg.nodes.E0,'Qn_G',cfg.nodes.G,'Qn_A',cfg.nodes.A);
+strict=isfield(cfg,'predict_block') && cfg.predict_block;
+if isfield(cfg,'n_branch'), intr0.n_branch=cfg.n_branch; end
 base=struct('blocking','b6','variant','slice','ytype','gauss','wide','on','ext','const','n_a',ocfg.n_a, ...
  'n_sx',ocfg.n_sx,'n_sy',ocfg.n_sy,'n_gh',ocfg.n_gh,'Qf',1,'step',ocfg.omega(2),'support',ocfg.support, ...
  'tail_max',ocfg.tail_edges(end),'exits',1:ni,'blocks',[]);
@@ -48,11 +53,31 @@ if isempty(replay), mkdir(out); end
 res=struct('name',{},'fit',{},'curves',{},'chan',{},'perf',{});
 for v=1:numel(cfg.variants)
  V=cfg.variants(v); st=base; st.variant=V.kernel; st.wide=V.wide; st.ytype=V.ytype; intr=intr0; intr.ext=V.ext;
- tb=tic; [ops,K,sw,ex]=b1_p2a_build_ops(st,ocfg,cube,R,J6,q,dq,ie);
+ response=R;
+ if isfield(V,'empirical_centre') && V.empirical_centre
+  for b=1:size(R.b6.area,1)
+   for i=1:numel(q)
+    response.b6.th{b,i}.c=qe_zlp_center(cube.b6.J(:,i,b),cube.E);
+   end
+  end
+ end
+ if isfield(cfg,'blocking')
+  st.blocking=cfg.blocking;
+ end
+ tb=tic; [ops,K,sw,ex]=b1_p2a_build_ops(st,ocfg,cube,response,J6,q,dq,ie);
  cache=qe_lowq_joint_forward('build',ops,K,local_fopt(st,ocfg,sw,ex,V.kernel)); clear ops K; tbuild=toc(tb);
- [Y,S2,Eo]=local_data(cube,cache.E_out,ie,cfg.noise_smooth); nb=size(Y,3);
+ [Y,S2,Eo]=local_data(cube,cache.E_out,ie,cfg.noise_smooth,st.blocking); nb=size(Y,3);
+ if isfield(cfg,'noise_gain')
+  S2=S2.*interp1(cfg.noise_gain.E,cfg.noise_gain.g,Eo,'linear',1);
+ end
  mwin=Eo>=V.window(1)&Eo<=V.window(2); mask=repmat(mwin,1,ni,nb)&~isnan(Y);
  lo=abs(abs(cfg.exit_q)-min(abs(cfg.exit_q)))<1e-9; mask(Eo>V.lowq_emax,lo,:)=false;     % retardation check: lowest channels only to lowq_emax
+ if ~isempty(replay) && isfield(replay,'material')
+  M=replay.material;
+  out=struct('E',Eo,'Y',Y,'S2',S2,'mask',mask, ...
+   'mu',local_material(cache,M.theta,M.a,M.intrinsic), 'build_s',tbuild);
+  return
+ end
 if ~isempty(replay)
  F=local_post(replay,cache,Y,S2,Eo,intr,cfg,V,mwin);
  z=(F.mu(mask)-Y(mask))./sqrt(S2(mask));
@@ -62,20 +87,44 @@ if ~isempty(replay)
   'chi2_projected',sum(r(1:numel(D.y)).^2),'a',a,'b',b);
  return
 end
- tf=tic; F=local_multistart(cache,Y,S2,mask,Eo,intr,cfg,V.tail,opts); tfit=toc(tf);
+ train=mask;
+ if strict, train(:,:,cfg.lobo_block)=false; end
+ tf=tic; F=local_multistart(cache,Y,S2,train,Eo,intr,cfg,V.tail,opts); tfit=toc(tf);
+ if strict
+  fitBlocks=setdiff(1:nb,cfg.lobo_block);
+  tails=reshape(F.b,ni,nb);
+  exposure=cube.(st.blocking).d;
+  tails(:,cfg.lobo_block)=sum(tails(:,fitBlocks),2)*exposure(cfg.lobo_block)/sum(exposure(fitBlocks));
+  F.b=tails(:);
+  if V.tail
+   F.dof=F.dof+ni;
+   F.chi2dof=F.chi2/F.dof;
+   F.cov=F.cov*(F.dof-ni)/F.dof;
+  end
+ end
  F=local_post(F,cache,Y,S2,Eo,intr,cfg,V,mwin);
+ if strict
+  z=(Y-F.mu)./sqrt(S2);
+  holdMask=mask & ~train;
+  zlow=z(Eo>=cfg.holdout(1)&Eo<cfg.holdout(2),:,cfg.lobo_block);
+  F.prediction=struct('block',cfg.lobo_block,'chi2',sum(z(holdMask).^2), ...
+   'n',nnz(holdMask),'chi2dof',mean(z(holdMask).^2), ...
+   'low_chi2_per_point',mean(zlow.^2,'all','omitnan'));
+  fprintf('held block %d: chi2/n %.5g (low-energy %.5g)\n', ...
+   cfg.lobo_block,F.prediction.chi2dof,F.prediction.low_chi2_per_point);
+ end
  res(v).name=V.name; res(v).fit=F; res(v).curves=local_curves(F,intr,cfg); res(v).chan=F.chan;
  res(v).perf=struct('build_s',tbuild,'fit_s',tfit);
  fprintf('%-30s chi2/dof %.3f  holdout chi2/n %.2f  start %s  (%.0f s)\n',V.name,F.chi2dof,F.ho_chi2n,F.start,tfit);
- if v==1
+ if v==1 && ~strict
   % leave block cfg.lobo_block out, predict it with L fixed (tails refitted as nuisance)
   mk=mask; mk(:,:,cfg.lobo_block)=false;
   G=local_multistart(cache,Y,S2,mk,Eo,intr,cfg,V.tail,opts);
   lobo=local_lobo(G,cache,Y,S2,Eo,intr,cfg,V,mwin,mask);
   writetable(struct2table(lobo),fullfile(out,'p2b_lobo.csv'));
   fprintf('LOBO block %d: chi2/n fitted blocks %.3f, predicted block %.3f\n',cfg.lobo_block,lobo.chi2n_fitted,lobo.chi2n_predicted);
-  mainY=Y; mainS2=S2; mainEo=Eo; mainMu=F.mu;
  end
+ if v==1, mainY=Y; mainS2=S2; mainEo=Eo; mainMu=F.mu; end
  clear cache
 end
 
@@ -84,7 +133,7 @@ frow={}; nrow={};
 for v=1:numel(res)
  F=res(v).fit;
  frow(end+1,:)={res(v).name,F.chi2,F.dof,F.chi2dof,F.ho_chi2n,F.ho_mean,F.n_tail_neg,F.exitflag,F.start,res(v).perf.fit_s}; %#ok<AGROW>
- for j=1:2
+ for j=1:intr0.n_branch
   for n=1:numel(intr0.Qn_E0), nrow(end+1,:)={res(v).name,j,'E0',intr0.Qn_E0(n),F.E0(j,n),F.sE0(j,n),F.E0(j,n)<=cfg.bounds_E0(j,1)+1|F.E0(j,n)>=cfg.bounds_E0(j,2)-1}; end %#ok<AGROW>
   for n=1:numel(intr0.Qn_G), nrow(end+1,:)={res(v).name,j,'G',intr0.Qn_G(n),F.G(j,n),F.sG(j,n),F.G(j,n)<=cfg.bounds_G(1)+1|F.G(j,n)>=cfg.bounds_G(2)-1}; end %#ok<AGROW>
  end
@@ -93,7 +142,7 @@ writetable(cell2table(frow,'VariableNames',{'variant','chi2','dof','chi2dof','ho
  'negative_tails','exitflag','best_start','fit_s'}),fullfile(out,'p2b_fits.csv'));
 writetable(cell2table(nrow,'VariableNames',{'variant','branch','parameter','Q_node','value_meV','stat_err_meV','at_bound'}),fullfile(out,'p2b_nodes.csv'));
 C=res(1).curves; CT=table(C.Q(:),'VariableNames',{'Q'});
-for j=1:2
+for j=1:intr0.n_branch
  for f={'E0','G','apex','pole'}
   CT.(sprintf('%s_b%d',f{1},j))=C.(f{1})(j,:).'; CT.(sprintf('%s_b%d_err',f{1},j))=C.(['s' f{1}])(j,:).';
   sys=zeros(numel(C.Q),1);
@@ -121,7 +170,7 @@ for k=1:numel(qa)
  hq.sapex(1,k)=hd(x.apex_low); hq.sapex(2,k)=hd(x.apex_high);
 end
 Qn=intr0.Qn_E0; drow={}; dfit=struct();
-for j=1:2
+for j=1:intr0.n_branch
  for meas={'E0','apex'}
   [yn,sn]=local_at_nodes(res,j,meas{1},Qn,intr0);
   x=[Qn hq.q(:).']; y=[yn hq.(meas{1})(j,:)]; s=[sn hq.(['s' meas{1}])(j,:)];
@@ -135,7 +184,7 @@ writetable(cell2table(drow,'VariableNames',{'branch','measure','model','A_meV2A'
  'E_inf_meV','chi2','dof','chi2dof'}),fullfile(out,'p2b_dispersion_fits.csv'));
 
 % ---- figures
-local_fig_dispersion(out,res,hq,dfit);
+if intr0.n_branch==2, local_fig_dispersion(out,res,hq,dfit); end
 local_fig_spectra(out,mainEo,mainY,mainS2,mainMu,cfg);
 local_fig_variants(out,res,intr0);
 save(fullfile(out,'p2b_results.mat'),'cfg','res','hq','dfit','mainEo','mainY','mainS2','mainMu');
@@ -153,8 +202,8 @@ fo = struct('omega', cfg.omega(1):st.step:cfg.omega(3), 'eps', -72:st.step:72, '
     'slice_weight', {sw}, 'exit_slice', ex);
 end
 
-function [Y, S2, Eo] = local_data(cube, Eout, ie, ns)
-Eo = Eout(:); E = cube.E(:); J = cube.b6.J; nb = size(J, 3);
+function [Y, S2, Eo] = local_data(cube, Eout, ie, ns, blocking)
+Eo = Eout(:); E = cube.E(:); J = cube.(blocking).J; nb = size(J, 3);
 Y = nan(numel(Eo), numel(ie), nb); [tf, loc] = ismember(round(Eo), round(E));
 for b = 1:nb, Y(tf, :, b) = J(loc(tf), ie, b); end
 S2 = max(movmean(Y, ns, 1, 'omitnan'), 1);
@@ -171,10 +220,10 @@ F = best;
 end
 
 function F = local_fit(cache, Y, S2, mask, Eo, intr, th0, cfg, tailOn, opts)
-lb = [log(cfg.bounds_E0(1, 1) ^ 2) * ones(1, numel(intr.Qn_E0)), log(cfg.bounds_E0(2, 1) ^ 2) * ones(1, numel(intr.Qn_E0)), log(cfg.bounds_G(1)) * ones(1, 2*numel(intr.Qn_G))];
-ub = [log(cfg.bounds_E0(1, 2) ^ 2) * ones(1, numel(intr.Qn_E0)), log(cfg.bounds_E0(2, 2) ^ 2) * ones(1, numel(intr.Qn_E0)), log(cfg.bounds_G(2)) * ones(1, 2*numel(intr.Qn_G))];
-ne=numel(intr.Qn_E0); ng=numel(intr.Qn_G);
-assert(isequal(size(th0.E0sq),[2 ne]) && isequal(size(th0.G),[2 ng]), ...
+ne=numel(intr.Qn_E0); ng=numel(intr.Qn_G); nj=intr.n_branch;
+lb = [repelem(log(cfg.bounds_E0(1:nj,1).'.^2),ne), repmat(log(cfg.bounds_G(1)),1,nj*ng)];
+ub = [repelem(log(cfg.bounds_E0(1:nj,2).'.^2),ne), repmat(log(cfg.bounds_G(2)),1,nj*ng)];
+assert(isequal(size(th0.E0sq),[nj ne]) && isequal(size(th0.G),[nj ng]), ...
     'b1_p2b_fit:Starts','Every start must match cfg.nodes.E0 and cfg.nodes.G.');
 u0 = [reshape(log(th0.E0sq).', 1, []), reshape(log(th0.G).', 1, [])]; u0 = min(max(u0, lb + 1e-6), ub - 1e-6);
 D = local_design(Y, S2, mask, Eo, cfg, tailOn);
@@ -194,7 +243,7 @@ D = struct('y', Y(mask), 'w', 1 ./ sqrt(S2(mask)), 's', sidx(mask), 'T', (Ef(mas
 end
 
 function [r, a, b] = local_res(u, cache, D, intr, lam)
-th = b1_p2b_decode(u, struct('E0',intr.Qn_E0,'G',intr.Qn_G)); cols = qe_lowq_joint_forward('eval', cache, th, intr);
+th = b1_p2b_decode(u, struct('E0',intr.Qn_E0,'G',intr.Qn_G),intr.n_branch); cols = qe_lowq_joint_forward('eval', cache, th, intr);
 A = reshape(permute(cols, [1 3 4 2]), [], size(cols, 2)); A = A(D.mask(:), :);
 yw = D.y .* D.w; Aw = A .* D.w; b = zeros(D.ns, 1);
 if D.tailOn
@@ -211,13 +260,13 @@ end
 
 function F = local_post(F, cache, Y, S2, Eo, intr, cfg, V, mwin)
 % model on all energies (B1 + extrapolated tails), holdout and per-channel scores
-th = b1_p2b_decode(F.u,cfg.nodes); F.E0 = sqrt(th.E0sq); F.G = th.G;
-ne = numel(intr.Qn_E0); ng = numel(intr.Qn_G);
-J = diag([F.E0(1,:) F.E0(2,:)] / 2);
-J = blkdiag(J, diag([F.G(1,:) F.G(2,:)]));
+th = b1_p2b_decode(F.u,cfg.nodes,intr.n_branch); F.E0 = sqrt(th.E0sq); F.G = th.G;
+ne = numel(intr.Qn_E0); ng = numel(intr.Qn_G); nj = intr.n_branch;
+J = diag(reshape(F.E0.',1,[]) / 2);
+J = blkdiag(J, diag(reshape(F.G.',1,[])));
 s = sqrt(max(diag(J * F.cov * J.'), 0));
-F.sE0 = reshape(s(1:2*ne), ne, 2).'; F.sG = reshape(s(2*ne+1:end), ng, 2).';
-cols = qe_lowq_joint_forward('eval', cache, th, intr); mu = squeeze(sum(cols .* reshape(F.a, 1, [], 1, 1), 2));
+F.sE0 = reshape(s(1:nj*ne), ne, nj).'; F.sG = reshape(s(nj*ne+1:end), ng, nj).';
+mu = local_material(cache,th,F.a,intr);
 [nE, ni, nb] = size(Y); T = (Eo / cfg.tail.E_ref) .^ (-cfg.tail.p); T(Eo < cfg.holdout(1)) = 0;
 if F.tailOn, mu = mu + T .* reshape(F.b, 1, ni, nb); end
 F.mu = mu; ho = Eo >= cfg.holdout(1) & Eo < cfg.holdout(2); z = (Y - mu) ./ sqrt(S2);
@@ -231,21 +280,26 @@ end
 F.chan = chan;
 end
 
+function mu = local_material(cache,th,a,intr)
+cols = qe_lowq_joint_forward('eval',cache,th,intr);
+mu = reshape(sum(cols.*reshape(a,1,[],1,1),2),size(cols,1),size(cols,3),size(cols,4));
+end
+
 function C = local_curves(F, intr, cfg)
 Q = cfg.Q_curve; f = @(u) local_curve_vals(u, Q, intr);
 v0 = f(F.u); g = zeros(numel(v0), numel(F.u)); h = 1e-5;
 for k = 1:numel(F.u), up = F.u; up(k) = up(k) + h; g(:, k) = (f(up) - v0) / h; end
-s = sqrt(max(sum((g * F.cov) .* g, 2), 0)); n = numel(Q);
+s = sqrt(max(sum((g * F.cov) .* g, 2), 0)); n = numel(Q)*intr.n_branch;
 C = struct('Q', Q); names = {'E0', 'G', 'apex', 'pole'};
 for k = 1:4
-    C.(names{k}) = reshape(v0((k - 1) * 2 * n + (1:2 * n)), 2, n);
-    C.(['s' names{k}]) = reshape(s((k - 1) * 2 * n + (1:2 * n)), 2, n);
+    C.(names{k}) = reshape(v0((k - 1) * n + (1:n)), intr.n_branch, []);
+    C.(['s' names{k}]) = reshape(s((k - 1) * n + (1:n)), intr.n_branch, []);
 end
 end
 
 function v = local_curve_vals(u, Q, intr)
-th = b1_p2b_decode(u, struct('E0',intr.Qn_E0,'G',intr.Qn_G)); lQ = log(Q); n = numel(Q); E0 = zeros(2, n); G = E0;
-for j = 1:2
+th = b1_p2b_decode(u, struct('E0',intr.Qn_E0,'G',intr.Qn_G),intr.n_branch); lQ = log(Q); n = numel(Q); E0 = zeros(intr.n_branch, n); G = E0;
+for j = 1:intr.n_branch
     xn = log(intr.Qn_E0); E0(j, :) = sqrt(exp(interp1(xn, log(th.E0sq(j, :)), min(max(lQ, xn(1)), xn(end)))));
     xg = log(intr.Qn_G); G(j, :) = exp(interp1(xg, log(th.G(j, :)), min(max(lQ, xg(1)), xg(end))));
 end
@@ -345,9 +399,9 @@ exportgraphics(f, fullfile(out, 'fig_p2b_spectra.png'), 'Resolution', 100); clos
 end
 
 function local_fig_variants(out, res, intr)
-f = figure('Visible', 'off', 'Theme', 'light', 'Position', [0 0 1600 700]); tl = tiledlayout(f, 1, 2, 'TileSpacing', 'compact');
+f = figure('Visible', 'off', 'Theme', 'light', 'Position', [0 0 1600 700]); tl = tiledlayout(f, 1, intr.n_branch, 'TileSpacing', 'compact');
 cl = lines(numel(res)); nm = {'low branch', 'high branch'};
-for j = 1:2
+for j = 1:intr.n_branch
     ax = nexttile(tl); hold(ax, 'on');
     for v = 1:numel(res)
         F = res(v).fit; errorbar(ax, intr.Qn_E0 * 1e3 + (v - 4.5) * 0.02, F.E0(j, :), F.sE0(j, :), 'o-', 'Color', cl(v, :), 'MarkerSize', 4, 'DisplayName', res(v).name);

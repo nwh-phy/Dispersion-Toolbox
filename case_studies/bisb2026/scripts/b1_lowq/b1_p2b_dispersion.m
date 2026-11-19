@@ -11,29 +11,72 @@ function out = b1_p2b_dispersion(fit_dir, run_cfg)
 % allowed by the data (delta chi2 = 4 relative to the constant model).
 % Errors: statistical (Jacobian) and the largest variant deviation, in quadrature.
 % Output: <fit_dir>/dispersion/.
+% run_cfg.node_analysis enables node-only tables with raw chi2, intercept,
+% and a profile interval for Delta. run_cfg.variant_dirs supplies matching
+% instrument variants stored in separate fit directories.
 if nargin<2, run_cfg=struct(); end
 paths=b1_forward_paths(run_cfg);
 if nargin<1 || isempty(fit_dir), fit_dir=paths.fit_dir; end
 S=load(fullfile(fit_dir,'p2b_results.mat'),'res','hq','cfg'); res=S.res; hq=S.hq; cfg=S.cfg;
+nodeAnalysis=isfield(run_cfg,'node_analysis') && run_cfg.node_analysis;
+if nodeAnalysis
+ hq.q=[];
+ for f={'E0','sE0','apex','sapex'}, hq.(f{1})=zeros(2,0); end
+end
+if isfield(run_cfg,'variant_dirs')
+ for v=1:numel(run_cfg.variant_dirs)
+  V=load(fullfile(run_cfg.variant_dirs{v},'p2b_results.mat'),'res','cfg');
+  assert(isequal(V.cfg.nodes,cfg.nodes),'Variant node grids must match.');
+  res(end+1)=V.res(1); %#ok<AGROW>
+ end
+end
 out=fullfile(fit_dir,'dispersion');
 if isfield(run_cfg,'output_dir'), out=run_cfg.output_dir; end
+if nodeAnalysis, assert(~isfolder(out),'Dispersion output already exists: %s',out); end
 if ~isfolder(out), mkdir(out); end
 window=cfg.variants(1).window;
 hbarc=1973.27e3;                                          % meV A
 intr=qe_lowq_joint_forward('intrinsic','Qn_E0',cfg.nodes.E0,'Qn_G',cfg.nodes.G,'Qn_A',cfg.nodes.A);
-Qn=intr.Qn_E0; meas={'E0','apex','pole'}; brn={'low','high'}; rows={}; prow={}; D=struct();
+Qn=intr.Qn_E0; meas={'E0','apex','pole'}; brn={'low','high'}; rows={}; prow={}; details={}; D=struct();
 for j=1:2
  for k=1:numel(meas)
   [yn,sn,ss]=local_nodes(res,j,meas{k},Qn);
   ok=Qn>yn/hbarc & yn<=window(2) & yn>=window(1);                  % outside the light cone, inside the window
+  if nodeAnalysis, ok=ok & isfinite(sn) & sn>0; end
+  if isfield(run_cfg,'min_Q'), ok=ok & Qn>=run_cfg.min_Q; end
   x=[Qn(ok) hq.q(:).']; y=[yn(ok) hq.(local_hq(meas{k}))(j,:)]; s=[sn(ok) hq.(['s' local_hq(meas{k})])(j,:)];
   src=[repmat({'P2b'},1,nnz(ok)) repmat({'binned'},1,numel(hq.q))];
   for i=1:numel(Qn), prow(end+1,:)={brn{j},meas{k},Qn(i),yn(i),ss(i),sn(i),Qn(i)>yn(i)/hbarc,ok(i)}; end %#ok<AGROW>
-  c=local_const(y,s); g=local_fit(x,y,s,'gapless'); d=local_fit(x,y,s,'gapped');
-  [rho_lo,prof]=local_profile(x,y,s,c.chi2);
+  c=local_const(y,s);
+  if nodeAnalysis && isempty(y), c.chi2=NaN; end
+  if nodeAnalysis && numel(y)<3
+   emptyFit=struct('chi2',NaN,'Delta',NaN,'sDelta',NaN,'f',@(~,q) nan(size(q)),'p',[]);
+   g=emptyFit; d=emptyFit; rho_lo=NaN; prof=[];
+   if numel(y)==2
+    g=local_fit(x,y,s,'gapless');
+    [rho_lo,prof]=local_profile(x,y,s,c.chi2,nodeAnalysis);
+   end
+  else
+   g=local_fit(x,y,s,'gapless'); d=local_fit(x,y,s,'gapped');
+   [rho_lo,prof]=local_profile(x,y,s,c.chi2,nodeAnalysis);
+  end
+  if nodeAnalysis
+   L=local_linear(x,y,s);
+   dp=local_delta_profile(x,y,s,d);
+   details(end+1,:)={brn{j},meas{k},numel(y),c.chi2,g.chi2,d.chi2,c.Ec,c.sEc, ...
+    d.Delta,d.sDelta,dp.bounds(1),dp.bounds(2),rho_lo,L(1),L(2),L(3),L(4)}; %#ok<AGROW>
+   D.(sprintf('%s_delta_profile_%s',brn{j},meas{k}))=dp;
+   dof=numel(y)-(1:3);
+   dof(dof<=0)=NaN;
+   reduced=[c.chi2 g.chi2 d.chi2]./dof;
+   slope=L(3)*10;
+  else
+   reduced=[c.chi2/(numel(y)-1) g.chi2/(numel(y)-2) d.chi2/(numel(y)-3)];
+   slope=local_slope(x,y,s);
+  end
   D.(sprintf('%s_%s',brn{j},meas{k}))=struct('x',x,'y',y,'s',s,'src',{src},'c',c,'g',g,'d',d,'rho_lo',rho_lo,'prof',prof);
-  rows(end+1,:)={brn{j},meas{k},numel(y),c.Ec,c.sEc,c.chi2/(numel(y)-1),g.chi2/(numel(y)-2),d.chi2/(numel(y)-3), ...
-   d.Delta,d.sDelta,rho_lo,1/rho_lo,local_slope(x,y,s)}; %#ok<AGROW>
+  rows(end+1,:)={brn{j},meas{k},numel(y),c.Ec,c.sEc,reduced(1),reduced(2),reduced(3), ...
+   d.Delta,d.sDelta,rho_lo,1/rho_lo,slope}; %#ok<AGROW>
  end
 end
 T=cell2table(rows,'VariableNames',{'branch','measure','n_points','E_const_meV','E_const_err','chi2dof_const','chi2dof_gapless', ...
@@ -41,7 +84,13 @@ T=cell2table(rows,'VariableNames',{'branch','measure','n_points','E_const_meV','
 writetable(T,fullfile(out,'dispersion_summary.csv'));
 writetable(cell2table(prow,'VariableNames',{'branch','measure','Q_node','value_meV','sys_meV','total_err_meV','outside_light_cone','used'}), ...
  fullfile(out,'p2b_node_values.csv'));
-local_fig(out,D,res,hq,Qn,hbarc);
+if nodeAnalysis
+ writetable(cell2table(details,'VariableNames',{'branch','measure','n','chi2_constant','chi2_gapless','chi2_gapped', ...
+  'constant_meV','constant_err_meV','Delta_meV','Delta_jac_meV','Delta_profile_lo_meV','Delta_profile_hi_meV', ...
+  'rho_lower_A','intercept_meV','intercept_err_meV','slope_meV_per_milliQ','slope_err_meV_per_milliQ'}), ...
+  fullfile(out,'dispersion_details.csv'));
+end
+if ~isfield(run_cfg,'make_figure') || run_cfg.make_figure, local_fig(out,D,res,hq,Qn,hbarc); end
 save(fullfile(out,'dispersion.mat'),'D');
 disp(T);
 end
@@ -86,13 +135,21 @@ switch model
 end
 end
 
-function [rho_lo, prof] = local_profile(x, y, s, chi2c)
+function [rho_lo, prof] = local_profile(x, y, s, chi2c, analytic)
 % gapless form: chi2 as a function of rho (A refitted); lower bound on rho where
 % chi2 exceeds the constant-model chi2 by 4
-rg = logspace(1, 6, 101); c2 = zeros(size(rg)); o = optimoptions('lsqnonlin', 'Display', 'off');
-for k = 1:numel(rg)
-    f = @(a) (sqrt(exp(a) * x ./ (1 + rg(k) * x)) - y) ./ s;
-    a0 = log(mean(y .^ 2 .* (1 + rg(k) * x) ./ x)); [~, c2(k)] = lsqnonlin(f, a0, [], [], o);
+rg = logspace(1, 6, 101);
+if analytic
+    B=sqrt(x(:)./(1+x(:).*rg))./s(:);
+    yw=y(:)./s(:);
+    scale=sum(B.*yw,1)./sum(B.^2,1);
+    c2=sum((B.*scale-yw).^2,1);
+else
+    c2 = zeros(size(rg)); o = optimoptions('lsqnonlin', 'Display', 'off');
+    for k = 1:numel(rg)
+        f = @(a) (sqrt(exp(a) * x ./ (1 + rg(k) * x)) - y) ./ s;
+        a0 = log(mean(y .^ 2 .* (1 + rg(k) * x) ./ x)); [~, c2(k)] = lsqnonlin(f, a0, [], [], o);
+    end
 end
 prof = struct('rho', rg, 'chi2', c2); bad = c2 > chi2c + 4; rho_lo = NaN;
 if any(~bad), i = find(~bad, 1, 'first'); rho_lo = rg(i); end
@@ -101,6 +158,46 @@ end
 function b = local_slope(x, y, s)
 % weighted linear slope (meV per 0.01 A^-1), a model-free dispersion measure
 w = 1 ./ s .^ 2; X = [ones(numel(x), 1) x(:)]; beta = (X.' * (w(:) .* X)) \ (X.' * (w(:) .* y(:))); b = beta(2) * 0.01;
+end
+
+function L = local_linear(x,y,s)
+L = nan(1,4);
+if numel(y)<2, return; end
+X = [ones(numel(x),1),1e3*x(:)]./s(:);
+u = y(:)./s(:);
+b = X\u;
+scale = max(1,sum((X*b-u).^2)/max(numel(u)-2,1));
+err = sqrt(diag(inv(X.'*X))*scale);
+L = [b(1),err(1),b(2),err(2)];
+end
+
+function out = local_delta_profile(x,y,s,best)
+% For each Delta and rho, optimize A by monotone bisection of the weighted
+% least-squares derivative in A. Work with an equivalent scaled A variable.
+out=struct('Delta',[],'chi2',[],'bounds',[NaN NaN]);
+if numel(y)<4 || ~isfinite(best.chi2), return; end
+delta=unique([0:5:2000 best.Delta]);
+rho=unique([logspace(0,7,141) exp(best.p(2))]);
+q=x(:);
+B=q./(1+q.*rho);
+B=B./B(end,:);
+B=permute(B,[1 3 2]);
+y=y(:); w=1./s(:).^2;
+lo=zeros(1,numel(delta),numel(rho));
+hi=repmat(max(y.^2)./min(B,[],1),1,numel(delta),1);
+for k=1:42
+ mid=(hi+lo)/2;
+ fit=sqrt(delta.^2+B.*mid);
+ positive=sum(w.*B.*(1-y./fit),1)>0;
+ hi(positive)=mid(positive);
+ lo(~positive)=mid(~positive);
+end
+fit=sqrt(delta.^2+B.*((hi+lo)/2));
+chi2=min(sum(w.*(fit-y).^2,1),[],3);
+use=chi2<=min(best.chi2,min(chi2))+4;
+out.Delta=delta;
+out.chi2=chi2;
+if any(use), out.bounds=[delta(find(use,1)) delta(find(use,1,'last'))]; end
 end
 
 function local_fig(out, D, res, hq, Qn, hbarc)

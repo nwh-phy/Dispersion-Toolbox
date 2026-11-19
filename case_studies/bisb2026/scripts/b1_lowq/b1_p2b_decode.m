@@ -1,9 +1,10 @@
-function theta = b1_p2b_decode(u, nodes)
-%B1_P2B_DECODE  Unpack the two branches' log E0^2 and log Gamma node values.
+function theta = b1_p2b_decode(u, nodes, nBranch)
+%B1_P2B_DECODE  Unpack the branches' log E0^2 and log Gamma node values.
+if nargin < 3, nBranch = 2; end
 ne = numel(nodes.E0);
 ng = numel(nodes.G);
-assert(numel(u) == 2 * (ne + ng), 'b1_p2b_decode:Size', ...
-    'Expected two branches of %d E0 and %d Gamma nodes.', ne, ng);
-theta = struct('E0sq', exp(reshape(u(1:2*ne), ne, 2).'), ...
-    'G', exp(reshape(u(2*ne+1:end), ng, 2).'));
+assert(numel(u) == nBranch * (ne + ng), 'b1_p2b_decode:Size', ...
+    'Expected %d branches of %d E0 and %d Gamma nodes.', nBranch, ne, ng);
+theta = struct('E0sq', exp(reshape(u(1:nBranch*ne), ne, nBranch).'), ...
+    'G', exp(reshape(u(nBranch*ne+1:end), ng, nBranch).'));
 end
