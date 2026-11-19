@@ -1,4 +1,4 @@
-function cfg = b1_p2a_synth_config()
+function cfg = b1_p2a_synth_config(paths)
 % Configuration of P2a step 2.4 (injection and recovery with the 590 block operators).
 cfg.version = 'P2a-step2.4d-2026-10-15';   % 20 noise seeds   % + weighting test of the noisy fits
 cfg.fit_window = [250 1800];                 % B1 data term
@@ -22,4 +22,5 @@ cfg.classes = struct( ...
     'G', {[300 450 600; 600 1200 1800], [400 500 550; 900 1300 1600], []}, ...
     'a', {[0.004 0.0015 0.0006 0.08 0.04 0.025], [], []});
 cfg.report_q = [0.0005 0.001 0.002 0.003 0.005];
+if nargin > 0, cfg.paths = paths; end
 end

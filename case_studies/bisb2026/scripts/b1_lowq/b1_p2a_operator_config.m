@@ -1,4 +1,4 @@
-function cfg = b1_p2a_operator_config()
+function cfg = b1_p2a_operator_config(paths)
 % Configuration of P2a step 2.2-2.5 (operator, checks, fixed-L forward diagnostics).
 cfg.version = 'P2a-step2.2c-2026-10-15';   % y nodes 31 (main), delta-chi2 before/after residue refit
 cfg.exit_q = [-0.005 -0.003 -0.0025 -0.002 -0.0015 -0.001 -0.0005 0.0005 0.001 0.0015 0.002 0.0025 0.003 0.005];
@@ -20,4 +20,16 @@ cfg.old_sigma = 4.12e-4;           % old W: centred Gaussian probe (stage 1 sigm
 cfg.conv = struct('n_a', 8, 'n_s', 17, 'n_gh', 61, 'Qm_factor', 2, 'fine_step', 1, 'support', [40 100], 'tail_max', 0.08);
 cfg.maps_q = [-0.002 -0.0005 0.0005 0.002];
 cfg.maps_E = [300 600 1000 1500];
+if nargin > 0
+    cfg.paths = paths;
+    d = bisb_datasets(paths.session);
+    cfg.h = d.h;
+    cfg.n_sy = max(cfg.n_sy, 2 * ceil(cfg.h / 2.5e-4) + 1);
+    cfg.tail_edges(1) = b1_p2a_inputs_config(paths).q_max + d.dq/2;
+    cfg.old_sigma = [];
+    if isfile(paths.stage1_file)
+        S = load(paths.stage1_file, 'C');
+        cfg.old_sigma = S.C.sigma_probe;
+    end
+end
 end

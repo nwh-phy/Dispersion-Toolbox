@@ -1,5 +1,5 @@
-function out = b1_p2a_operator(input_dir, response_dir)
-% P2a step 2.2-2.5 on 590: build the block operators from the slice response,
+function out = b1_p2a_operator(input_dir, response_dir, cfg, reference_only)
+% P2a step 2.2-2.5 for the configured dataset: build the block operators from the slice response,
 % fit the reference amplitudes, and run the fixed-L forward diagnostics.
 %  operator: incident slices = the 27 measured channels (weights = elastic-line
 %   areas pi_br, sub-slice shape from the joint two-Pearson density) + tail slices
@@ -18,8 +18,14 @@ function out = b1_p2a_operator(input_dir, response_dir)
 %   maps and the share inside the light cone Q < E/(hbar c); timings.
 % Output: <response_dir>/operator_<config hash>/.
 root=bisb_find_project_root(fileparts(mfilename('fullpath'))); addpath(genpath(fullfile(root,'src')));
-cfg=b1_p2a_operator_config(); tag=b1_sha256(cfg); t0=tic; perf=struct();
-out=fullfile(response_dir,sprintf('operator_%s',tag(1:8))); if ~isfolder(out), mkdir(out); end
+if nargin<3 || isempty(cfg), cfg=b1_p2a_operator_config(); end
+paths=b1_forward_paths(cfg);
+if nargin<1 || isempty(input_dir), input_dir=paths.input_dir; end
+if nargin<2 || isempty(response_dir), response_dir=paths.response_dir; end
+if nargin<4, reference_only=false; end
+tag=b1_sha256(cfg); t0=tic; perf=struct();
+out=fullfile(response_dir,sprintf('operator_%s',tag(1:8)));
+if isfield(cfg,'output_dir'), out=cfg.output_dir; end
 L=load(fullfile(input_dir,'p2a_cube.mat'),'cube'); cube=L.cube; E=cube.E(:); q=cube.q(:).'; dq=cube.dq;
 RR=load(fullfile(response_dir,'response.mat'),'R','J6'); R=RR.R; J6=RR.J6;
 ie=arrayfun(@(v) find(abs(q-v)<1e-9),cfg.exit_q); ni=numel(ie);
@@ -41,6 +47,14 @@ for b=1:nb, for i=1:ni
 end, end
 sc=max(abs(A),[],1); sc(sc==0)=1; a_ref=lsqnonneg((A./sc).*wv,y.*wv)./sc(:);
 mu_ref=local_combine(cols,a_ref); clear cache
+if reference_only
+ out=struct('Eo',Eo,'Y',Y,'S2',S2,'a_ref',a_ref,'mu_ref',mu_ref,'perf',perf);
+ return
+end
+assert(isscalar(cfg.old_sigma) && isfinite(cfg.old_sigma) && cfg.old_sigma>0, ...
+ 'b1_p2a_operator:OldSigma','The legacy comparison requires cfg.old_sigma from this dataset.');
+assert(~isfolder(out),'b1_p2a_operator:OutputExists','Output already exists: %s',out);
+mkdir(out);
 fprintf('reference amplitudes: %s\n',mat2str(a_ref.',4));
 
 % ---- fixed-L comparisons
@@ -223,7 +237,7 @@ end
 
 function local_figs(out, cfg, Eo, Y, S2, mu_ref, cmp, maps, LT, ni)
 m = Eo >= 40 & Eo <= 1800; cl = lines(numel(cmp));
-f = figure('Visible', 'off', 'Theme', 'light', 'Position', [0 0 1900 1050]); tl = tiledlayout(f, 3, 5, 'TileSpacing', 'compact');
+f = figure('Visible', 'off', 'Theme', 'light', 'Position', [0 0 1900 1050]); tl = tiledlayout(f, ceil((ni+1)/5), 5, 'TileSpacing', 'compact');
 for i = 1:ni
     ax = nexttile(tl); hold(ax, 'on');
     for c = 1:numel(cmp)
@@ -239,7 +253,7 @@ for c = 1:numel(cmp), plot(ax, NaN, NaN, '-', 'Color', cl(c, :), 'DisplayName', 
 legend(ax, 'Location', 'west', 'FontSize', 8);
 exportgraphics(f, fullfile(out, 'fig_fixedL_differences.png'), 'Resolution', 110); close(f);
 
-f = figure('Visible', 'off', 'Theme', 'light', 'Position', [0 0 1900 1050]); tl = tiledlayout(f, 3, 5, 'TileSpacing', 'compact');
+f = figure('Visible', 'off', 'Theme', 'light', 'Position', [0 0 1900 1050]); tl = tiledlayout(f, ceil((ni+1)/5), 5, 'TileSpacing', 'compact');
 for i = 1:ni
     ax = nexttile(tl); yy = sum(Y(m, i, :), 3); mm = sum(mu_ref(m, i, :), 3); top = max(yy(Eo(m) >= 250)) * 1.3;
     yyaxis(ax, 'left'); plot(ax, Eo(m), yy, 'k.', Eo(m), mm, 'r-', 'MarkerSize', 4); ylabel(ax, 'counts per 4 meV'); ylim(ax, [0 top]);

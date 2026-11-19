@@ -1,5 +1,5 @@
 function varargout = b1_p2a_build_ops(varargin)
-% P2a step 2: block operators of 590 from the slice response (shared by
+% P2a step 2: block operators on the cube native grid from the slice response (shared by
 % b1_p2a_operator and b1_p2a_synth).
 %   [ops, K, sw, ex] = b1_p2a_build_ops(st, cfg, cube, R, J6, q, dq, ie)
 %       st: setting struct (blocking, ytype, wide, n_a, n_sx, n_sy, n_gh, Qf, step,
@@ -43,7 +43,10 @@ else
     pos = cube.b12.pos_narrow_mode + mean(J6.pos) - mean(cube.b6.pos_narrow_mode); logA = [];
 end
 step = st.step; eps = -72:step:72; Qm = local_Qm(cfg.Qm_spec, st.Qf);
-te = cfg.tail_edges(cfg.tail_edges <= st.tail_max + 1e-12); if te(end) < st.tail_max - 1e-12, te = [te st.tail_max]; end
+edges=cfg.tail_edges;
+assert(abs(edges(1)-(max(abs(q))+dq/2))<1e-9, ...
+    'b1_p2a_build_ops:TailEdge','First tail edge must meet the measured native channel boxes.');
+te = edges(edges <= st.tail_max + 1e-12); if te(end) < st.tail_max - 1e-12, te = [te st.tail_max]; end
 [gx, gw] = local_gl(st.n_a); nk = numel(q); nexit = numel(st.exits);
 ops = cell(1, numel(blocks)); K = ops; sw = ops; ex = zeros(nexit, 1);
 for bb = 1:numel(blocks)

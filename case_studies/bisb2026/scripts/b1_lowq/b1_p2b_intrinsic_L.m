@@ -17,7 +17,7 @@ end
 S = load(fullfile(fit_dir, 'p2b_results.mat'), 'cfg', 'res'); cfg = S.cfg; R = S.res(variant); F = R.fit;
 V = cfg.variants(strcmp({cfg.variants.name}, R.name));
 intr = qe_lowq_joint_forward('intrinsic', 'Qn_E0', cfg.nodes.E0, 'Qn_G', cfg.nodes.G, 'Qn_A', cfg.nodes.A, 'ext', V.ext);
-theta = struct('E0sq', exp(reshape(F.u(1:10), 5, 2).'), 'G', exp(reshape(F.u(11:16), 3, 2).'));
+theta = b1_p2b_decode(F.u, cfg.nodes);
 C = qe_lowq_joint_forward('C', Q, E, theta, intr);                     % numel(Q) x numel(E) x n_col
 qE = E * intr.qE_per_meV; K = Q ./ (Q .^ 2 + qE .^ 2) .^ 2;          % as in 'C' (E > step / 4)
 g = E ./ (-expm1(-E / intr.kT));

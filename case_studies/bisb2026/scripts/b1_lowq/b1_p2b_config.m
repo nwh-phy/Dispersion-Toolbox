@@ -1,4 +1,4 @@
-function cfg = b1_p2b_config()
+function cfg = b1_p2b_config(paths, nodes)
 % Configuration of P2b on 590: shared L(Q,E) through the block operators.
 cfg.version = 'P2b-2026-10-15b';   % nodes from Q = 0.0005 (light cone below), main y = 2D mixture, window-edge and retardation checks
 cfg.exit_q = [-0.005:0.0005:-0.0005, 0.0005:0.0005:0.005];   % 20 native channels
@@ -26,5 +26,27 @@ cfg.variants = struct( ...
     'lowq_emax', {Inf, Inf, Inf, Inf, Inf, Inf, Inf, Inf, Inf, Inf, 1200});
 cfg.lobo_block = 6;                         % left out of the main fit and predicted
 cfg.Q_curve = exp(linspace(log(0.0005), log(0.005), 41));
-cfg.highq = struct('file', fullfile('stage5', 'e0_stage2_2d_h5_590_PL2_10w.csv'), 'q_range', [0.0055 0.0155], 'err_floor', 10);
+legacy = b1_forward_config();
+[folder, name, ext] = fileparts(legacy.highq_file);
+[~, stage] = fileparts(folder);
+cfg.highq = struct('file', fullfile(stage, [name ext]), 'q_range', [0.0055 0.0155], 'err_floor', 10);if nargin > 0 && ~isempty(paths)
+    cfg.paths = paths;
+    d = bisb_datasets(paths.session);
+    qa = (1:round(max(cfg.exit_q) / d.dq)) * d.dq;
+    cfg.exit_q = [-fliplr(qa) qa];
+    cfg.variants(end).name = sprintf('+/-%.5g only to %g meV', qa(1), cfg.variants(end).lowq_emax);
+    cfg.highq.file = paths.highq_file;
+end
+if nargin > 1
+    for k = 1:numel(cfg.starts)
+        for field = {'E0', 'G'}
+            f = field{1};
+            q = cfg.nodes.(f);
+            x = min(max(nodes.(f), q(1)), q(end));
+            cfg.starts(k).(f) = exp(interp1(log(q), log(cfg.starts(k).(f).'), log(x))).';
+        end
+    end
+    cfg.nodes = nodes;
+    cfg.Q_curve = exp(linspace(log(nodes.E0(1)), log(nodes.E0(end)), numel(cfg.Q_curve)));
+end
 end

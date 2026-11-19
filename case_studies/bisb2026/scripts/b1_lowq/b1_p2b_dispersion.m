@@ -1,4 +1,4 @@
-function out = b1_p2b_dispersion(fit_dir)
+function out = b1_p2b_dispersion(fit_dir, run_cfg)
 % Dispersion of the two B1 branches from P2b (shared fit, |q| <= 0.005) and the
 % earlier binned fits (0.0055-0.0155): E0, DL apex and pole. Only the nodes that
 % lie outside the light cone at the branch energy and inside the B1 window are
@@ -11,15 +11,21 @@ function out = b1_p2b_dispersion(fit_dir)
 % allowed by the data (delta chi2 = 4 relative to the constant model).
 % Errors: statistical (Jacobian) and the largest variant deviation, in quadrature.
 % Output: <fit_dir>/dispersion/.
+if nargin<2, run_cfg=struct(); end
+paths=b1_forward_paths(run_cfg);
+if nargin<1 || isempty(fit_dir), fit_dir=paths.fit_dir; end
 S=load(fullfile(fit_dir,'p2b_results.mat'),'res','hq','cfg'); res=S.res; hq=S.hq; cfg=S.cfg;
-out=fullfile(fit_dir,'dispersion'); if ~isfolder(out), mkdir(out); end
+out=fullfile(fit_dir,'dispersion');
+if isfield(run_cfg,'output_dir'), out=run_cfg.output_dir; end
+if ~isfolder(out), mkdir(out); end
+window=cfg.variants(1).window;
 hbarc=1973.27e3;                                          % meV A
 intr=qe_lowq_joint_forward('intrinsic','Qn_E0',cfg.nodes.E0,'Qn_G',cfg.nodes.G,'Qn_A',cfg.nodes.A);
 Qn=intr.Qn_E0; meas={'E0','apex','pole'}; brn={'low','high'}; rows={}; prow={}; D=struct();
 for j=1:2
  for k=1:numel(meas)
   [yn,sn,ss]=local_nodes(res,j,meas{k},Qn);
-  ok=Qn>yn/hbarc & yn<=1800 & yn>=250;                  % outside the light cone, inside the window
+  ok=Qn>yn/hbarc & yn<=window(2) & yn>=window(1);                  % outside the light cone, inside the window
   x=[Qn(ok) hq.q(:).']; y=[yn(ok) hq.(local_hq(meas{k}))(j,:)]; s=[sn(ok) hq.(['s' local_hq(meas{k})])(j,:)];
   src=[repmat({'P2b'},1,nnz(ok)) repmat({'binned'},1,numel(hq.q))];
   for i=1:numel(Qn), prow(end+1,:)={brn{j},meas{k},Qn(i),yn(i),ss(i),sn(i),Qn(i)>yn(i)/hbarc,ok(i)}; end %#ok<AGROW>

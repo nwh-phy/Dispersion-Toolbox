@@ -1,4 +1,4 @@
-function out = b1_p2a_synth(input_dir, response_dir, operator_dir)
+function out = b1_p2a_synth(input_dir, response_dir, operator_dir, cfg, ocfg)
 % P2a step 2.4: injection and recovery with the 590 block operators.
 % Generator: slice kernels, measured drift (six blocks), two-Pearson angular
 % weights, Gaussian y; finer discretisation (cfg.gen). Three truths: fixed E0
@@ -13,8 +13,19 @@ function out = b1_p2a_synth(input_dir, response_dir, operator_dir)
 % truth, chi2 in the fit window and the holdout, runtime.
 % Output: <operator_dir>/synth_<config hash>/.
 root=bisb_find_project_root(fileparts(mfilename('fullpath'))); addpath(genpath(fullfile(root,'src')));
-cfg=b1_p2a_synth_config(); ocfg=b1_p2a_operator_config(); tag=b1_sha256(cfg); t0=tic;
-out=fullfile(operator_dir,sprintf('synth_%s',tag(1:8))); if ~isfolder(out), mkdir(out); end
+if nargin<4 || isempty(cfg), cfg=b1_p2a_synth_config(); end
+paths=b1_forward_paths(cfg);
+if nargin<1 || isempty(input_dir), input_dir=paths.input_dir; end
+if nargin<2 || isempty(response_dir), response_dir=paths.response_dir; end
+if nargin<3 || isempty(operator_dir), operator_dir=paths.operator_dir; end
+if nargin<5 || isempty(ocfg)
+ if isfield(cfg,'paths'), ocfg=b1_p2a_operator_config(paths); else, ocfg=b1_p2a_operator_config(); end
+end
+tag=b1_sha256(cfg); t0=tic;
+out=fullfile(operator_dir,sprintf('synth_%s',tag(1:8)));
+if isfield(cfg,'output_dir'), out=cfg.output_dir; end
+assert(~isfolder(out),'b1_p2a_synth:OutputExists','Output already exists: %s',out);
+mkdir(out);
 L=load(fullfile(input_dir,'p2a_cube.mat'),'cube'); cube=L.cube; q=cube.q(:).'; dq=cube.dq;
 RR=load(fullfile(response_dir,'response.mat'),'R','J6'); R=RR.R; J6=RR.J6;
 O=load(fullfile(operator_dir,'operator_results.mat'),'a_ref','th_ref'); a_ref=O.a_ref; th_ref=O.th_ref;

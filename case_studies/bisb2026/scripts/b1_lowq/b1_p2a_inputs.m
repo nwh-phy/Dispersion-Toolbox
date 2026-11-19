@@ -1,5 +1,5 @@
-function out = b1_p2a_inputs(run_root)
-% P2a step 1: input checks from the frame data of 590 (no B1 fits).
+function out = b1_p2a_inputs(run_root, cfg)
+% P2a step 1: input checks from native frame data (no B1 fits).
 %  (1) Angular response of the elastic core per frame: A1-aligned frames,
 %      window |E - c(q) - dE_t| <= w around the ZLP centre c(q) of the summed
 %      map (w = 8 and 16 meV), channels |q| <= 0.0065 including q = 0;
@@ -32,35 +32,50 @@ function out = b1_p2a_inputs(run_root)
 %      rigidly in q, interpolated across channels at each energy bin).
 % Output: <run_root>/p2a/inputs_<session>_<config hash>/.
 root=bisb_find_project_root(fileparts(mfilename('fullpath'))); addpath(genpath(fullfile(root,'src')));
-cfg=b1_p2a_inputs_config(); session=cfg.session; tag=b1_sha256(cfg); t_start=tic;
-out=fullfile(run_root,'p2a',sprintf('inputs_%s_%s',session,tag(1:8))); if ~isfolder(out), mkdir(out); end
-S=load(fullfile(run_root,'stage1',sprintf('channels_%s.mat',session)),'C'); C=S.C;
+if nargin<1, run_root=[]; end
+if nargin<2 || isempty(cfg), cfg=b1_p2a_inputs_config(); end
+paths=b1_forward_paths(cfg,run_root); session=paths.session; run_root=paths.run_root;
+tag=b1_sha256(cfg); t_start=tic;
+out=fullfile(paths.p2a_dir,sprintf('inputs_%s_%s',session,tag(1:8)));
+if isfield(cfg,'output_dir'), out=cfg.output_dir; end
+S=load(paths.stage1_file,'C'); C=S.C; ds=bisb_datasets(session);
+assert(strcmp(C.session,session),'Stage1 has another session.');
 E=C.E(:); T=C.T; off=C.offsets(:); sup=C.support(:); dE=E(2)-E(1);
-L=load(fullfile(run_root,'p1b',['diag_' session],'common_ref.mat'),'ref'); ref=L.ref(:); nrm=mean(ref)./ref;
-p2=fullfile(root,'paper_results','b1_components_v2','20260912T021813081Z_31fcc543_18af79b6');
-l=load(fullfile(p2,session,'L1_minimal.mat')); qe=l.d.qe; q=qe.q_Ainv(:).'; dq=qe.dq_Ainv; Er=qe.energy_meV(:);
-assert(abs(dq-C.dq)<1e-12,'b1_p2a_inputs:dq','dq of L1 and stage 1 differ');
-raw=read_npy(C.raw_path);
-src=1:size(raw,2); if isfield(qe,'source_channel'), src=qe.source_channel(:).'; end
-assert(isequal(src,1:size(raw,2)),'b1_p2a_inputs:src','non-identity source channels are not handled');
-invalid=false(1,size(raw,2));
-for c=1:size(raw,2), x=raw(:,c,:); invalid(c)=any(~isfinite(x(:))|double(x(:))>=double(intmax('uint32'))); end
-invalid=invalid|any(~isfinite(qe.intensity),1);
+L=load(fullfile(paths.diag_dir,'common_ref.mat'),'ref'); ref=L.ref(:); nrm=mean(ref)./ref;
 opts=optimoptions('lsqnonlin','Display','off','FunctionTolerance',1e-14,'StepTolerance',1e-12, ...
  'OptimalityTolerance',1e-12,'MaxIterations',500,'MaxFunctionEvaluations',5000);
+if isfield(C,'native_prepared') && C.native_prepared
+ dq=C.dq; q=C.q_axis; el_old=C.elastic_q_profile;
+ [A,qs]=b1_forward_stage_frames(paths.stage1_file,C,cfg.q_max);
+ [~,sel]=ismember(qs,q);
+ assert(isequal(C.block(:),ceil((1:T).'/(T/cfg.n_blocks))), ...
+  'b1_p2a_inputs:Blocks','Stage1 block partition differs from P2a.');
+else
+ l=load(paths.l1_file); qe=l.d.qe; q=qe.q_Ainv(:).'; dq=qe.dq_Ainv; Er=qe.energy_meV(:);
+ assert(abs(dq-C.dq)<1e-12,'b1_p2a_inputs:dq','dq of L1 and stage 1 differ');
+ raw=read_npy(ds.path);
+ src=1:size(raw,2); if isfield(qe,'source_channel'), src=qe.source_channel(:).'; end
+ assert(isequal(src,1:size(raw,2)),'b1_p2a_inputs:src','non-identity source channels are not handled');
+ invalid=false(1,size(raw,2));
+ for c=1:size(raw,2), x=raw(:,c,:); invalid(c)=any(~isfinite(x(:))|double(x(:))>=double(intmax('uint32'))); end
+ invalid=invalid|any(~isfinite(qe.intensity),1);
+ el_old=squeeze(sum(sum(double(raw(:,:,abs(Er)<=cfg.old_window)),1),3)); el_old(invalid)=0;
+ sel=find(abs(q)<=cfg.q_max+1e-9 & ~invalid); [~,o]=sort(q(sel)); sel=sel(o); qs=q(sel);
+ A=zeros(numel(E),numel(qs),T);
+ for t=1:T, fr=double(squeeze(raw(t,sel,:))); A(:,:,t)=fr(:,sup+off(t)).'; end
+ clear raw
+end
+nk=numel(qs); k0=find(abs(qs)<1e-12); prof_old=el_old(sel);
+assert(numel(k0)==1,'b1_p2a_inputs:Zero','Missing q=0.');
+assert(all(abs(diff(qs)-dq)<1e-9),'b1_p2a_inputs:Grid','Missing native channels inside the P2a input window.');
+assert(~isfolder(out),'b1_p2a_inputs:OutputExists','Output already exists: %s',out);
+mkdir(out);
 
-% ---- (3i) old sigma_probe definition: unaligned frames, raw |E| <= 12 meV, argmax +/- 2 channels
-el_old=squeeze(sum(sum(double(raw(:,:,abs(Er)<=cfg.old_window)),1),3)); el_old(invalid)=0;
+% ---- (3i) old sigma_probe definition: unaligned frames, raw elastic core, argmax +/- 2 channels
 [~,i0]=max(el_old); kk=-2:2; w=el_old(i0+kk); w=w/sum(w); m1=sum(w.*kk);
 sig_old=sqrt(max(sum(w.*(kk-m1).^2)-1/12,0))*dq; mu_old=q(i0)+m1*dq;
 fprintf('old sigma_probe %.4e (stage 1 value %.4e), centroid %+.3e\n',sig_old,C.sigma_probe,mu_old);
 
-% ---- aligned frames of the channels |q| <= q_max (incl. q = 0): E x channel x frame
-sel=find(abs(q)<=cfg.q_max+1e-9 & ~invalid); [~,o]=sort(q(sel)); sel=sel(o); qs=q(sel); nk=numel(sel);
-k0=find(abs(qs)<1e-12); prof_old=el_old(sel);
-A=zeros(numel(E),nk,T);
-for t=1:T, fr=double(squeeze(raw(t,sel,:))); A(:,:,t)=fr(:,sup+off(t)).'; end
-clear raw
 prof_al12=squeeze(sum(sum(A(abs(E)<=cfg.old_window,:,:),1),3));
 
 % ---- (2) energy centres: summed map c(q), per frame c_t(q), frame shifts
@@ -79,7 +94,7 @@ end
 call=zeros(T,1); fwall=call;
 for t=1:T, [call(t),fwall(t)]=qe_zlp_center(sum(A(:,:,t),2),E); end
 [c_all,fw_all]=qe_zlp_center(sum(Isum,2),E); dE_all=call-c_all;
-P1=readtable(fullfile(run_root,'p1b',['diag_' session],'frame_descriptors.csv'));
+P1=readtable(fullfile(paths.diag_dir,'frame_descriptors.csv'));
 fprintf('check vs P1b frame descriptors: max |centre diff| %.2e meV, max |FWHM diff| %.2e meV\n', ...
  max(abs(ct(:,k0)-P1.zlp_centre_meV)),max(abs(fwt(:,k0)-P1.zlp_fwhm_meV)));
 
@@ -439,15 +454,15 @@ for nbk=[nb cfg.n_blocks_check]
   'shape_w8',d0,'note','pos from the six-block common two-Pearson shape (w = 8), amplitude and position fitted per block');
 end
 cube.jb=jb; cube.all_frame_two_pearson_w8=bt([bt.w]==cfg.core_w(1) & [bt.block]==0).dspv; cube.c_q=cq; cube.ct=ct;
-fi=dir(C.raw_path); [~,hs]=system(['shasum -a 256 "' C.raw_path '"']); hs=strtok(strtrim(hs));
-cube.raw=struct('path',C.raw_path,'bytes',fi.bytes,'datenum',fi.datenum,'sha256',hs);
+fi=dir(ds.path); if isfield(C,'raw_sha256'), hs=C.raw_sha256; else, hs=b1_sha256({'file',ds.path}); end
+cube.raw=struct('path',ds.path,'bytes',fi.bytes,'datenum',fi.datenum,'sha256',hs);
 save(fullfile(out,'p2a_cube.mat'),'cube','-v7.3');
 
 % ---- save
 save(fullfile(out,'inputs_p2a.mat'),'cfg','qs','cq','fwq','ct','fwt','dE_core','dE_0','dE_wing','dE_all','call','fwall','c_all','fw_all','rmsE','P','Pfix','wl','Mb','ec','pf_mu','mu_blk','mu_all','jb', ...
  'mom_mu','mom_s','g_mu','g_s','g_rms','momfix_mu','momfix_s','bt','blk','sig_old','mu_old','prof_old','prof_al12','cb','fwb','tie','shp','dq','E');
 meta=struct('config',cfg,'config_sha256',tag,'code_sha256',b1_sha256({'file',[mfilename('fullpath') '.m']}), ...
- 'config_code_sha256',b1_sha256({'file',which('b1_p2a_inputs_config')}),'raw_path',C.raw_path,'run_root',run_root, ...
+ 'config_code_sha256',b1_sha256({'file',which('b1_p2a_inputs_config')}),'raw_path',ds.path,'run_root',run_root, ...
  'created',char(datetime('now','TimeZone','UTC','Format','yyyy-MM-dd''T''HH:mm:ss''Z''')),'runtime_s',toc(t_start));
 fid=fopen(fullfile(out,'config.json'),'w'); fprintf(fid,'%s',jsonencode(meta,'PrettyPrint',true)); fclose(fid);
 fprintf('P2a step 1 written to %s (%.0f s)\n',out,toc(t_start));

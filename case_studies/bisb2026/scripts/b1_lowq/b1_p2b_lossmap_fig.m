@@ -1,7 +1,7 @@
-function T = b1_p2b_lossmap_fig(fit_dir, q_single)
+function T = b1_p2b_lossmap_fig(fit_dir, q_single, fig_cfg)
 %B1_P2B_LOSSMAP_FIG  Before and after the kinematic factor, with the P2b forward model.
 %   T = b1_p2b_lossmap_fig(fit_dir) uses the main variant stored in
-%   fit_dir/p2b_results.mat (590, single channels |q| <= 0.005, the 6 time blocks summed).
+%   fit_dir/p2b_results.mat, with all stored time blocks summed.
 %   fig_p2b_lossmap: (a) measured B1 counts, (b) forward-model counts, (c) intrinsic
 %     loss function L(Q,E) of the same fit at each channel's |q| (kinematic factor,
 %     thermal factor and measurement operator removed, b1_p2b_intrinsic_L), (d) shape
@@ -22,16 +22,23 @@ function T = b1_p2b_lossmap_fig(fit_dir, q_single)
 %   T: per channel, the maxima of counts, model and L and the branch apexes and E0
 %     (meV), also written to p2b_lossmap_peaks.csv. Figures go to fit_dir.
 arguments
-    fit_dir char
+    fit_dir char = ''
     q_single double = []
+    fig_cfg struct = struct()
 end
+paths=b1_forward_paths(fig_cfg);
+if isempty(fit_dir), fit_dir=paths.fit_dir; end
+out=fit_dir;
+if isfield(fig_cfg,'output_dir'), out=fig_cfg.output_dir; end
 S = load(fullfile(fit_dir, 'p2b_results.mat'), 'cfg', 'res', 'mainEo', 'mainY', 'mainS2', 'mainMu');
 cfg = S.cfg; F = S.res(1).fit; Cv = S.res(1).curves; E = S.mainEo(:); q = cfg.exit_q(:).';
 [~, ni, nb] = size(S.mainY);
 tl = (E / cfg.tail.E_ref) .^ (-cfg.tail.p); tl(E < cfg.holdout(1)) = 0;
 tail = F.tailOn * tl .* reshape(F.b, 1, ni, nb);
 Y = sum(S.mainY - tail, 3); M = sum(S.mainMu - tail, 3); V = sum(S.mainS2, 3);   % nE x ni
-w = E >= 250 & E <= 1800; Ew = E(w);
+window=cfg.variants(1).window; w = E >= window(1) & E <= window(2); Ew = E(w);
+fit_paths=b1_forward_paths(cfg); d=bisb_datasets(fit_paths.session);
+if isempty(fieldnames(fig_cfg)) && ~isfield(cfg,'paths'), fig_cfg.edge_q=0.0015; end
 nsm = round(100 / median(diff(E)));
 Ys = movmean(Y, nsm, 1); Ms = movmean(M, nsm, 1);
 [L, Lj] = b1_p2b_intrinsic_L(fit_dir, abs(q(:)), Ew.');
@@ -43,19 +50,21 @@ T = table(q(:), Ew(iy), Ew(im), Ew(il), cl('apex', 1), cl('apex', 2), cl('E0', 1
     'E0_low_meV', 'E0_high_meV'});
 T.shift_meV = T.L_max_meV - T.counts_max_meV;
 T.scale_data_over_model = (sum(Y(w, :), 1) ./ sum(M(w, :), 1)).';
-writetable(T, fullfile(fit_dir, 'p2b_lossmap_peaks.csv'));
+if ~isfolder(out), mkdir(out); end
+writetable(T, fullfile(out, 'p2b_lossmap_peaks.csv'));
 if isempty(q_single)
     c = find(abs(q(:)) >= 0.002 - 1e-9 & T.apex_high_meV < Ew(end) - 4);
+    if isempty(c), [~, imax]=max(abs(q)); c=imax; end
     [~, k] = max(abs(T.shift_meV(c)) + 1e-6 * (q(c).' > 0)); q_single = q(c(k));
 end
-local_maps(fit_dir, q, Ew, Ys(w, :), Ms(w, :), L, Y(w, :) - T.scale_data_over_model.' .* M(w, :), V(w, :), T, Cv);
-local_single(fit_dir, q, Ew, Y(w, :), Ys(w, :), M(w, :), L, Lj, T, q_single);
+local_maps(out, q, d.dq, Ew, Ys(w, :), Ms(w, :), L, Y(w, :) - T.scale_data_over_model.' .* M(w, :), V(w, :), T, Cv, fig_cfg);
+local_single(out, q, Ew, Y(w, :), Ys(w, :), M(w, :), L, Lj, T, q_single, nb);
 disp(T);
 end
 
 
-function local_maps(fit_dir, q, Ew, Ys, Ms, L, R, V, T, Cv)
-qg = -0.005:0.0005:0.005; [~, col] = ismember(round(q / 0.0005), round(qg / 0.0005));
+function local_maps(fit_dir, q, dq, Ew, Ys, Ms, L, R, V, T, Cv, cfg)
+grid = round(min(q)/dq):round(max(q)/dq); qg=grid*dq; [~, col] = ismember(round(q/dq),grid);
 put = @(Z) local_grid(Z, col, numel(qg));
 nrm = @(Z) Z ./ max(Z, [], 1);
 Rw = movsum(R, 10, 1) ./ sqrt(movsum(V, 10, 1));                       % 40 meV windows
@@ -76,19 +85,22 @@ for p = 1:4
         colormap(ax, local_diverging()); clim(ax, [-4 4]);
     end
     if p == 3
-        keep = Cv.Q <= 0.00525;
+        keep = Cv.Q <= max(abs(q))+dq/2;
         for j = 1:2
             for s = [-1 1]
                 plot(ax, s * Cv.Q(keep) * 1e3, Cv.apex(j, keep) / 1e3, '-', 'Color', 'w', 'LineWidth', 1.5);
                 plot(ax, s * Cv.Q(keep) * 1e3, Cv.E0(j, keep) / 1e3, '--', 'Color', 'w', 'LineWidth', 1.0);
             end
         end
-        patch(ax, [-1.75 1.75 1.75 -1.75], [0.25 0.25 1.8 1.8], 'w', 'FaceAlpha', 0.6, 'EdgeColor', 'none');
-        text(ax, 0, 1.02, 'high branch at window edge', 'Rotation', 90, 'HorizontalAlignment', 'center', ...
-            'VerticalAlignment', 'middle', 'FontSize', 8, 'Color', [0.2 0.2 0.2]);
+        if isfield(cfg,'edge_q') && cfg.edge_q>0
+            edge=(cfg.edge_q+dq/2)*1e3; el=[Ew(1) Ew(end)]/1e3;
+            patch(ax,[-edge edge edge -edge],el([1 1 2 2]), 'w','FaceAlpha',0.6,'EdgeColor','none');
+            text(ax,0,mean(el),'high branch at window edge','Rotation',90,'HorizontalAlignment','center', ...
+                'VerticalAlignment','middle','FontSize',8,'Color',[0.2 0.2 0.2]);
+        end
     end
     set(ax, 'Color', 'w', 'FontName', 'Helvetica', 'FontSize', 9, 'TickDir', 'out', 'Layer', 'top'); box(ax, 'on');
-    xlim(ax, [-5.25 5.25]); ylim(ax, [0.25 1.8]); xlabel(ax, 'q (10^{-3} Å^{-1})');
+    xlim(ax, ([qg(1) qg(end)]+[-1 1]*dq/2)*1e3); ylim(ax,[Ew(1) Ew(end)]/1e3); xlabel(ax, 'q (10^{-3} Å^{-1})');
     if p == 1, ylabel(ax, 'energy loss (eV)'); end
     title(ax, ttl{p}, 'FontWeight', 'normal', 'FontSize', 10);
     cb = colorbar(ax); cb.FontSize = 8;
@@ -100,7 +112,7 @@ close(f);
 end
 
 
-function local_single(fit_dir, q, Ew, Y, Ys, M, L, Lj, T, q1)
+function local_single(fit_dir, q, Ew, Y, Ys, M, L, Lj, T, q1, nb)
 i = find(abs(q - q1) < 1e-9, 1); e = Ew / 1e3; Q = abs(q1);
 intr = qe_lowq_joint_forward('intrinsic');
 K = Q ./ (Q ^ 2 + (Ew * intr.qE_per_meV) .^ 2) .^ 2;                  % point-Q 2D kinematic factor
@@ -113,7 +125,7 @@ plot(ax, e, Ys(:, i), 'k-', 'LineWidth', 1.6, 'DisplayName', 'counts, 100 meV me
 plot(ax, e, M(:, i), 'r-', 'LineWidth', 1.2, 'DisplayName', 'P2b forward model');
 xline(ax, T.counts_max_meV(i) / 1e3, 'k:', sprintf('maximum %.2f eV', T.counts_max_meV(i) / 1e3), 'LineWidth', 1.2, ...
     'LabelVerticalAlignment', 'top', 'FontSize', 9, 'HandleVisibility', 'off');
-local_axes(ax, sprintf('(a) before: measured spectrum, q = %+.4f Å^{-1}', q1), 'counts (B1, 6 blocks, per 4 meV)', 'south');
+local_axes(ax, sprintf('(a) before: measured spectrum, q = %+.4f Å^{-1}', q1), sprintf('counts (B1, %d blocks, per %g meV)',nb,median(diff(Ew))), 'south');
 ax = nexttile(tlo); hold(ax, 'on'); s = max(L(:, i)); cb = [0.10 0.35 0.85]; co = [0.85 0.35 0.10];
 plot(ax, e, Ys(:, i) / max(Ys(:, i)), '-', 'Color', [0.65 0.65 0.65], 'LineWidth', 1.4, 'DisplayName', 'measured (a), normalised');
 plot(ax, e, K / K(1), ':', 'Color', [0.25 0.25 0.25], 'LineWidth', 1.3, 'DisplayName', 'kinematic factor K(Q,E) / K(Q, 0.25 eV)');

@@ -1,8 +1,8 @@
-function cfg = b1_p2a_inputs_config()
+function cfg = b1_p2a_inputs_config(paths)
 % Configuration of P2a step 1 (input checks, 590); its SHA-256 names the
 % output folder p2a/inputs_<session>_<hash8>.
 cfg.version = 'P2a-step1b-2026-10-14';     % step 1 + fixes after review round 4, count cube for step 2
-cfg.session = '590_PL2_10w';
+cfg.session = b1_forward_config().session;
 cfg.q_max = 0.0065;                   % channels read, both signs, incl. q = 0
 cfg.core_w = [8 16];                  % core half-widths |E - c(q) - dE_t| <= w (meV), per-frame descriptors
 cfg.window_list = [8 12 16 32];       % summed-profile windows for the sigma_probe comparison
@@ -21,4 +21,11 @@ cfg.key_q = [0.0005 0.001 0.002 0.005];
 cfg.shape_edges = [40:10:300, 325:25:600, 675:75:1800];
 cfg.shape_regions = [40 150; 150 250; 250 400; 400 1800];
 cfg.holdout = [150 250];              % excluded from the common-beam reference (p1b/common_ref.mat)
+if nargin > 0
+    cfg.paths = paths;
+    cfg.session = paths.session;
+    d = bisb_datasets(paths.session);
+    cfg.moment_q_max = 2 * d.dq;
+    cfg.gauss_q_max = 2 * d.dq;
+end
 end

@@ -1,4 +1,4 @@
-function out = b1_p2a_response(input_dir)
+function out = b1_p2a_response(input_dir, cfg)
 % P2a step 2.1: slice response from the block count cube (p2a_cube.mat of the
 % corrected input run). For every slice r (native channel, |q| <= 0.0065) and
 % block b the elastic line is fitted with two asymmetric Pearson VII sharing a
@@ -11,8 +11,14 @@ function out = b1_p2a_response(input_dir)
 % from the slice models. Six and twelve blocks.
 % Output: <input_dir>/response_<config hash>/.
 root=bisb_find_project_root(fileparts(mfilename('fullpath'))); addpath(genpath(fullfile(root,'src')));
-cfg=b1_p2a_response_config(); tag=b1_sha256(cfg); t0=tic;
-out=fullfile(input_dir,sprintf('response_%s',tag(1:8))); if ~isfolder(out), mkdir(out); end
+if nargin<2 || isempty(cfg), cfg=b1_p2a_response_config(); end
+paths=b1_forward_paths(cfg);
+if nargin<1 || isempty(input_dir), input_dir=paths.input_dir; end
+tag=b1_sha256(cfg); t0=tic;
+out=fullfile(input_dir,sprintf('response_%s',tag(1:8)));
+if isfield(cfg,'output_dir'), out=cfg.output_dir; end
+assert(~isfolder(out),'b1_p2a_response:OutputExists','Output already exists: %s',out);
+mkdir(out);
 L=load(fullfile(input_dir,'p2a_cube.mat'),'cube'); cube=L.cube; E=cube.E(:); q=cube.q(:).'; dq=cube.dq; nk=numel(q); dE=E(2)-E(1);
 S=load(fullfile(input_dir,'inputs_p2a.mat'),'P','wl'); T=size(S.P,1);
 opts=optimoptions('lsqnonlin','Display','off','FunctionTolerance',1e-12,'StepTolerance',1e-10, ...
