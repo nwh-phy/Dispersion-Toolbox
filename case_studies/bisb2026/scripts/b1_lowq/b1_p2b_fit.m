@@ -22,6 +22,7 @@ function out = b1_p2b_fit(run_root, cfg, ocfg, replay)
 % cfg.predict_block opts into training without cfg.lobo_block, using its known
 % exposure and operator for prediction. cfg.n_branch optionally selects one DL.
 % replay.material evaluates a supplied intrinsic model and residues without fitting.
+% replay.prepare returns the forward cache and matched data for an external fit.
 % Output: <run_root>/p2b/fit_<session>_<config hash>/.
 root=bisb_find_project_root(fileparts(mfilename('fullpath'))); addpath(genpath(fullfile(root,'src')));
 if nargin<1, run_root=[]; end
@@ -72,6 +73,11 @@ for v=1:numel(cfg.variants)
  end
  mwin=Eo>=V.window(1)&Eo<=V.window(2); mask=repmat(mwin,1,ni,nb)&~isnan(Y);
  lo=abs(abs(cfg.exit_q)-min(abs(cfg.exit_q)))<1e-9; mask(Eo>V.lowq_emax,lo,:)=false;     % retardation check: lowest channels only to lowq_emax
+ if ~isempty(replay) && isfield(replay,'prepare') && replay.prepare
+  out=struct('cache',cache,'E',Eo,'Y',Y,'S2',S2,'mask',mask,'intr',intr, ...
+   'exposure',cube.(st.blocking).d,'q',cfg.exit_q,'build_s',tbuild);
+  return
+ end
  if ~isempty(replay) && isfield(replay,'material')
   M=replay.material;
   out=struct('E',Eo,'Y',Y,'S2',S2,'mask',mask, ...
