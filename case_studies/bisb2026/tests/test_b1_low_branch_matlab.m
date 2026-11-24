@@ -39,8 +39,15 @@ end
 end
 
 function testPreparedCountsMatchIndependentNativeFrameRead(tc)
-D=prepared(tc);raw=read_npy(D.signature.source);
-meta=jsondecode(fileread(strrep(D.signature.source,'.npy','.json')));
+D=prepared(tc);
+% Resolve the archived source identity against this checkout. Keep prepared.mat
+% byte-for-byte intact: its hash is used by downstream provenance checks.
+source=strrep(char(D.signature.source),'\','/');
+marker='/20260120 BiSb/';pos=strfind(source,marker);
+assert(numel(pos)==1,'Prepared data has an unrecognized source path.');
+source=fullfile(tc.TestData.root,'20260120 BiSb',source(pos+numel(marker):end));
+raw=read_npy(source);
+meta=jsondecode(fileread(strrep(source,'.npy','.json')));
 ax=meta.spatial_calibrations;ie=find(contains(string({ax.units}),'eV'),1,'last');
 E=(ax(ie).offset+(0:size(raw,3)-1)*ax(ie).scale)'*1000-D.energy_origin_meV;
 [ok,ei]=ismembertol(D.E,E,1e-8,'DataScale',1);verifyTrue(tc,all(ok));
