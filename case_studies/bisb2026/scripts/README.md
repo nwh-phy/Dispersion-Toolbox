@@ -89,10 +89,23 @@ addpath(genpath(fullfile(pwd, 'case_studies', 'bisb2026')))
 
 `bisb_slot_analyze(bisb_slot_config())` 读取登记项 `Bi1117_slot` 的四维 DM4，
 复用 `qe_zlp_integer_align`、`qe_zlp_center`、`qe_powerlaw_tail`、`qe_peak_apex`
-和 `qe_plot_heatmap`。逐扫描位置、逐探测器通道校正弹性线；8 通道分箱后
-检查背景窗口敏感性，并按 19 个空间扫描行重采样。结果独立写入
+和 `qe_plot_heatmap`。每个空间位置只用直通束附近五个通道测一个 ZLP 位移，
+再应用到该位置全部动量通道；不对弱弹性通道独立寻峰。8 通道分箱后检查背景
+窗口敏感性，并按 19 个空间扫描行重采样。`bisb_slot_summary(out)` 做强斑和空间
+对照，`bisb_slot_anchor_analysis(out)` 用直通束与两个外侧弹性点建立无量纲
+`q/G_anchor` 横轴，并输出分能区峰位、谱质心和积分谱重比。结果独立写入
 `paper_results/bi_slot_20261117/<时间戳>/`，不覆盖旧输出。
 
-本次纯 Bi、四方相是用户给定的信息；层数和衍射指标未知。DM4 没有动量
-标定，横轴保留探测器通道，`dq/zero/h` 登记为 NaN；不能直接调用旧的
-低 q NPY 流程。原始数据是 19×19 空间扫描，不是 361 次同位置重复采集。
+slot-v4（`cfg.geometry`）在上述结果上再调用 `bisb_slot_geometry(out)`，修正 v3
+留下的三项探测器几何效应：逐通道弹性零点（弹性线弯曲；穿过直通束的斜条纹
+先遮掉再插值）；损失信号的 q 位置随能量移动（按直通束与 ±G 三个锚点拟合
+平移加放大率变化）；以直通束为中心、奇数宽度对称分箱，并以 ln(I(+q)/I(−q))
+随能量的斜率做 ±q 检验。坐标变换在 `bisb_slot_regrid` 里，测试是
+`tests/test_bisb_slot_regrid.m`。验收标准是两个 Bi 衍射斑处扣邻近背景后的
+双散射复本与中央谱在能量上对齐。Å⁻¹ 横轴用 `cfg.geometry.dq_Ainv`
+（ARM200 暂定标定），同时输出以外侧斑为 MoS₂(100) 的交叉检验值。
+
+本次纯 Bi、四方相是用户给定的信息；层数和衍射指标未知。DM4 没有绝对动量
+标定，`dq/zero/h` 登记为 NaN；`q/G_anchor` 只把两个外侧锚点归一到 ±1，不指定
+衍射级次或 Å⁻¹ 标度。不能直接调用旧的低 q NPY 流程。原始数据是 19×19 空间
+扫描，不是 361 次同位置重复采集。

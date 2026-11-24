@@ -24,6 +24,8 @@ assert(all(al.valid),'Unreliable direct-beam references require review');
 E=Eraw(al.support)-Eraw(al.reference_pixel);
 F=permute(al.aligned,[1 3 2]); al=rmfield(al,'aligned');
 M=sum(F,3); offsets=al.measured_offset_pixels*de*1000;
+% Per-channel sums over each scan row (19 consecutive positions) for bisb_slot_geometry.
+Fr=squeeze(sum(reshape(F,size(F,1),size(F,2),19,19),3));
 % Compare sum-then-align with spatial-position alignment: exact spectrum at each common pixel.
 static=zeros(size(M));
 for j=1:numel(q)
@@ -66,7 +68,7 @@ rawci=prctile(rawboot,[2.5 97.5],2); rawsuccess=sum(isfinite(rawboot),2)/cfg.boo
 T=table(qb',raw_peak,rawci(:,1),rawci(:,2),rawsuccess,peaks(:,1),peaks(:,2),peaks(:,3),ci(:,1),ci(:,2),success,static_peak,exponent(:,2), ...
  'VariableNames',{'channel','raw_apex_meV','raw_boot_lo','raw_boot_hi','raw_success','background1_meV','background2_meV','background3_meV','row_boot_lo','row_boot_hi','bootstrap_success','sum_then_align_meV','tail_exponent'});
 writetable(T,fullfile(out,'peak_sensitivity.csv'));
-save(fullfile(out,'analysis.mat'),'cfg','d','E','q','M','qb','B','S','R','static','raw_map','Eraw','offsets','zwidth','elastic','T','al','meta','rawboot','boot','-v7.3');
+save(fullfile(out,'analysis.mat'),'cfg','d','E','q','M','Fr','qb','B','S','R','static','raw_map','Eraw','offsets','zwidth','elastic','T','al','meta','rawboot','boot','-v7.3');
 qe_plot_heatmap(E,qb,B,fullfile(out,'01_slot_dispersion'),q_window=[min(qb) max(qb)],e_window=[200 3000],norm_window=[400 3000],q_label='Slot detector channel (uncalibrated)',title='Bi: 8-channel bins; local ZLP alignment');
 qe_plot_heatmap(E,qb,B,fullfile(out,'02_low_energy'),q_window=[min(qb) max(qb)],e_window=[200 1500],norm_window=[400 1500],q_label='Slot detector channel (uncalibrated)',title='Bi: measured spectra, no background subtraction');
 f=figure('Visible','off','Color','w','Position',[50 50 1200 850]); tiledlayout(2,2);
@@ -96,5 +98,7 @@ fprintf(fid,'Dataset %s\nVersion %s\nEnergy step %.9g meV\n%d/%d local ZLP refer
  d.id,cfg.version,de*1000,sum(al.valid),numel(al.valid),min(offsets(:)),max(offsets(:)),median(zwidth),prctile(zwidth,5),prctile(zwidth,95));
 fprintf(fid,'No reciprocal-space calibration. No q=0 or diffraction indices assigned. Bootstrap quantifies spatial sampling, not independently repeated acquisitions.\n');
 bisb_slot_summary(out);
+bisb_slot_anchor_analysis(out);
+if isfield(cfg,'geometry'), bisb_slot_geometry(out); end
 fprintf('RESULT_DIRECTORY=%s\n',out);
 end
